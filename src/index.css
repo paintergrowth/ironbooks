@@ -7,9 +7,9 @@
 
 @layer base {
   :root {
-    /* Primary Palette */
-    --primary: 221 83% 53%; /* #2563EB */
-    --primary-foreground: 220 14% 96%;
+    /* IronBooks Brand Colors - Light Mode */
+    --primary: 220 100% 55%; /* #315EFF - IronBooks ultramarine */
+    --primary-foreground: 0 0% 100%; /* White text on primary */
     
     --success: 160 84% 39%; /* #059669 */
     --success-foreground: 0 0% 100%;
@@ -20,32 +20,32 @@
     --destructive: 0 84% 60%; /* #DC2626 */
     --destructive-foreground: 0 0% 100%;
 
-    /* Backgrounds */
-    --background: 220 14% 96%; /* #F9FAFB */
-    --foreground: 220 26% 14%; /* #111827 */
+    /* Light theme backgrounds */
+    --background: 220 15% 97%; /* #F5F7FA - IronBooks soft grey */
+    --foreground: 220 15% 6%; /* #0E0F11 - IronBooks deep space black */
 
-    --card: 0 0% 100%; /* #FFFFFF */
-    --card-foreground: 220 26% 14%;
+    --card: 0 0% 100%; /* Pure white cards */
+    --card-foreground: 220 15% 6%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 26% 14%;
+    --popover-foreground: 220 15% 6%;
 
     /* Secondary & Muted */
     --secondary: 220 13% 91%;
-    --secondary-foreground: 220 26% 14%;
+    --secondary-foreground: 220 15% 6%;
 
     --muted: 220 13% 91%;
     --muted-foreground: 220 9% 65%; /* #9CA3AF */
 
     --accent: 220 13% 91%;
-    --accent-foreground: 220 26% 14%;
+    --accent-foreground: 220 15% 6%;
 
     /* Borders & Input */
     --border: 220 13% 91%; /* #E5E7EB */
     --input: 220 13% 91%;
-    --ring: 221 83% 53%;
+    --ring: 220 100% 55%;
 
-    --radius: 0.5rem;
+    --radius: 1.25rem; /* 20px for more modern feel */
 
     /* Sidebar */
     --sidebar-background: 220 14% 96%;
@@ -63,43 +63,43 @@
   }
 
   .dark {
-    /* Primary Palette */
-    --primary: 217 91% 60%; /* #3B82F6 */
-    --primary-foreground: 220 26% 14%;
+    /* IronBooks Brand Colors - Dark Mode */
+    --primary: 220 100% 55%; /* #315EFF - IronBooks ultramarine */
+    --primary-foreground: 0 0% 100%; /* White text on primary */
     
-    --success: 160 84% 39%; /* #10B981 */
+    --success: 160 84% 45%; /* Brighter green for dark mode */
     --success-foreground: 0 0% 100%;
     
-    --warning: 45 93% 47%; /* #F59E0B */
-    --warning-foreground: 220 26% 14%;
+    --warning: 45 93% 50%; /* Brighter orange for dark mode */
+    --warning-foreground: 0 0% 0%;
     
-    --destructive: 0 84% 71%; /* #F87171 */
-    --destructive-foreground: 220 26% 14%;
+    --destructive: 0 84% 65%; /* Brighter red for dark mode */
+    --destructive-foreground: 0 0% 0%;
 
-    /* Backgrounds */
-    --background: 220 26% 14%; /* #111827 */
-    --foreground: 220 14% 96%; /* #F9FAFB */
+    /* Dark theme backgrounds */
+    --background: 220 15% 6%; /* #0E0F11 - IronBooks deep space black */
+    --foreground: 220 15% 97%; /* #F5F7FA - IronBooks soft grey */
 
-    --card: 220 26% 18%; /* #1F2937 */
-    --card-foreground: 220 14% 96%;
+    --card: 220 10% 12%; /* Slightly lighter than background for depth */
+    --card-foreground: 220 15% 97%;
 
-    --popover: 220 26% 18%;
-    --popover-foreground: 220 14% 96%;
+    --popover: 220 10% 12%;
+    --popover-foreground: 220 15% 97%;
 
     /* Secondary & Muted */
-    --secondary: 220 13% 28%;
-    --secondary-foreground: 220 14% 96%;
+    --secondary: 220 10% 18%; /* Subtle grey cards */
+    --secondary-foreground: 220 15% 97%;
 
-    --muted: 220 13% 28%;
-    --muted-foreground: 220 9% 46%; /* #6B7280 */
+    --muted: 220 10% 18%;
+    --muted-foreground: 220 9% 60%; /* Muted text */
 
-    --accent: 220 13% 28%;
-    --accent-foreground: 220 14% 96%;
+    --accent: 220 10% 18%;
+    --accent-foreground: 220 15% 97%;
 
     /* Borders & Input */
-    --border: 220 13% 28%; /* #374151 */
-    --input: 220 13% 28%;
-    --ring: 217 91% 60%;
+    --border: 220 10% 20%; /* Subtle borders */
+    --input: 220 10% 18%;
+    --ring: 220 100% 55%;
 
     /* Sidebar */
     --sidebar-background: 220 26% 14%;
