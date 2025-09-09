@@ -1,14 +1,12 @@
 import React from 'react';
-import AppLayout from '@/components/AppLayout';
 
 /**
- * Index page:
- * Renders the main application layout (left sidebar, top bar, content routes).
- * NOTE: AppProvider is already mounted in app.tsx, so we do NOT wrap it again here.
+ * DEPRECATED - This file is no longer used.
+ * Landing page: /src/pages/Landing.tsx
+ * Dashboard page: /src/pages/Dashboard.tsx
  */
 const Index: React.FC = () => {
-  console.log("src/pages/index.tsx live: components/CFOAgent.tsx (QBO card build)");
-  return <AppLayout />;
+  return <div>This file is deprecated. Use Landing.tsx or Dashboard.tsx instead.</div>;
 };
 
 export default Index;
