@@ -14,7 +14,7 @@ import { SecurityBar } from './SecurityBar';
 import { BenefitsPanel } from './BenefitsPanel';
 
 // Force auth redirects to production root (avoid preview hosts and nonexistent routes)
-const APP_ORIGIN = 'https://bookkeeping-chatbot-reports.deploypad.app';
+const APP_ORIGIN = 'https://ironbooks.netlify.app';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -123,7 +123,7 @@ export const Login: React.FC = () => {
         options: {
           // Redirect to root so it never 404s
           redirectTo: `${APP_ORIGIN}/`,
-           //redirectTo: 'https://bookkeeping-chatbot-reports.deploypad.app/dashboard'
+           //redirectTo: 'https://ironbooks.netlify.app'
         },
       });
       if (error) throw error;
