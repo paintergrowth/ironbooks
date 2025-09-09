@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
 
 // Force auth redirects to production root (avoid preview hosts and nonexistent routes)
+
 const APP_ORIGIN = 'https://ironbooks.netlify.app/';
 
 interface AuthPanelProps {
