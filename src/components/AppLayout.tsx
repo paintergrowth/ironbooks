@@ -1,5 +1,6 @@
 // src/components/AppLayout.tsx
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Menu, X } from 'lucide-react';
 import Sidebar from './Sidebar';
@@ -16,12 +17,26 @@ import AdminPanelComplete from './AdminPanelComplete';
 
 const AppLayout: React.FC = () => {
   console.log("src/components/AppLayout.tsx live: components/CFOAgent.tsx (QBO card build)");
-  const [activeSection, setActiveSection] = useState('dashboard');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [reportFilter, setReportFilter] = useState<string | undefined>();
   const [reportTimeframe, setReportTimeframe] = useState<string | undefined>();
+
+  // Get active section from URL path
+  const getActiveSectionFromPath = (pathname: string) => {
+    if (pathname === '/' || pathname === '/dashboard') return 'dashboard';
+    if (pathname === '/cfo') return 'cfo-agent';
+    if (pathname === '/reports') return 'reports';
+    if (pathname === '/add-ons') return 'add-ons';
+    if (pathname === '/settings') return 'settings';
+    if (pathname === '/admin-panel') return 'admin-panel';
+    return 'dashboard';
+  };
+
+  const activeSection = getActiveSectionFromPath(location.pathname);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -38,16 +53,16 @@ const AppLayout: React.FC = () => {
   const handleToggleAdminMode = () => {
     setIsAdminMode(!isAdminMode);
     if (!isAdminMode) {
-      setActiveSection('admin-panel');
+      navigate('/admin-panel');
     } else {
-      setActiveSection('dashboard');
+      navigate('/dashboard');
     }
   };
 
   const handleNavigateToReports = (filter: string, timeframe: string) => {
     setReportFilter(filter);
     setReportTimeframe(timeframe);
-    setActiveSection('reports');
+    navigate('/reports');
   };
 
   const renderContent = () => {
@@ -88,7 +103,6 @@ const AppLayout: React.FC = () => {
       `}>
         <Sidebar
           activeTab={activeSection}
-          setActiveTab={setActiveSection}
           onClose={() => setSidebarOpen(false)}
           isMobile={isMobile}
         />
@@ -113,8 +127,10 @@ const AppLayout: React.FC = () => {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-auto p-4 md:p-6">
-          {renderContent()}
+        <div className="flex-1 min-h-0 p-4 md:p-6">
+          <div className="h-full">
+            {renderContent()}
+          </div>
         </div>
       </main>
     </div>

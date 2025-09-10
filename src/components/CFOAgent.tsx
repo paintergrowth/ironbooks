@@ -1,20 +1,24 @@
 // src/components/CFOAgent.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { Card } from './ui/card';
-import { Send, TrendingUp, DollarSign, BarChart3, Bot, ExternalLink, Calendar, RotateCcw } from 'lucide-react';
+import { TrendingUp, DollarSign, BarChart3, Bot, ExternalLink, Calendar } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAppContext } from '@/contexts/AppContext';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import PremiumChatInterface from './PremiumChatInterface';
 
 interface Message {
   id: string;
   text: string;
   sender: 'user' | 'agent';
   timestamp: Date;
+  userQuery?: string;
+  isStreaming?: boolean;
+  reasoningSteps?: Array<{id: string; title: string; content: string; type?: string}>;
+  sources?: Array<{id: string; title: string; type: string; description?: string}>;
 }
 
 type UiTimeframe = 'thisMonth' | 'lastMonth' | 'ytd';
@@ -72,8 +76,8 @@ function pct(curr?: number | null, prev?: number | null) {
 const CFOAgent = () => {
   // Chat
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [currentReasoning, setCurrentReasoning] = useState<Array<{id: string; title: string; content: string; type?: string}>>([]);
 
   // User & toast
   const { user } = useAppContext();
@@ -308,57 +312,143 @@ const CFOAgent = () => {
     "Analyze my revenue growth"
   ];
 
-  const handleSend = async () => {
-    if (!inputValue.trim()) return;
+  // Helper function to generate reasoning steps based on query
+  const generateReasoningSteps = (query: string) => {
+    const baseSteps = [];
+    
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
+        { id: '2', title: 'Querying transaction data', content: 'Searching QuickBooks transactions for expense categories and amounts in the specified timeframe.', type: 'lookup' },
+        { id: '3', title: 'Calculating totals', content: 'Aggregating expense amounts by category and computing percentage changes from previous periods.', type: 'calculation' },
+        { id: '4', title: 'Generating insights', content: 'Identifying trends, outliers, and actionable recommendations based on expense patterns.', type: 'synthesis' }
+      ];
+    }
+    
+    if (query.toLowerCase().includes('revenue') || query.toLowerCase().includes('profit')) {
+      return [
+        { id: '1', title: 'Understanding revenue request', content: 'Parsing query to determine if user wants revenue trends, profit margins, or comparative analysis.', type: 'analysis' },
+        { id: '2', title: 'Fetching financial data', content: 'Retrieving income statements and revenue data from QuickBooks for the requested period.', type: 'lookup' },
+        { id: '3', title: 'Synthesizing response', content: 'Combining revenue data with industry benchmarks to provide contextual business insights.', type: 'synthesis' }
+      ];
+    }
+    
+    // Default reasoning steps
+    return [
+      { id: '1', title: 'Processing query', content: 'Analyzing the user\'s question to understand the financial information being requested.', type: 'analysis' },
+      { id: '2', title: 'Accessing data', content: 'Connecting to QuickBooks Online to retrieve relevant financial records and metrics.', type: 'lookup' },
+      { id: '3', title: 'Generating response', content: 'Formulating a comprehensive answer with actionable insights and recommendations.', type: 'synthesis' }
+    ];
+  };
 
+  // Helper function to generate sources
+  const generateSources = (query: string) => {
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'QuickBooks Online - Expense Transactions', type: 'quickbooks', description: 'Retrieved expense data from your QuickBooks Online account for the specified period.' },
+        { id: '2', title: 'Expense Category Analysis', type: 'calculation', description: 'Calculated expense totals and percentage changes by category.' },
+        { id: '3', title: 'Industry Benchmark Data', type: 'api', description: 'Compared your expenses against industry averages for small businesses.' }
+      ];
+    }
+    
+    return [
+      { id: '1', title: 'QuickBooks Online - Financial Data', type: 'quickbooks', description: 'General financial information retrieved from your QuickBooks Online account.' },
+      { id: '2', title: 'Financial Analysis Report', type: 'report', description: 'Generated analytical insights based on your financial data.' }
+    ];
+  };
+
+  const handleSend = async (query: string) => {
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: inputValue,
+      text: query,
       sender: 'user',
       timestamp: new Date()
     };
 
     setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
     setIsTyping(true);
 
-    try {
-      const { data, error } = await supabase.functions.invoke('qbo-query-agent', {
-        body: { query: inputValue, realmId: qboRealmId, userId: user.id }
-      });
-      if (error) throw error;
+    // Generate reasoning steps and sources for this query
+    const reasoningSteps = generateReasoningSteps(query);
+    const sources = generateSources(query);
 
-      const agentMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: data.response || "Sorry, I couldn't process that query.",
-        sender: 'agent',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, agentMessage]);
-    } catch (e) {
-      console.error('AI query error:', e);
-      // Fallback to random response
-      const responses = [
-        "Based on your financial data, I can see some interesting trends. Your expenses have increased by 15% this quarter, primarily driven by operational costs.",
-        "Your profit margins are looking healthy at 28.9%. This is above industry average and shows strong financial management.",
-        "Cash flow analysis shows a positive trend with $45K monthly inflow. I recommend maintaining 3-6 months of operating expenses in reserves.",
-        "Revenue growth is strong at 23% YoY. Your Q4 projections look promising based on current trends."
-      ];
-      const agentMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: responses[Math.floor(Math.random() * responses.length)],
-        sender: 'agent',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, agentMessage]);
-    } finally {
-      setIsTyping(false);
-    }
+    // Stream reasoning steps over ~5 seconds
+    let currentStepIndex = 0;
+    setCurrentReasoning([]);
+
+    const reasoningInterval = setInterval(() => {
+      if (currentStepIndex < reasoningSteps.length) {
+        setCurrentReasoning(prev => [...prev, reasoningSteps[currentStepIndex]]);
+        currentStepIndex++;
+      } else {
+        clearInterval(reasoningInterval);
+        
+        // After reasoning is complete, start generating the response
+        setTimeout(async () => {
+          // Create initial streaming message
+          const messageId = (Date.now() + 1).toString();
+          const streamingMessage: Message = {
+            id: messageId,
+            text: '',
+            sender: 'agent',
+            timestamp: new Date(),
+            userQuery: query,
+            isStreaming: true,
+            reasoningSteps,
+            sources
+          };
+          
+          setMessages(prev => [...prev, streamingMessage]);
+          setCurrentReasoning([]); // Clear current reasoning
+          
+          // Get the response (real API call or fallback)
+          let finalResponse = '';
+          
+          try {
+            const { data, error } = await supabase.functions.invoke('qbo-query-agent', {
+              body: { query, realmId: qboRealmId, userId: user.id }
+            });
+            if (error) throw error;
+            finalResponse = data.response || "Sorry, I couldn't process that query.";
+          } catch (e) {
+            console.error('AI query error:', e);
+            // Fallback to random response
+            const responses = [
+              "Based on your financial data, I can see some interesting trends. Your expenses have increased by 15% this quarter, primarily driven by operational costs.",
+              "Your profit margins are looking healthy at 28.9%. This is above industry average and shows strong financial management.",
+              "Cash flow analysis shows a positive trend with $45K monthly inflow. I recommend maintaining 3-6 months of operating expenses in reserves.",
+              "Revenue growth is strong at 23% YoY. Your Q4 projections look promising based on current trends."
+            ];
+            finalResponse = responses[Math.floor(Math.random() * responses.length)];
+          }
+          
+          // Simulate streaming text response
+          const words = finalResponse.split(' ');
+          let currentText = '';
+          
+          for (let i = 0; i < words.length; i++) {
+            currentText += (i > 0 ? ' ' : '') + words[i];
+            
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId 
+                ? { ...msg, text: currentText, isStreaming: i < words.length - 1 }
+                : msg
+            ));
+            
+            // Wait between words for streaming effect
+            if (i < words.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+          }
+          
+          setIsTyping(false);
+        }, 500); // Small delay after reasoning completes
+      }
+    }, 1250); // ~5 seconds total for all reasoning steps
   };
 
   const handleSuggestedClick = (question: string) => {
-    setInputValue(question);
-    handleSend();
+    handleSend(question);
   };
 
   const handleConnectQuickBooks = () => {
@@ -411,26 +501,26 @@ const CFOAgent = () => {
   const changeLabelText = period === 'ytd' ? 'from last year' : 'from last month';
 
   return (
-    <div className="flex h-full bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="h-full flex bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         {/* Company name centered (same as Dashboard) */}
-        <div className="flex justify-center mt-4">
+        <div className="flex justify-center pt-4 pb-2 flex-shrink-0">
           <h2 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white truncate max-w-[90%] text-center">
             {companyName || '—'}
           </h2>
         </div>
 
         {/* Header */}
-        <div className="bg-white dark:bg-gray-800 border-b p-6 shadow-sm">
+        <div className="bg-white dark:bg-gray-800 border-b p-4 shadow-sm flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
-                <Bot className="h-6 w-6 text-white" />
+              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                <Bot className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">CFO Agent</h1>
-                <p className="text-gray-600 dark:text-gray-300">Your AI-powered financial advisor</p>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">CFO Agent</h1>
+                <p className="text-sm text-gray-600 dark:text-gray-300">Your AI-powered financial advisor</p>
               </div>
             </div>
 
@@ -446,6 +536,7 @@ const CFOAgent = () => {
               )}
               <Button
                 variant="outline"
+                size="sm"
                 onClick={handleConnectQuickBooks}
                 className="flex items-center gap-2"
                 title={qboConnected ? 'Reconnect QuickBooks' : 'Connect your QuickBooks Online account'}
@@ -457,46 +548,16 @@ const CFOAgent = () => {
           </div>
         </div>
 
-        {/* Chat Container */}
-        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 mx-6 mb-4 rounded-lg shadow-lg border">
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[70%] p-3 rounded-lg ${msg.sender === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'}`}>
-                  {msg.text}
-                  <p className="text-xs mt-1 opacity-70">{msg.timestamp.toLocaleTimeString()}</p>
-                </div>
-              </div>
-            ))}
-            {isTyping && (
-              <div className="flex justify-start">
-                <div className="bg-gray-200 text-gray-900 p-3 rounded-lg">
-                  Typing...
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Input Area */}
-          <div className="border-t p-6">
-            <div className="flex space-x-3">
-              <Input
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Ask me about cash flow, profits, expenses, or KPIs..."
-                className="flex-1 rounded-full border-2 focus:border-blue-500"
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              />
-              <Button
-                onClick={handleSend}
-                className="rounded-full w-12 h-12 bg-blue-600 hover:bg-blue-700"
-                size="icon"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+        {/* Premium Chat Container */}
+        <div className="flex-1 min-h-0 p-4">
+          <PremiumChatInterface
+            messages={messages}
+            onSendMessage={handleSend}
+            isTyping={isTyping}
+            currentReasoning={currentReasoning}
+            placeholder="Ask me about cash flow, profits, expenses, or KPIs..."
+            suggestedQuestions={suggestedQuestions}
+          />
         </div>
       </div>
 

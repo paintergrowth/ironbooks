@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { useTheme } from './theme-provider';
 import { useAppContext } from '@/contexts/AppContext';
@@ -15,26 +16,26 @@ import {
 
 interface SidebarProps {
   activeTab: string;
-  setActiveTab: (tab: string) => void;
   onClose?: () => void;
   isMobile?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onClose, isMobile }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, onClose, isMobile }) => {
   const { theme, setTheme } = useTheme();
   const { logout } = useAppContext();
+  const navigate = useNavigate();
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'cfo-agent', label: 'CFO Agent', icon: Bot },
-    { id: 'reports', label: 'Reports', icon: FileText },
-    { id: 'add-ons', label: 'Add-Ons', icon: Plus },
-    { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'admin-panel', label: 'Admin Panel', icon: Settings },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { id: 'cfo-agent', label: 'CFO Agent', icon: Bot, path: '/cfo' },
+    { id: 'reports', label: 'Reports', icon: FileText, path: '/reports' },
+    { id: 'add-ons', label: 'Add-Ons', icon: Plus, path: '/add-ons' },
+    { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
+    { id: 'admin-panel', label: 'Admin Panel', icon: Settings, path: '/admin-panel' },
   ];
 
-  const handleItemClick = (itemId: string) => {
-    setActiveTab(itemId);
+  const handleItemClick = (path: string) => {
+    navigate(path);
     if (isMobile && onClose) {
       onClose();
     }
@@ -64,7 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onClose, isM
                   ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700' 
                   : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
               }`}
-              onClick={() => handleItemClick(item.id)}
+              onClick={() => handleItemClick(item.path)}
             >
               <Icon className="mr-3 h-5 w-5" />
               <span className="font-medium">{item.label}</span>

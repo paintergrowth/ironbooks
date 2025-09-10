@@ -42,8 +42,10 @@ const AppContent = () => {
             <Route path="/" element={<Dashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/cfo" element={<Dashboard />} />
-            <Route path="/login" element={<Dashboard />} />
-            <Route path="/demo-auth" element={<Dashboard />} />
+            <Route path="/reports" element={<Dashboard />} />
+            <Route path="/add-ons" element={<Dashboard />} />
+            <Route path="/settings" element={<Dashboard />} />
+            <Route path="/admin-panel" element={<Dashboard />} />
             <Route path="*" element={<Dashboard />} />
           </>
         )}
