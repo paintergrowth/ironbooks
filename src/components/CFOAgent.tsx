@@ -22,7 +22,7 @@ type DashPeriod = 'this_month' | 'last_month' | 'ytd';
 
 // ===== Intuit (QuickBooks) OAuth config =====
 const QBO_CLIENT_ID = 'ABdBqpI0xI6KDjHIgedbLVEnXrqjJpqLj2T3yyT7mBjkfI4ulJ';
-const QBO_REDIRECT_URI = 'https://bookkeeping-chatbot-reports.deploypad.app/?connected=qbo';
+const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
 const QBO_SCOPES = 'com.intuit.quickbooks.accounting openid profile email';
 const QBO_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
 
