@@ -30,7 +30,7 @@ interface QboDashboardPayload {
   companyName?: string; // <-- already present
 }
 // Must match Intuit app settings and what you used to start OAuth
-const QBO_REDIRECT_URI = 'https://bookkeeping-chatbot-reports.deploypad.app/?connected=qbo';
+const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
 
 const fallbackChartData = [
   { name: 'Jan', revenue: 0, expenses: 0 },
