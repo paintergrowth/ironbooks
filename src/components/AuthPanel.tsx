@@ -42,7 +42,7 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({ mode = 'signin' }) => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${APP_ORIGIN}login?cb=1`,
+          redirectTo: `${APP_ORIGIN}?cb=1`,
         },
       });
       if (error) throw error;
