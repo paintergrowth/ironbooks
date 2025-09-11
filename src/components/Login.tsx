@@ -14,7 +14,7 @@ import { SecurityBar } from './SecurityBar';
 import { BenefitsPanel } from './BenefitsPanel';
 
 // Force auth redirects to production root (avoid preview hosts and nonexistent routes)
-const APP_ORIGIN = 'https://ironbooks.netlify.app/dashboard';
+const APP_ORIGIN = 'https://ironbooks.netlify.app/login';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
