@@ -122,7 +122,7 @@ export const Login: React.FC = () => {
         provider: 'google',
         options: {
           // Redirect to root so it never 404s
-          redirectTo: `${APP_ORIGIN}/login?cb=1`,
+          redirectTo: `${APP_ORIGIN}/?cb=1`,
            //redirectTo: 'https://ironbooks.netlify.app'
         },
       });

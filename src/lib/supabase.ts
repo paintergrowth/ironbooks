@@ -13,11 +13,22 @@ export async function invokeWithAuth<T>(
 ) {
   const { data: s } = await supabase.auth.getSession();
   const access = s?.session?.access_token;
+  console.log(`invokeWithAuth(${name}): session available:`, !!s?.session);
+  console.log(`invokeWithAuth(${name}): access token available:`, !!access);
+  
   const headers = {
     ...(opts?.headers ?? {}),
     ...(access ? { Authorization: `Bearer ${access}` } : {}), // attach user JWT if present
   };
-  return supabase.functions.invoke<T>(name, { ...opts, headers });
+  
+  try {
+    const result = await supabase.functions.invoke<T>(name, { ...opts, headers });
+    console.log(`invokeWithAuth(${name}): result:`, result);
+    return result;
+  } catch (error) {
+    console.error(`invokeWithAuth(${name}): error:`, error);
+    throw error;
+  }
 }
 
 export { supabase };
