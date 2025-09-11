@@ -236,8 +236,9 @@ const CFOAgent = () => {
           setCompanyName(data.companyName);
         }
       } catch (e: any) {
-        console.warn('qbo-dashboard error:', e?.message || e);
-        toast({ title: 'QuickBooks', description: 'Failed to load live metrics.', variant: 'destructive' });
+        console.error('qbo-dashboard FULL error:', e);
+        console.error('qbo-dashboard error details:', JSON.stringify(e, null, 2));
+        toast({ title: 'QuickBooks', description: `Failed to load live metrics: ${e?.message || String(e)}`, variant: 'destructive' });
       } finally {
         setLoadingMetrics(false);
       }
@@ -266,7 +267,8 @@ const CFOAgent = () => {
           if ((error as any)?.message?.includes('no_tokens_for_realm')) {
             console.warn('[QBO] No tokens stored for realm', qboRealmId, '— company name fallback skipped.');
           } else {
-            console.warn('qbo-company invoke error:', error);
+            console.error('qbo-company FULL error:', error);
+            console.error('qbo-company error details:', JSON.stringify(error, null, 2));
           }
           return;
         }
