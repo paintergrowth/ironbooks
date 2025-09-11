@@ -247,6 +247,25 @@ serve(async (req) => {
       if (!tRes.ok) {
         const errorText = await tRes.text();
         console.error("qbo-dashboard: Token refresh failed:", tRes.status, errorText);
+        
+        // Check if this is an invalid_grant error (expired/revoked refresh token)
+        if (tRes.status === 400 && errorText.includes('invalid_grant')) {
+          // Delete the invalid tokens from database
+          await supabase
+            .from("qbo_tokens")
+            .delete()
+            .eq("user_id", userId)
+            .eq("realm_id", realmId);
+          
+          return json({ 
+            error: "qbo_reauth_required", 
+            message: "QuickBooks connection expired. Please reconnect your QuickBooks account.",
+            connected: false,
+            status: tRes.status, 
+            detail: errorText 
+          }, 401);
+        }
+        
         return json({ error: "refresh_failed", status: tRes.status, detail: errorText, connected: false }, 500);
       }
 

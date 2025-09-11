@@ -236,7 +236,19 @@ const CFOAgent = () => {
       } catch (e: any) {
         console.error('qbo-dashboard FULL error:', e);
         console.error('qbo-dashboard error details:', JSON.stringify(e, null, 2));
-        toast({ title: 'QuickBooks', description: `Failed to load live metrics: ${e?.message || String(e)}`, variant: 'destructive' });
+        
+        // Check if this is a reauth required error
+        if (e?.message?.includes('qbo_reauth_required') || e?.context?.error === 'qbo_reauth_required') {
+          setQboConnected(false);
+          setQboRealmId(null);
+          toast({ 
+            title: 'QuickBooks Connection Expired', 
+            description: 'Your QuickBooks connection has expired. Please reconnect your account.', 
+            variant: 'destructive' 
+          });
+        } else {
+          toast({ title: 'QuickBooks', description: `Failed to load live metrics: ${e?.message || String(e)}`, variant: 'destructive' });
+        }
       } finally {
         setLoadingMetrics(false);
       }
@@ -274,8 +286,19 @@ const CFOAgent = () => {
         if (!cancelled && (data as any)?.companyName) {
           setCompanyName((data as any).companyName);
         }
-      } catch (e) {
-        console.warn('qbo-company invoke exception:', e);
+      } catch (e: any) {
+        // Check if this is a reauth required error in the catch block too
+        if (e?.message?.includes('qbo_reauth_required') || e?.context?.error === 'qbo_reauth_required') {
+          setQboConnected(false);
+          setQboRealmId(null);
+          toast({ 
+            title: 'QuickBooks Connection Expired', 
+            description: 'Your QuickBooks connection has expired. Please reconnect your account.', 
+            variant: 'destructive' 
+          });
+        } else {
+          console.warn('qbo-company invoke exception:', e);
+        }
       }
     };
 
