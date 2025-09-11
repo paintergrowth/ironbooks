@@ -223,9 +223,7 @@ const CFOAgent = () => {
     const fetchMetrics = async () => {
       try {
         setLoadingMetrics(true);
-        const { data, error } = await supabase.functions.invoke('qbo-dashboard', {
-          body: { period }
-        });
+        const { data, error } = await invokeWithAuth('qbo-dashboard', { body: { period } });
         if (error) throw error;
 
         setRevenue(data?.revenue ?? { current: null, previous: null });

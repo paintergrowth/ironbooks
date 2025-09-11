@@ -14,7 +14,7 @@ import { SecurityBar } from './SecurityBar';
 import { BenefitsPanel } from './BenefitsPanel';
 
 // Force auth redirects to production root (avoid preview hosts and nonexistent routes)
-const APP_ORIGIN = 'https://quaeeqgobujsukemkrze.supabase.co/auth/v1/callback';
+const APP_ORIGIN = 'https://ironbooks.netlify.app';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -122,7 +122,7 @@ export const Login: React.FC = () => {
         provider: 'google',
         options: {
           // Redirect to root so it never 404s
-          redirectTo: `${APP_ORIGIN}/`,
+          redirectTo: `${APP_ORIGIN}/login?cb=1`,
            //redirectTo: 'https://ironbooks.netlify.app'
         },
       });
