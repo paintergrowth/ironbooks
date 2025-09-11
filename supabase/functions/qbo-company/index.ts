@@ -35,6 +35,8 @@ serve(async (req) => {
 
   try {
     console.log("qbo-company: Starting request");
+    console.log("qbo-company: Headers:", Object.fromEntries(req.headers.entries()));
+    console.log("qbo-company: Method:", req.method);
     
     // Parse optional body
     let body: any = {};
