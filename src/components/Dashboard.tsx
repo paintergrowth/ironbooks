@@ -108,14 +108,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
  // Complete the connection if we stashed realmId before user.id was ready
 useEffect(() => {
   if (!user?.id) return;
-  const pending = sessionStorage.getItem('pending_qbo_realm');
-  if (!pending) return;
+
+  const pendingRealm = sessionStorage.getItem('pending_qbo_realm');
+  const pendingCode = sessionStorage.getItem('pending_qbo_code');
+  const pendingRedirect = sessionStorage.getItem('pending_qbo_redirect') || QBO_REDIRECT_URI;
+  if (!pendingRealm || !pendingCode) return;
 
   (async () => {
+    // 1) Do the deferred exchange now that userId is available
+    const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
+      body: { code: pendingCode, realmId: pendingRealm, redirectUri: pendingRedirect, userId: user.id },
+    });
+    if (fnErr) {
+      console.warn('[QBO] deferred exchange failed:', fnErr.message);
+      try {
+        sessionStorage.removeItem('pending_qbo_realm');
+        sessionStorage.removeItem('pending_qbo_code');
+        sessionStorage.removeItem('pending_qbo_redirect');
+      } catch {}
+      return;
+    }
+
+    // 2) Persist profile flags
     const { error } = await supabase
       .from('profiles')
       .update({
-        qbo_realm_id: pending,
+        qbo_realm_id: pendingRealm,
         qbo_connected: true,
         qbo_connected_at: new Date().toISOString(),
       })
@@ -124,14 +142,20 @@ useEffect(() => {
     if (error) {
       console.warn('[QBO] deferred profiles update failed:', error.message);
     } else {
-      setRealmId(pending);
-      try { sessionStorage.removeItem('pending_qbo_realm'); } catch {}
+      setRealmId(pendingRealm);
       await supabase.functions.invoke('qbo-sync-transactions', {
-        body: { realmId: pending, userId: user.id, mode: 'full' }
+        body: { realmId: pendingRealm, userId: user.id, mode: 'full' }
       });
     }
+
+    try {
+      sessionStorage.removeItem('pending_qbo_realm');
+      sessionStorage.removeItem('pending_qbo_code');
+      sessionStorage.removeItem('pending_qbo_redirect');
+    } catch {}
   })();
 }, [user?.id]);
+
 
 
 
@@ -163,13 +187,29 @@ useEffect(() => {
   (async () => {
     try {
       // 1) Exchange the auth code for tokens (server-side Edge Function)
-        if (code && incomingRealm) {
-          const { data: s } = await supabase.auth.getSession();
-          const accessToken = s?.session?.access_token;
-          const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
-          body: { code, realmId: incomingRealm, redirectUri: QBO_REDIRECT_URI },
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-        });
+if (code && incomingRealm) {
+  // Ensure the Supabase user is hydrated
+  const { data: { user: authedUser } } = await supabase.auth.getUser();
+  if (!authedUser) {
+    // Stash and finish later when user is ready
+    try { sessionStorage.setItem('pending_qbo_code', code); } catch {}
+    try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {}
+    try { sessionStorage.setItem('pending_qbo_redirect', QBO_REDIRECT_URI); } catch {}
+    clean();
+    return;
+  }
+
+  const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
+    body: { code, realmId: incomingRealm, redirectUri: QBO_REDIRECT_URI, userId: authedUser.id },
+  });
+  if (fnErr) {
+    console.warn('[QBO] exchange failed:', fnErr.message);
+    toast({ title: 'QuickBooks', description: 'Failed to complete connection (token exchange).', variant: 'destructive' });
+    clean();
+    return;
+  }
+}
+
         if (fnErr) {
           console.warn('[QBO] exchange failed:', fnErr.message);
           toast({ title: 'QuickBooks', description: 'Failed to complete connection (token exchange).', variant: 'destructive' });
