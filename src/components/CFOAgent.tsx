@@ -146,10 +146,22 @@ const CFOAgent = () => {
     }
 
     (async () => {
-      try {
+try {
+        // Ensure we have an authenticated user before calling the exchange
+        const { data: { user: authedUser } } = await supabase.auth.getUser();
+
+        if (!authedUser) {
+          // Stash and defer until user hydrates
+          if (code)       { try { sessionStorage.setItem('pending_qbo_code', code); } catch {} }
+          if (incomingRealm) { try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {} }
+          try { sessionStorage.setItem('pending_qbo_redirect', QBO_REDIRECT_URI); } catch {}
+          finishAndClean();
+          return;
+        }
+
         if (code && incomingRealm) {
           const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
-            body: { code, realmId: incomingRealm, redirectUri: QBO_REDIRECT_URI },
+            body: { code, realmId: incomingRealm, redirectUri: QBO_REDIRECT_URI, userId: authedUser.id },
           });
           if (fnErr) {
             console.warn('[QBO] exchange failed:', fnErr.message);
@@ -159,7 +171,7 @@ const CFOAgent = () => {
           }
         }
 
-        if (incomingRealm && user?.id) {
+        if (incomingRealm && authedUser?.id) {
           const { error } = await supabase
             .from('profiles')
             .update({
@@ -167,7 +179,7 @@ const CFOAgent = () => {
               qbo_connected: true,
               qbo_connected_at: new Date().toISOString(),
             })
-            .eq('id', user.id);
+            .eq('id', authedUser.id);
 
           if (error) {
             console.warn('[QBO] profiles update failed:', error.message);
@@ -179,42 +191,65 @@ const CFOAgent = () => {
 
             // Trigger full sync
             await supabase.functions.invoke('qbo-sync-transactions', {
-              body: { realmId: incomingRealm, userId: user.id, mode: 'full' }
+              body: { realmId: incomingRealm, userId: authedUser.id, mode: 'full' }
             });
-          }
+         }
         }
       } finally {
         finishAndClean();
-      }
+     }
     })();
-  }, [user?.id, toast]);
+  }, [toast]);
 
-  // If we stashed realmId before user.id was ready, apply it now
+  // If we stashed code/realm before user.id was ready, run the exchange now
   useEffect(() => {
     if (!user?.id) return;
-    const pending = sessionStorage.getItem('pending_qbo_realm');
-    if (!pending) return;
+
+
+
+    const pendingRealm = sessionStorage.getItem('pending_qbo_realm');
+    const pendingCode = sessionStorage.getItem('pending_qbo_code');
+    const pendingRedirect = sessionStorage.getItem('pending_qbo_redirect') || QBO_REDIRECT_URI;
+    if (!pendingRealm || !pendingCode) return;
+
     (async () => {
+      // 1) Run the exchange now that we have a userId
+      const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
+        body: { code: pendingCode, realmId: pendingRealm, redirectUri: pendingRedirect, userId: user.id },
+      });
+      if (fnErr) {
+        console.warn('[QBO] deferred exchange failed:', fnErr.message);
+        try {
+          sessionStorage.removeItem('pending_qbo_realm');
+          sessionStorage.removeItem('pending_qbo_code');
+          sessionStorage.removeItem('pending_qbo_redirect');
+        } catch {}
+        return;
+      }
+
+      // 2) Save profile flags now
       const { error } = await supabase
         .from('profiles')
         .update({
-          qbo_realm_id: pending,
+          qbo_realm_id: pendingRealm,
           qbo_connected: true,
           qbo_connected_at: new Date().toISOString(),
         })
         .eq('id', user.id);
       if (!error) {
         setQboConnected(true);
-        setQboRealmId(pending);
-
-        // Trigger full sync for stashed case (if needed)
+        setQboRealmId(pendingRealm);
         await supabase.functions.invoke('qbo-sync-transactions', {
-          body: { realmId: pending, userId: user.id, mode: 'full' }
+          body: { realmId: pendingRealm, userId: user.id, mode: 'full' }
         });
       } else {
         console.warn('[QBO] deferred profiles update failed:', error.message);
       }
-      try { sessionStorage.removeItem('pending_qbo_realm'); } catch {}
+      try {
+        sessionStorage.removeItem('pending_qbo_realm');
+        sessionStorage.removeItem('pending_qbo_code');
+        sessionStorage.removeItem('pending_qbo_redirect');
+      } catch {}
     })();
   }, [user?.id]);
 
