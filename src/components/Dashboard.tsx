@@ -187,29 +187,21 @@ useEffect(() => {
   (async () => {
     try {
       // 1) Exchange the auth code for tokens (server-side Edge Function)
-if (code && incomingRealm) {
-  // Ensure the Supabase user is hydrated
-  const { data: { user: authedUser } } = await supabase.auth.getUser();
-  if (!authedUser) {
-    // Stash and finish later when user is ready
-    try { sessionStorage.setItem('pending_qbo_code', code); } catch {}
-    try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {}
-    try { sessionStorage.setItem('pending_qbo_redirect', QBO_REDIRECT_URI); } catch {}
-    clean();
-    return;
-  }
+      if (code && incomingRealm) {
+        // Ensure the Supabase user is hydrated
+        const { data: { user: authedUser } } = await supabase.auth.getUser();
+        if (!authedUser) {
+          // Stash and finish later when user is ready
+          try { sessionStorage.setItem('pending_qbo_code', code); } catch {}
+          try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {}
+          try { sessionStorage.setItem('pending_qbo_redirect', QBO_REDIRECT_URI); } catch {}
+          clean();
+          return;
+        }
 
-  const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
-    body: { code, realmId: incomingRealm, redirectUri: QBO_REDIRECT_URI, userId: authedUser.id },
-  });
-  if (fnErr) {
-    console.warn('[QBO] exchange failed:', fnErr.message);
-    toast({ title: 'QuickBooks', description: 'Failed to complete connection (token exchange).', variant: 'destructive' });
-    clean();
-    return;
-  }
-}
-
+        const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
+          body: { code, realmId: incomingRealm, redirectUri: QBO_REDIRECT_URI, userId: authedUser.id },
+        });
         if (fnErr) {
           console.warn('[QBO] exchange failed:', fnErr.message);
           toast({ title: 'QuickBooks', description: 'Failed to complete connection (token exchange).', variant: 'destructive' });
@@ -218,14 +210,7 @@ if (code && incomingRealm) {
         }
       }
 
-      // 2) If the user session isn’t ready yet, stash and finish later
-      if (!user?.id && incomingRealm) {
-        try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {}
-        clean();
-        return;
-      }
-
-      // 3) Persist the connection and kick off the first sync
+      // 2) Persist the connection and kick off the first sync (if user is ready)
       if (incomingRealm && user?.id) {
         const { error } = await supabase
           .from('profiles')
@@ -246,6 +231,11 @@ if (code && incomingRealm) {
             body: { realmId: incomingRealm, userId: user.id, mode: 'full' }
           });
         }
+      } else if (incomingRealm && !user?.id) {
+        // 3) If the user session isn’t ready yet, stash and finish later
+        try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {}
+        clean();
+        return;
       }
     } finally {
       clean();
