@@ -299,13 +299,9 @@ try {
       if (!qboRealmId || companyName) return;
 
       try {
-        const { data: s } = await supabase.auth.getSession();
-        const accessToken = s?.session?.access_token;
-
-        const { data, error } = await supabase.functions.invoke('qbo-company', {
-          body: { realmId: qboRealmId, nonce: Date.now() },
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-        });
+        const { data, error } = await invokeWithAuth('qbo-company', {
+  body: { realmId: qboRealmId, nonce: Date.now() },
+ });
 
         if (error) {
           // If tokens don’t exist for this realm, nothing else to do here.
