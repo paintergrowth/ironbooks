@@ -292,39 +292,27 @@ useEffect(() => {
     return () => { isCancelled = true; };
   }, [timeframe, userLoading]);
 
-  // Fetch YTD series for the chart ALWAYS (unchanged)
-// Fetch series for the selected timeframe (chart follows dropdown)
+  
+// Always fetch YTD monthly series for the chart (ignore dropdown)
 useEffect(() => {
   let isCancelled = false;
 
-  const loadSeries = async () => {
+  const loadYtd = async () => {
     if (userLoading) return;
     setYtdLoading(true);
     try {
-      const period = toApiPeriod(timeframe);
-
       const { data, error } = await supabase.functions.invoke('qbo-dashboard', {
-        body: { period, nonce: Date.now() },
+        body: { period: 'ytd', nonce: Date.now() },
       });
-      if (error) console.error('qbo-dashboard (series) error:', error);
+      if (error) console.error('qbo-dashboard (ytd series) error:', error);
 
       const payload: QboDashboardPayload = (data as any) ?? {};
       if (!isCancelled) {
-        let series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
+        const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
 
-        // If backend only returns ytdSeries for YTD, synthesize a small series for month views
-        if ((!series || series.length === 0) && payload?.revenue && payload?.expenses) {
-          const currentLabel =
-            period === 'this_month' ? 'This Month' :
-            period === 'last_month' ? 'Last Month' : 'YTD';
-          series = [
-            { name: currentLabel, revenue: toNumber(payload.revenue.current, 0), expenses: toNumber(payload.expenses.current, 0) },
-            { name: 'Previous',    revenue: toNumber(payload.revenue.previous, 0), expenses: toNumber(payload.expenses.previous, 0) },
-          ];
-        }
-
+        // Expect month-wise YTD; if missing, just fall back to a 7-month blank series
         setYtdChartData(
-          (series && series.length ? series : fallbackChartData).map((row) => ({
+          (series.length ? series : fallbackChartData).map((row) => ({
             name: String(row.name),
             revenue: toNumber((row as any).revenue, 0),
             expenses: toNumber((row as any).expenses, 0),
@@ -335,16 +323,17 @@ useEffect(() => {
         if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
       }
     } catch (e) {
-      console.error('qbo-dashboard (series) fetch failed:', e);
+      console.error('qbo-dashboard (ytd) fetch failed:', e);
       if (!isCancelled) setYtdChartData(fallbackChartData);
     } finally {
       if (!isCancelled) setYtdLoading(false);
     }
   };
 
-  loadSeries();
+  loadYtd();
   return () => { isCancelled = true; };
-}, [userLoading, timeframe]);
+}, [userLoading]); // NOTE: not dependent on timeframe
+
 
 
 // 1) Load realmId from profiles (once auth is ready)
@@ -564,10 +553,8 @@ return (
             </p>
           </div>
           <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
-  Revenue vs Expenses (
-  {timeframe === 'ytd' ? 'YTD' : timeframe === 'lastMonth' ? 'Last Month' : 'This Month'}
-  )
-</CardTitle>
+            Revenue vs Expenses (YTD)
+          </CardTitle>
 
         </CardHeader>
         <CardContent>
