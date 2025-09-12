@@ -22,4 +22,4 @@
 - **Styling**: Tailwind classes, shadcn/ui component patterns with `cn()` utility
 - **Forms**: React Hook Form + Zod validation
 - **Error handling**: Use React Query error boundaries and toast notifications (Sonner)
-- **ESLint**: Standard React/TS rules, unused vars warnings disabled
+- **ESLint**: Standard React/TS rules, unused vars warnings disabled 
