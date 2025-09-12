@@ -439,140 +439,167 @@ useEffect(() => {
   const expChangeStr =
     expPct === null ? `— ${changeLabel(timeframe)}` : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}% ${changeLabel(timeframe)}`;
   const netChangeStr = `${netUp ? '+' : '-'}${formatCurrency0(netDiff)} vs ${timeframe === 'ytd' ? 'last year' : 'last month'}`;
+return (
+  // Hard cap the dashboard to the viewport and make THIS node the scroll container
+  <div
+    className="w-full"
+    style={{
+      height: '100dvh',          // modern mobile-safe viewport height
+      minHeight: '100vh',        // fallback
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+    }}
+  >
+    <div className="space-y-8 p-6 pb-28">
+      {/* Company name centered above the header */}
+      <div className="flex justify-center">
+        <h2 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white truncate max-w-[90%] text-center">
+          {companyName || '—'}
+        </h2>
+      </div>
 
-  return (
-    <div className="flex-1 min-h-0">
-      <div className="h-full overflow-y-auto space-y-8 p-6 pb-24">
-        {/* Company name centered above the header */}
-        <div className="flex justify-center">
-          <h2 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white truncate max-w-[90%] text-center">
-            {companyName || '—'}
-          </h2>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Quick Pulse</h1>
+          <p className="text-gray-600 dark:text-gray-400">Your business health at a glance</p>
         </div>
-  
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Quick Pulse</h1>
-            <p className="text-gray-600 dark:text-gray-400">Your business health at a glance</p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Select value={timeframe} onValueChange={(v: UiTimeframe) => setTimeframe(v)}>
-              <SelectTrigger className="w-40" disabled={loading}>
-                <Calendar className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="thisMonth">This Month</SelectItem>
-                <SelectItem value="lastMonth">Last Month</SelectItem>
-                <SelectItem value="ytd">YTD</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={handleExportSnapshot} variant="outline" size="sm" disabled={loading || ytdLoading}>
-              <Download className="w-4 h-4 mr-2" />
-              Export Snapshot
-            </Button>
-            <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-lg border-2 shadow-sm">
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Last QBO Sync:{' '}
-                <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                  {lastSync ? new Date(lastSync).toLocaleDateString() + ' at ' + new Date(lastSync).toLocaleTimeString() : '—'}
-                </span>
-              </div>
+        <div className="flex items-center space-x-4">
+          <Select value={timeframe} onValueChange={(v: UiTimeframe) => setTimeframe(v)}>
+            <SelectTrigger className="w-40" disabled={loading}>
+              <Calendar className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="Select period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+              <SelectItem value="lastMonth">Last Month</SelectItem>
+              <SelectItem value="ytd">YTD</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={handleExportSnapshot} variant="outline" size="sm" disabled={loading || ytdLoading}>
+            <Download className="w-4 h-4 mr-2" />
+            Export Snapshot
+          </Button>
+          <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-lg border-2 shadow-sm">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Last QBO Sync:{' '}
+              <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                {lastSync
+                  ? new Date(lastSync).toLocaleDateString() + ' at ' + new Date(lastSync).toLocaleTimeString()
+                  : '—'}
+              </span>
             </div>
           </div>
         </div>
-  
-        {/* Insight Banner */}
-        <div className="bg-gradient-to-r from-primary/10 to-primary/5 dark:from-primary/20 dark:to-primary/10 p-4 rounded-lg border border-primary/20">
-          <p className="text-primary font-medium">💡 {insightText}</p>
-        </div>
-        
-        <div className="grid gap-6 md:grid-cols-3">
-          <MetricCard
-            title="Revenue"
-            value={revenueValueStr}
-            change={revChangeStr}
-            icon={DollarSign}
-            trend={revPct !== null && revPct < 0 ? 'down' : 'up'}
-            onClick={() => handleCardClick('revenue')}
-          />
-          <MetricCard
-            title="Expenses"
-            value={expensesValueStr}
-            change={expChangeStr}
-            icon={CreditCard}
-            trend={expPct !== null && expPct > 0 ? 'up' : 'down'}
-            onClick={() => handleCardClick('expenses')}
-          />
-          <MetricCard
-            title="Net Profit"
-            value={netValueStr}
-            change={netChangeStr}
-            icon={TrendingUp}
-            trend={netUp ? 'up' : 'down'}
-            margin={revCurr > 0 ? `${((netCurr / revCurr) * 100).toFixed(1)}%` : undefined}
-            onClick={() => handleCardClick('profit-loss')}
-          />
-        </div>
-  
-        <QuickPulse
-          period={timeframe === 'thisMonth' ? 'this_month' : timeframe === 'lastMonth' ? 'last_month' : 'ytd'}
-          metrics={{
-            revenue_mtd: revCurr,
-            expenses_mtd: expCurr,
-            net_margin_pct: revCurr > 0 ? (netCurr / revCurr) * 100 : 0,
-            revenue_change: revPct ?? 0,
-            expense_change: expPct ?? 0,
-            margin_change: 0,
-          }}
+      </div>
+
+      {/* Insight Banner */}
+      <div className="bg-gradient-to-r from-primary/10 to-primary/5 dark:from-primary/20 dark:to-primary/10 p-4 rounded-lg border border-primary/20">
+        <p className="text-primary font-medium">💡 {insightText}</p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-3">
+        <MetricCard
+          title="Revenue"
+          value={revenueValueStr}
+          change={revChangeStr}
+          icon={DollarSign}
+          trend={revPct !== null && revPct < 0 ? 'down' : 'up'}
+          onClick={() => handleCardClick('revenue')}
         />
-  
-        <Card className="border-2 shadow-lg dark:border-gray-700">
-          <CardHeader>
-            <div className="bg-success/10 dark:bg-success/20 p-3 rounded-lg mb-4 border border-success/20">
-              <p className="text-sm text-success font-medium">
-                Revenue trend {timeframe === 'ytd' ? 'YTD' : 'recent'}: {revPct === null ? '—' : `${(revPct > 0 ? '+' : '')}${Math.abs(revPct).toFixed(1)}%`} {changeLabel(timeframe)}
-              </p>
-            </div>
-            <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
-              Revenue vs Expenses (YTD)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
-              <LineChart data={ytdChartData && ytdChartData.length ? ytdChartData : fallbackChartData}>
-                <XAxis dataKey="name" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis
-                  stroke="#6b7280"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => `$${(value as number) / 1000}k`}
-                />
-                <Tooltip
-                  formatter={(value: number) => [`$${(value ?? 0).toLocaleString()}`, '']}
-                  labelStyle={{ color: '#374151' }}
-                  contentStyle={{
-                    backgroundColor: 'white',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-                  }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }} name="Revenue" />
-                <Line type="monotone" dataKey="expenses" stroke="#ef4444" strokeWidth={3} dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }} name="Expenses" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-  
-        <ExpenseCategories
-          timeframe={timeframe === 'thisMonth' ? 'This Month' : timeframe === 'lastMonth' ? 'Last Month' : 'YTD'}
+        <MetricCard
+          title="Expenses"
+          value={expensesValueStr}
+          change={expChangeStr}
+          icon={CreditCard}
+          trend={expPct !== null && expPct > 0 ? 'up' : 'down'}
+          onClick={() => handleCardClick('expenses')}
+        />
+        <MetricCard
+          title="Net Profit"
+          value={netValueStr}
+          change={netChangeStr}
+          icon={TrendingUp}
+          trend={netUp ? 'up' : 'down'}
+          margin={revCurr > 0 ? `${((netCurr / revCurr) * 100).toFixed(1)}%` : undefined}
+          onClick={() => handleCardClick('profit-loss')}
         />
       </div>
+
+      <QuickPulse
+        period={timeframe === 'thisMonth' ? 'this_month' : timeframe === 'lastMonth' ? 'last_month' : 'ytd'}
+        metrics={{
+          revenue_mtd: revCurr,
+          expenses_mtd: expCurr,
+          net_margin_pct: revCurr > 0 ? (netCurr / revCurr) * 100 : 0,
+          revenue_change: revPct ?? 0,
+          expense_change: expPct ?? 0,
+          margin_change: 0,
+        }}
+      />
+
+      <Card className="border-2 shadow-lg dark:border-gray-700">
+        <CardHeader>
+          <div className="bg-success/10 dark:bg-success/20 p-3 rounded-lg mb-4 border border-success/20">
+            <p className="text-sm text-success font-medium">
+              Revenue trend {timeframe === 'ytd' ? 'YTD' : 'recent'}:{' '}
+              {revPct === null ? '—' : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}%`} {changeLabel(timeframe)}
+            </p>
+          </div>
+          <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">Revenue vs Expenses (YTD)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart data={ytdChartData && ytdChartData.length ? ytdChartData : fallbackChartData}>
+              <XAxis dataKey="name" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis
+                stroke="#6b7280"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `$${(value as number) / 1000}k`}
+              />
+              <Tooltip
+                formatter={(value: number) => [`$${(value ?? 0).toLocaleString()}`, '']}
+                labelStyle={{ color: '#374151' }}
+                contentStyle={{
+                  backgroundColor: 'white',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                }}
+              />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="revenue"
+                stroke="#3b82f6"
+                strokeWidth={3}
+                dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                name="Revenue"
+              />
+              <Line
+                type="monotone"
+                dataKey="expenses"
+                stroke="#ef4444"
+                strokeWidth={3}
+                dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                name="Expenses"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <ExpenseCategories
+        timeframe={timeframe === 'thisMonth' ? 'This Month' : timeframe === 'lastMonth' ? 'Last Month' : 'YTD'}
+      />
+
+      {/* Bottom spacer so last card isn't flush with the edge */}
+      <div className="h-6" />
     </div>
-  );
+  </div>
+);
+
   
 };
 
