@@ -258,7 +258,9 @@ try {
     const fetchMetrics = async () => {
       try {
         setLoadingMetrics(true);
-        const { data, error } = await invokeWithAuth('qbo-dashboard', { body: { period } });
+        const { data, error } = await invokeWithAuth('qbo-dashboard', {
+  body: { period, realmId: qboRealmId, userId: user.id },
+});
         if (error) throw error;
 
         setRevenue(data?.revenue ?? { current: null, previous: null });
@@ -299,9 +301,9 @@ try {
       if (!qboRealmId || companyName) return;
 
       try {
-        const { data, error } = await invokeWithAuth('qbo-company', {
-  body: { realmId: qboRealmId, nonce: Date.now() },
- });
+  const { data, error } = await invokeWithAuth('qbo-company', {
+  body: { realmId: qboRealmId, userId: user.id, nonce: Date.now() },
+});
 
         if (error) {
           // If tokens don’t exist for this realm, nothing else to do here.
