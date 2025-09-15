@@ -600,9 +600,10 @@ return (
         </CardContent>
       </Card>
 
-      <ExpenseCategories
-        timeframe={timeframe === 'thisMonth' ? 'This Month' : timeframe === 'lastMonth' ? 'Last Month' : 'YTD'}
-      />
+    <ExpenseCategories
+      timeframe={timeframe === 'thisMonth' ? 'this_month' : timeframe === 'lastMonth' ? 'last_month' : 'ytd'}
+    />
+
 
       {/* Bottom spacer so last card isn't flush with the edge */}
       <div className="h-6" />
