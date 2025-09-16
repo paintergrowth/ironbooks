@@ -1,7 +1,9 @@
 // src/pages/Settings.tsx
 // update settings.
 import React, { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+// ✅ add this import (top of file with the others)
+import { supabase } from '@/lib/supabase';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,11 +27,7 @@ import {
   Save
 } from 'lucide-react';
 
-// --- Supabase client (browser) ---
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-);
+
 
 const Settings: React.FC = () => {
   // Keep initial visuals the same; state will be hydrated from DB on mount.
