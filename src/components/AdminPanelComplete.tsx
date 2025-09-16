@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,32 +27,8 @@ const AdminPanelComplete: React.FC = () => {
   const [timeframe, setTimeframe] = useState('This Month');
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
   
-  const [users, setUsers] = useState([
-    {
-      id: '1', email: 'john@example.com', fullName: 'John Doe', isActive: true,
-      lastLogin: '2024-01-15T10:30:00Z', qboConnected: true, cfoAgentUses: 45,
-      createdAt: '2024-01-01T00:00:00Z', role: 'Owner', organization: 'Acme Corp',
-      plan: 'Professional', billingStatus: 'active', mrr: 99, suspended: false,
-      neverLoggedIn: false, trial: false, pastDue: false,
-      revenueMTD: 125000, netProfitMTD: 25000, netMargin: 20.0
-    },
-    {
-      id: '2', email: 'jane@example.com', fullName: 'Jane Smith', isActive: true,
-      lastLogin: '2024-01-14T15:45:00Z', qboConnected: false, cfoAgentUses: 12,
-      createdAt: '2024-01-02T00:00:00Z', role: 'User', organization: 'Tech Inc',
-      plan: 'Starter', billingStatus: 'trial', mrr: 49, suspended: false,
-      neverLoggedIn: false, trial: true, pastDue: false,
-      revenueMTD: 85000, netProfitMTD: 4250, netMargin: 5.0
-    },
-    {
-      id: '3', email: 'bob@example.com', fullName: 'Bob Johnson', isActive: false,
-      lastLogin: '2024-01-10T09:15:00Z', qboConnected: true, cfoAgentUses: 78,
-      createdAt: '2023-12-15T00:00:00Z', role: 'User', organization: 'Small Biz',
-      plan: 'Basic', billingStatus: 'active', mrr: 29, suspended: false,
-      neverLoggedIn: false, trial: false, pastDue: false,
-      revenueMTD: 45000, netProfitMTD: -2250, netMargin: -5.0
-    }
-  ]);
+  const [users, setUsers] = useState<any[]>([]);
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -158,6 +136,59 @@ const AdminPanelComplete: React.FC = () => {
     trial: users.filter(u => u.trial).length,
     pastDue: users.filter(u => u.pastDue).length
   };
+  useEffect(() => {
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const { data, error } = await supabase.rpc('admin_list');
+      if (error) throw error;
+
+      const mapped = (data ?? []).map((r: any) => {
+        const isActive = !!r.is_active;
+        const lastLogin = r.last_login; // timestamptz or null
+
+        return {
+          id: r.id,
+          email: r.email,
+          fullName: r.full_name || '—',
+          // UI expects title-cased role badge
+          role: r.role === 'admin' ? 'Admin' : 'User',
+          plan: r.plan || 'Starter',
+
+          // status fields used by filters/tiles:
+          isActive,
+          suspended: !isActive,                  // no separate column; treat inactive as suspended
+          neverLoggedIn: !lastLogin,             // drives the “neverLoggedIn” filter
+          trial: false,                          // billing not wired yet
+          pastDue: false,                        // billing not wired yet
+
+          // QBO + usage
+          qboConnected: !!r.qbo_connected,
+          cfoAgentUses: Number(r.cfo_uses) || 0,
+          // optional extras used by cards/filters (defaults keep UI stable)
+          organization: '—',
+          billingStatus: 'active',
+          mrr: 0,
+
+          // dates and metrics
+          createdAt: r.created_at,
+          lastLogin,
+          revenueMTD: Number(r.revenue_mtd) || 0,
+          netProfitMTD: Number(r.net_profit_mtd) || 0,
+          netMargin: Number(r.net_margin_pct) || 0,
+        };
+      });
+
+      if (!cancelled) setUsers(mapped);
+    } catch (e) {
+      console.error('[AdminPanelComplete] admin_list fetch failed:', e);
+      if (!cancelled) setUsers([]); // empty fallback
+    }
+  })();
+
+  return () => { cancelled = true; };
+}, []);
 
   return (
     <div className="space-y-6">
