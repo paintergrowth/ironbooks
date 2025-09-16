@@ -16,6 +16,7 @@ import AdminKPICards from './AdminKPICards';
 import { 
   Users, Plus, Search, Eye, Key, CheckCircle, XCircle, Activity, ArrowUpDown
 } from 'lucide-react';
+
 const AdminPanelComplete: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -26,8 +27,10 @@ const AdminPanelComplete: React.FC = () => {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState('This Month');
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
-  
   const [users, setUsers] = useState<any[]>([]);
+
+  // NEW: track my user id so we can refresh after save
+  const [myUid, setMyUid] = useState<string | null>(null);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -117,6 +120,7 @@ const AdminPanelComplete: React.FC = () => {
       if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
+
   const stats = {
     totalUsers: users.length,
     activeUsers: users.filter(u => u.isActive && !u.suspended).length,
@@ -138,87 +142,86 @@ const AdminPanelComplete: React.FC = () => {
   };
 
   const fetchAdmin = async (uid: string) => {
-  try {
-    const { data, error } = await supabase.rpc('admin_list', { p_caller: uid });
-    if (error) {
-      console.error('[admin_list error]', error.message, error.details, error.hint, error.code);
-      setUsers([]);
-      return;
-    }
-
-    const mapped = (data ?? []).map((r: any) => {
-      const lastLogin = r.last_login;
-      const isActive = !!r.is_active;
-      return {
-        id: r.id,
-        email: r.email,
-        fullName: r.full_name || '—',
-        role: r.role === 'admin' ? 'Admin' : 'User',
-        plan: r.plan || 'Starter',
-        isActive,
-        suspended: !isActive,
-        neverLoggedIn: !lastLogin,
-        trial: false,
-        pastDue: false,
-        qboConnected: !!r.qbo_connected,
-        cfoAgentUses: Number(r.cfo_uses) || 0,
-        aiTokens: Number(r.ai_tokens) || 0,
-        organization: '—',
-        billingStatus: 'active',
-        mrr: 0,
-        createdAt: r.created_at,
-        lastLogin,
-        revenueMTD: Number(r.revenue_mtd) || 0,
-        netProfitMTD: Number(r.net_profit_mtd) || 0,
-        netMargin: Number(r.net_margin_pct) || 0,
-      };
-    });
-
-    setUsers(mapped);
-  } catch (e) {
-    console.error('[AdminPanelComplete] admin_list fetch failed:', e);
-    setUsers([]);
-  }
-};
-
-useEffect(() => {
-  let cancelled = false;
-
-  const run = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (user && !cancelled) {
-      await fetchAdmin(user.id);
-      return;
-    }
-
-    // If user not ready yet, wait for auth
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!cancelled && session?.user) {
-        fetchAdmin(session.user.id);
+    try {
+      const { data, error } = await supabase.rpc('admin_list', { p_caller: uid });
+      if (error) {
+        console.error('[admin_list error]', error.message, error.details, error.hint, error.code);
+        setUsers([]);
+        return;
       }
-    });
 
-    // cleanup
-    return () => subscription.unsubscribe();
+      const mapped = (data ?? []).map((r: any) => {
+        const lastLogin = r.last_login;
+        const isActive = !!r.is_active;
+        return {
+          id: r.id,
+          email: r.email,
+          fullName: r.full_name || '—',
+          role: r.role === 'admin' ? 'Admin' : 'User',
+          plan: r.plan || 'Starter',
+          isActive,
+          suspended: !isActive,
+          neverLoggedIn: !lastLogin,
+          trial: false,
+          pastDue: false,
+          qboConnected: !!r.qbo_connected,
+          cfoAgentUses: Number(r.cfo_uses) || 0,
+          aiTokens: Number(r.ai_tokens) || 0,
+          organization: '—',
+          billingStatus: 'active',
+          mrr: 0,
+          createdAt: r.created_at,
+          lastLogin,
+          revenueMTD: Number(r.revenue_mtd) || 0,
+          netProfitMTD: Number(r.net_profit_mtd) || 0,
+          netMargin: Number(r.net_margin_pct) || 0,
+        };
+      });
+
+      setUsers(mapped);
+    } catch (e) {
+      console.error('[AdminPanelComplete] admin_list fetch failed:', e);
+      setUsers([]);
+    }
   };
 
-  const cleanupPromise = run();
+  useEffect(() => {
+    let cancelled = false;
 
-  return () => {
-    cancelled = true;
-    // if run returned a cleanup function promise, resolve it
-    Promise.resolve(cleanupPromise).then((fn: any) => typeof fn === 'function' && fn());
-  };
-}, []);
+    const run = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
 
+      if (user && !cancelled) {
+        setMyUid(user.id);           // ← NEW: remember my uid
+        await fetchAdmin(user.id);
+        return;
+      }
 
+      // If user not ready yet, wait for auth
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!cancelled && session?.user) {
+          setMyUid(session.user.id); // ← NEW: remember my uid
+          fetchAdmin(session.user.id);
+        }
+      });
+
+      // cleanup
+      return () => subscription.unsubscribe();
+    };
+
+    const cleanupPromise = run();
+
+    return () => {
+      cancelled = true;
+      Promise.resolve(cleanupPromise).then((fn: any) => typeof fn === 'function' && fn());
+    };
+  }, []);
 
   return (
     <div
       className="space-y-6 p-6 pb-28 h-[100dvh] overflow-y-auto"
       style={{ WebkitOverflowScrolling: 'touch' }}
-      >
+    >
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Admin Panel</h1>
@@ -357,7 +360,7 @@ useEffect(() => {
                       </Badge>
                     </td>
                     <td className="p-2 font-medium">{user.cfoAgentUses}</td>
-                   <td className="p-2 font-medium">{(user.aiTokens ?? 0).toLocaleString()}</td>                                                     
+                    <td className="p-2 font-medium">{(user.aiTokens ?? 0).toLocaleString()}</td>
                     <td className="p-2">
                       <Badge>{user.plan}</Badge>
                     </td>
@@ -400,11 +403,17 @@ useEffect(() => {
         }}
       />
 
+      {/* Drawer: now with onSaved to refresh + close */}
       <UserDetailDrawer
         user={selectedUser}
         isOpen={showUserDrawer}
         onClose={() => {
           setShowUserDrawer(false);
+          setSelectedUser(null);
+        }}
+        onSaved={async () => {
+          if (myUid) await fetchAdmin(myUid); // refresh grid
+          setShowUserDrawer(false);           // close
           setSelectedUser(null);
         }}
       />
