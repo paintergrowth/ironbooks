@@ -1,5 +1,6 @@
 // src/pages/Settings.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,24 +24,113 @@ import {
   Save
 } from 'lucide-react';
 
+// --- Supabase client (browser) ---
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+);
+
 const Settings: React.FC = () => {
+  // Keep initial visuals the same; state will be hydrated from DB on mount.
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
     reports: true,
-    security: true
+    security: true, // UI-only; not persisted
   });
   const [profile, setProfile] = useState({
     name: 'John Smith',
     email: 'john.smith@company.com',
     phone: '+1 (555) 123-4567',
     company: 'Demo Company Inc.',
-    role: 'CFO'
+    designation: 'CFO', // renamed from "role" → "designation"
   });
   const { theme, setTheme } = useTheme();
-  
-  const handleSave = () => {
-    alert('Settings saved successfully!');
+  const [saving, setSaving] = useState(false);
+
+  // -------- Load current user's profile on mount --------
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user }, error: userErr } = await supabase.auth.getUser();
+        if (userErr) throw userErr;
+        if (!user) return;
+
+        // Always reflect auth email in the field (readable; not persisted here)
+        setProfile((p) => ({ ...p, email: user.email ?? p.email }));
+
+        // Fetch profiles row (nullable fields OK)
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name, phone, company, designation, settings')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data) {
+          setProfile((p) => ({
+            ...p,
+            name: data.full_name ?? '',
+            phone: data.phone ?? '',
+            company: data.company ?? '',
+            designation: data.designation ?? '',
+          }));
+
+          const defaults = { email: true, push: false, reports: true };
+          const saved = (data.settings as any)?.notifications ?? {};
+          setNotifications((n) => ({
+            ...n,
+            email: saved.email ?? defaults.email,
+            push: saved.push ?? defaults.push,
+            reports: saved.reports ?? defaults.reports,
+          }));
+        }
+        // If no row exists yet, keep defaults; first save will create it.
+      } catch (e) {
+        console.error('[Settings] load failed:', e);
+      }
+    })();
+  }, []);
+
+  // -------- Save handler: upsert into public.profiles --------
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+      if (!user) {
+        alert('Please sign in first.');
+        return;
+      }
+
+      const payload = {
+        id: user.id,
+        full_name: profile.name?.trim() ? profile.name.trim() : null,
+        phone: profile.phone?.trim() ? profile.phone.trim() : null,
+        company: profile.company?.trim() ? profile.company.trim() : null,
+        designation: profile.designation?.trim() ? profile.designation.trim() : null,
+        settings: {
+          notifications: {
+            email: !!notifications.email,
+            push: !!notifications.push,
+            reports: !!notifications.reports,
+          },
+        },
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) throw error;
+      alert('Settings saved successfully!');
+    } catch (e) {
+      console.error('[Settings] save failed:', e);
+      alert('Failed to save settings.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -54,9 +144,9 @@ const Settings: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
           <p className="text-gray-600 dark:text-gray-300 mt-1">Manage your account and preferences</p>
         </div>
-        <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
+        <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700" disabled={saving}>
           <Save className="mr-2 h-4 w-4" />
-          Save Changes
+          {saving ? 'Saving…' : 'Save Changes'}
         </Button>
       </div>
 
@@ -96,11 +186,11 @@ const Settings: React.FC = () => {
               />
             </div>
             <div>
-              <Label htmlFor="role">Role</Label>
+              <Label htmlFor="designation">Designation</Label>
               <Input 
-                id="role" 
-                value={profile.role}
-                onChange={(e) => setProfile({...profile, role: e.target.value})}
+                id="designation" 
+                value={profile.designation}
+                onChange={(e) => setProfile({...profile, designation: e.target.value})}
               />
             </div>
           </div>
