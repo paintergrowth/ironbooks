@@ -1,3 +1,4 @@
+import { supabase } from '@/lib/supabase';
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,53 +30,7 @@ const AdminPanel: React.FC = () => {
   const [timeframe, setTimeframe] = useState('This Month');
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
   
-  const [users, setUsers] = useState([
-    {
-      id: '1',
-      email: 'john@example.com',
-      fullName: 'John Doe',
-      role: 'Owner',
-      plan: 'Pro',
-      isActive: true,
-      lastLogin: '2024-01-15T10:30:00Z',
-      qboConnected: true,
-      cfoAgentUses: 45,
-      createdAt: '2024-01-01T00:00:00Z',
-      revenueMTD: 125000,
-      netProfitMTD: 25000,
-      netMargin: 20.0
-    },
-    {
-      id: '2', 
-      email: 'jane@example.com',
-      fullName: 'Jane Smith',
-      role: 'Manager',
-      plan: 'Standard',
-      isActive: true,
-      lastLogin: '2024-01-14T15:45:00Z',
-      qboConnected: false,
-      cfoAgentUses: 12,
-      createdAt: '2024-01-02T00:00:00Z',
-      revenueMTD: 85000,
-      netProfitMTD: 4250,
-      netMargin: 5.0
-    },
-    {
-      id: '3',
-      email: 'bob@example.com', 
-      fullName: 'Bob Johnson',
-      role: 'User',
-      plan: 'Basic',
-      isActive: false,
-      lastLogin: '2024-01-10T09:15:00Z',
-      qboConnected: true,
-      cfoAgentUses: 78,
-      createdAt: '2023-12-15T00:00:00Z',
-      revenueMTD: 45000,
-      netProfitMTD: -2250,
-      netMargin: -5.0
-    }
-  ]);
+  const [users, setUsers] = useState<any[]>([]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -129,6 +84,41 @@ const AdminPanel: React.FC = () => {
       minute: '2-digit'
     });
   };
+  import { useEffect } from 'react';
+
+useEffect(() => {
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const { data, error } = await supabase.rpc('admin_list');
+      if (error) throw error;
+
+      const mapped = (data ?? []).map((r: any) => ({
+        id: r.id,
+        email: r.email,
+        fullName: r.full_name || '—',
+        role: r.role === 'admin' ? 'Admin' : 'User',       // keep badge text clean
+        plan: r.plan || 'Starter',
+        isActive: !!r.is_active,
+        lastLogin: r.last_login,                           // your formatDate() will render it
+        qboConnected: !!r.qbo_connected,
+        cfoAgentUses: Number(r.cfo_uses) || 0,
+        createdAt: r.created_at,
+        revenueMTD: Number(r.revenue_mtd) || 0,            // $0.0 as requested
+        netProfitMTD: Number(r.net_profit_mtd) || 0,       // $0.0 as requested
+        netMargin: Number(r.net_margin_pct) || 0,          // 0.0% as requested
+      }));
+
+      if (!cancelled) setUsers(mapped);
+    } catch (e) {
+      console.error('[AdminPanel] admin_list fetch failed:', e);
+      if (!cancelled) setUsers([]); // empty fallback
+    }
+  })();
+
+  return () => { cancelled = true; };
+}, []);
 
   return (
     <div className="space-y-6">
