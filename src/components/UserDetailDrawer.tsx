@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   User, Shield, Building, Calendar, Activity, 
   Link, Key, Mail, UserX, CreditCard
@@ -13,14 +15,54 @@ interface UserDetailDrawerProps {
   user: any;
   isOpen: boolean;
   onClose: () => void;
+  /** optional: parent can refresh grid after save */
+  onSaved?: () => void;
 }
 
 const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
   user,
   isOpen,
-  onClose
+  onClose,
+  onSaved
 }) => {
   if (!user) return null;
+
+  // ----- role editing state -----
+  const initialTitleCase = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
+  const [roleDraft, setRoleDraft] = useState<'Admin' | 'User'>(initialTitleCase);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const titleCase = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
+    setRoleDraft(titleCase);
+  }, [user?.id]); // re-init when a different user is opened
+
+  const isDirty = roleDraft.toLowerCase() !== (user.role || 'User').toLowerCase();
+
+  const handleCancel = () => onClose();
+
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      const dbRole = roleDraft.toLowerCase(); // 'admin' | 'user'
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: dbRole })
+        .eq('id', user.id);
+
+      if (error) {
+        console.error('[UserDetailDrawer] save role failed:', error);
+        alert('Failed to save changes.');
+        return;
+      }
+
+      // notify parent to refresh grid, then close
+      onSaved?.();
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -33,10 +75,23 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-[600px] sm:max-w-[600px] overflow-y-auto">
         <SheetHeader>
-          <SheetTitle className="flex items-center space-x-2">
-            <User className="w-5 h-5" />
-            <span>{user.fullName}</span>
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center space-x-2">
+              <User className="w-5 h-5" />
+              <span>{user.fullName}</span>
+            </SheetTitle>
+
+            {isDirty && (
+              <div className="space-x-2">
+                <Button variant="outline" size="sm" onClick={handleCancel} disabled={isSaving}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleSave} disabled={isSaving}>
+                  {isSaving ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+            )}
+          </div>
         </SheetHeader>
 
         <div className="mt-6">
@@ -58,16 +113,30 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
                     <span className="text-sm text-gray-600">Email:</span>
                     <span className="text-sm font-medium">{user.email}</span>
                   </div>
+
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-600">Status:</span>
                     <Badge variant={user.isActive ? "default" : "secondary"}>
                       {user.isActive ? 'Active' : 'Inactive'}
                     </Badge>
                   </div>
-                  <div className="flex justify-between">
+
+                  {/* Role editor (dropdown) */}
+                  <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Role:</span>
-                    <Badge variant="outline">{user.role || 'User'}</Badge>
+                    <div className="min-w-[8rem]">
+                      <Select value={roleDraft} onValueChange={(v) => setRoleDraft(v as 'Admin' | 'User')}>
+                        <SelectTrigger className="h-8">
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="User">User</SelectItem>
+                          <SelectItem value="Admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-600">Organization:</span>
                     <span className="text-sm">{user.organization || 'N/A'}</span>
