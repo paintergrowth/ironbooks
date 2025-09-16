@@ -173,7 +173,7 @@ const Settings: React.FC = () => {
                 id="email" 
                 type="email" 
                 value={profile.email}
-                onChange={(e) => setProfile({...profile, email: e.target.value})}
+                disabled
               />
             </div>
             <div>
