@@ -1,4 +1,5 @@
 // src/pages/Settings.tsx
+// update settings.
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
