@@ -136,42 +136,42 @@ const AdminPanelComplete: React.FC = () => {
     trial: users.filter(u => u.trial).length,
     pastDue: users.filter(u => u.pastDue).length
   };
-  useEffect(() => {
+useEffect(() => {
   let cancelled = false;
 
   (async () => {
     try {
-      const { data, error } = await supabase.rpc('admin_list');
+      const { data, error } = await supabase.rpc('admin_list'); // uses auth.uid() under the hood
       if (error) throw error;
 
       const mapped = (data ?? []).map((r: any) => {
-        const isActive = !!r.is_active;
         const lastLogin = r.last_login; // timestamptz or null
+        const isActive = !!r.is_active;
 
         return {
           id: r.id,
           email: r.email,
           fullName: r.full_name || '—',
-          // UI expects title-cased role badge
-          role: r.role === 'admin' ? 'Admin' : 'User',
+          role: r.role === 'admin' ? 'Admin' : 'User', // UI badge expects title-case
           plan: r.plan || 'Starter',
 
-          // status fields used by filters/tiles:
+          // status + filters used by KPI cards / chips
           isActive,
-          suspended: !isActive,                  // no separate column; treat inactive as suspended
-          neverLoggedIn: !lastLogin,             // drives the “neverLoggedIn” filter
-          trial: false,                          // billing not wired yet
-          pastDue: false,                        // billing not wired yet
+          suspended: !isActive,
+          neverLoggedIn: !lastLogin,
+          trial: false,
+          pastDue: false,
 
           // QBO + usage
           qboConnected: !!r.qbo_connected,
           cfoAgentUses: Number(r.cfo_uses) || 0,
-          // optional extras used by cards/filters (defaults keep UI stable)
+
+          // optional fields your UI references
           organization: '—',
           billingStatus: 'active',
           mrr: 0,
 
-          // dates and metrics
+          // dates & metrics
           createdAt: r.created_at,
           lastLogin,
           revenueMTD: Number(r.revenue_mtd) || 0,
@@ -183,12 +183,13 @@ const AdminPanelComplete: React.FC = () => {
       if (!cancelled) setUsers(mapped);
     } catch (e) {
       console.error('[AdminPanelComplete] admin_list fetch failed:', e);
-      if (!cancelled) setUsers([]); // empty fallback
+      if (!cancelled) setUsers([]);
     }
   })();
 
   return () => { cancelled = true; };
 }, []);
+
 
   return (
     <div className="space-y-6">
