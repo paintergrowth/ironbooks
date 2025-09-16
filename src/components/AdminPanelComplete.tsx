@@ -136,59 +136,81 @@ const AdminPanelComplete: React.FC = () => {
     trial: users.filter(u => u.trial).length,
     pastDue: users.filter(u => u.pastDue).length
   };
+
+  const fetchAdmin = async (uid: string) => {
+  try {
+    const { data, error } = await supabase.rpc('admin_list', { p_caller: uid });
+    if (error) {
+      console.error('[admin_list error]', error.message, error.details, error.hint, error.code);
+      setUsers([]);
+      return;
+    }
+
+    const mapped = (data ?? []).map((r: any) => {
+      const lastLogin = r.last_login;
+      const isActive = !!r.is_active;
+      return {
+        id: r.id,
+        email: r.email,
+        fullName: r.full_name || '—',
+        role: r.role === 'admin' ? 'Admin' : 'User',
+        plan: r.plan || 'Starter',
+        isActive,
+        suspended: !isActive,
+        neverLoggedIn: !lastLogin,
+        trial: false,
+        pastDue: false,
+        qboConnected: !!r.qbo_connected,
+        cfoAgentUses: Number(r.cfo_uses) || 0,
+        organization: '—',
+        billingStatus: 'active',
+        mrr: 0,
+        createdAt: r.created_at,
+        lastLogin,
+        revenueMTD: Number(r.revenue_mtd) || 0,
+        netProfitMTD: Number(r.net_profit_mtd) || 0,
+        netMargin: Number(r.net_margin_pct) || 0,
+      };
+    });
+
+    setUsers(mapped);
+  } catch (e) {
+    console.error('[AdminPanelComplete] admin_list fetch failed:', e);
+    setUsers([]);
+  }
+};
+
 useEffect(() => {
   let cancelled = false;
 
-  (async () => {
-    try {
-      const { data, error } = await supabase.rpc('admin_list'); // uses auth.uid() under the hood
-      if (error) throw error;
+  const run = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
 
-      const mapped = (data ?? []).map((r: any) => {
-        const lastLogin = r.last_login; // timestamptz or null
-        const isActive = !!r.is_active;
-
-        return {
-          id: r.id,
-          email: r.email,
-          fullName: r.full_name || '—',
-          role: r.role === 'admin' ? 'Admin' : 'User', // UI badge expects title-case
-          plan: r.plan || 'Starter',
-
-          // status + filters used by KPI cards / chips
-          isActive,
-          suspended: !isActive,
-          neverLoggedIn: !lastLogin,
-          trial: false,
-          pastDue: false,
-
-          // QBO + usage
-          qboConnected: !!r.qbo_connected,
-          cfoAgentUses: Number(r.cfo_uses) || 0,
-
-          // optional fields your UI references
-          organization: '—',
-          billingStatus: 'active',
-          mrr: 0,
-
-          // dates & metrics
-          createdAt: r.created_at,
-          lastLogin,
-          revenueMTD: Number(r.revenue_mtd) || 0,
-          netProfitMTD: Number(r.net_profit_mtd) || 0,
-          netMargin: Number(r.net_margin_pct) || 0,
-        };
-      });
-
-      if (!cancelled) setUsers(mapped);
-    } catch (e) {
-      console.error('[AdminPanelComplete] admin_list fetch failed:', e);
-      if (!cancelled) setUsers([]);
+    if (user && !cancelled) {
+      await fetchAdmin(user.id);
+      return;
     }
-  })();
 
-  return () => { cancelled = true; };
+    // If user not ready yet, wait for auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled && session?.user) {
+        fetchAdmin(session.user.id);
+      }
+    });
+
+    // cleanup
+    return () => subscription.unsubscribe();
+  };
+
+  const cleanupPromise = run();
+
+  return () => {
+    cancelled = true;
+    // if run returned a cleanup function promise, resolve it
+    Promise.resolve(cleanupPromise).then((fn: any) => typeof fn === 'function' && fn());
+  };
 }, []);
+
 
 
   return (
