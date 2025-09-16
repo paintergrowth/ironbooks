@@ -353,7 +353,7 @@ useEffect(() => {
                         {user.qboConnected ? 'Connected' : 'Not Connected'}
                       </Badge>
                     </td>
-                    <td className="p-2 font-medium">{user.cfoAgentUses}</td
+                    <td className="p-2 font-medium">{user.cfoAgentUses}</td>
                    <td className="p-2 font-medium">{(user.aiTokens ?? 0).toLocaleString()}</td>                                                     
                     <td className="p-2">
                       <Badge>{user.plan}</Badge>
