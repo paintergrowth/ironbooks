@@ -404,19 +404,22 @@ const AdminPanelComplete: React.FC = () => {
       />
 
       {/* Drawer: now with onSaved to refresh + close */}
-      <UserDetailDrawer
-        user={selectedUser}
-        isOpen={showUserDrawer}
-        onClose={() => {
-          setShowUserDrawer(false);
-          setSelectedUser(null);
-        }}
-        onSaved={async () => {
-          if (myUid) await fetchAdmin(myUid); // refresh grid
-          setShowUserDrawer(false);           // close
-          setSelectedUser(null);
-        }}
-      />
+<UserDetailDrawer
+  user={selectedUser}
+  isOpen={showUserDrawer}
+  onClose={() => {
+    setShowUserDrawer(false);
+    setSelectedUser(null);
+  }}
+  onSaved={() => {
+    // re-fetch with the current admin's id
+    supabase.auth.getUser().then(({ data }) => {
+      const uid = data?.user?.id;
+      if (uid) fetchAdmin(uid);
+    });
+  }}
+/>
+
 
       <AddUserModal
         isOpen={showAddUser}
