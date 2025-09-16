@@ -5,6 +5,10 @@ import { createClient } from '@supabase/supabase-js';
 // Using direct values from project configuration
 const supabaseUrl = 'https://quaeeqgobujsukemkrze.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1YWVlcWdvYnVqc3VrZW1rcnplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAzNjY1NDMsImV4cCI6MjA2NTk0MjU0M30.XIrLwtESbBwqXy-jlvflHY2-LN0Dun-Auo6EUshEc0g';
+
+console.log('[lib/supabase] url present?', typeof supabaseUrl, !!supabaseUrl);
+console.log('[lib/supabase] key length:', (supabaseKey || '').length);
+
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function invokeWithAuth<T>(
