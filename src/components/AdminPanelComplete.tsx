@@ -162,6 +162,7 @@ const AdminPanelComplete: React.FC = () => {
         pastDue: false,
         qboConnected: !!r.qbo_connected,
         cfoAgentUses: Number(r.cfo_uses) || 0,
+        aiTokens: Number(r.ai_tokens) || 0,
         organization: '—',
         billingStatus: 'active',
         mrr: 0,
@@ -299,6 +300,7 @@ useEffect(() => {
                   <th className="text-left p-2">Last Login</th>
                   <th className="text-left p-2">QBO</th>
                   <th className="text-left p-2">CFO Uses</th>
+                  <th className="text-left p-2">AI Tokens</th>  
                   <th className="text-left p-2">Plan</th>
                   <th className="text-right p-2 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('revenueMTD')}>
                     <div className="flex items-center justify-end">
@@ -351,7 +353,8 @@ useEffect(() => {
                         {user.qboConnected ? 'Connected' : 'Not Connected'}
                       </Badge>
                     </td>
-                    <td className="p-2 font-medium">{user.cfoAgentUses}</td>
+                    <td className="p-2 font-medium">{user.cfoAgentUses}</td
+                   <td className="p-2 font-medium">{(user.aiTokens ?? 0).toLocaleString()}</td>                                                     
                     <td className="p-2">
                       <Badge>{user.plan}</Badge>
                     </td>
