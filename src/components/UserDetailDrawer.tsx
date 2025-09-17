@@ -49,7 +49,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
         .from('profiles')
         .update({ role: dbRole })
         .eq('id', user.id);
-
+        .select('id'); 
       if (error) {
         console.error('[UserDetailDrawer] save role failed:', error);
         alert('Failed to save changes.');
