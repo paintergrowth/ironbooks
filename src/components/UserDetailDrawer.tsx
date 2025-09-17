@@ -42,19 +42,16 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
   const handleCancel = () => onClose();
 
 const handleSave = async () => {
-  // define first, then log
-  const dbRole = (roleDraft || 'User').toLowerCase() as 'admin' | 'user';
-
+  setIsSaving(true);
   try {
-    setIsSaving(true);
+    const dbRole = roleDraft.toLowerCase(); // 'admin' | 'user'
     console.debug('[UserDetailDrawer] saving role', { userId: user.id, dbRole });
 
-    const { data, error } = await supabase
+    // IMPORTANT: do NOT call .single() or .select() here to avoid 406s under RLS
+    const { error } = await supabase
       .from('profiles')
       .update({ role: dbRole })
-      .eq('id', user.id)
-      .select('id')
-      .single(); // error if 0 rows (e.g., RLS)
+      .eq('id', user.id);
 
     if (error) {
       console.error('[UserDetailDrawer] save role failed:', error);
@@ -62,15 +59,14 @@ const handleSave = async () => {
       return;
     }
 
-    onSaved?.(); // refresh grid in parent
-    onClose();   // close drawer
-  } catch (err: any) {
-    console.error('[UserDetailDrawer] save role exception:', err);
-    alert(err?.message || 'Failed to save changes.');
+    // tell parent to refetch via admin_list(), then close the drawer
+    onSaved?.();
+    onClose();
   } finally {
     setIsSaving(false);
   }
 };
+
 
 
   const formatDate = (dateString: string) => {
