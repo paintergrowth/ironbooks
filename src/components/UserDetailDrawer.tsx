@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -7,9 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import {
-  User, Shield, Link, Key, Mail, UserX, CreditCard
-} from 'lucide-react';
+import { User, Shield, Link, Key, Mail, UserX, CreditCard } from 'lucide-react';
 
 interface UserDetailDrawerProps {
   user: any;
@@ -23,42 +21,105 @@ type RoleDraft = 'Admin' | 'User';
 type StatusDraft = 'Active' | 'Suspended';
 type PlanDraft = 'Starter' | 'Professional' | 'Basic';
 
-const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
-  user,
-  isOpen,
-  onClose,
-  onSaved
-}) => {
+type Baseline = {
+  name: string;
+  role: RoleDraft;
+  status: StatusDraft;
+  plan: PlanDraft;
+  company: string;
+};
+
+const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClose, onSaved }) => {
   if (!user) return null;
 
-  // ----- initial values (normalize display-only placeholders) -----
+  // ----- initial values from props (safe fallbacks) -----
   const initialName = useMemo(() => (user.fullName === '—' ? '' : (user.fullName ?? '')), [user?.id]);
   const initialRoleTitle: RoleDraft = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
   const initialStatus: StatusDraft = user.isActive ? 'Active' : 'Suspended';
   const initialPlan: PlanDraft = (['Starter', 'Professional', 'Basic'].includes(user.plan) ? user.plan : 'Starter') as PlanDraft;
+  // Try to use any company-ish prop if present; otherwise empty string
+  const initialCompany = useMemo(
+    () => (user.company ?? user.organization ?? '') as string,
+    [user?.id]
+  );
 
-  // ----- local drafts -----
+  // ----- baseline (for dirty detection) & drafts -----
+  const [baseline, setBaseline] = useState<Baseline>({
+    name: initialName,
+    role: initialRoleTitle,
+    status: initialStatus,
+    plan: initialPlan,
+    company: initialCompany,
+  });
+
   const [nameDraft, setNameDraft] = useState<string>(initialName);
   const [roleDraft, setRoleDraft] = useState<RoleDraft>(initialRoleTitle);
   const [statusDraft, setStatusDraft] = useState<StatusDraft>(initialStatus);
   const [planDraft, setPlanDraft] = useState<PlanDraft>(initialPlan);
+  const [companyDraft, setCompanyDraft] = useState<string>(initialCompany);
   const [isSaving, setIsSaving] = useState(false);
 
-  // re-init when a different user opens
+  // Re-init from incoming user on open / user change
   useEffect(() => {
-    setNameDraft(initialName);
-    setRoleDraft(initialRoleTitle);
-    setStatusDraft(initialStatus);
-    setPlanDraft(initialPlan);
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const nextBaseline: Baseline = {
+      name: initialName,
+      role: initialRoleTitle,
+      status: initialStatus,
+      plan: initialPlan,
+      company: initialCompany,
+    };
+    setBaseline(nextBaseline);
+    setNameDraft(nextBaseline.name);
+    setRoleDraft(nextBaseline.role);
+    setStatusDraft(nextBaseline.status);
+    setPlanDraft(nextBaseline.plan);
+    setCompanyDraft(nextBaseline.company);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Best-effort fresh read from DB (will succeed if RLS allows; otherwise silently no-op)
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('full_name,is_active,role,plan,company')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!cancelled && data) {
+          const freshBaseline: Baseline = {
+            name: data.full_name ?? '',
+            role: (data.role === 'admin' ? 'Admin' : 'User') as RoleDraft,
+            status: (data.is_active ? 'Active' : 'Suspended') as StatusDraft,
+            plan: (['Starter', 'Professional', 'Basic'].includes(data.plan) ? data.plan : 'Starter') as PlanDraft,
+            company: data.company ?? '',
+          };
+          setBaseline(freshBaseline);
+          setNameDraft(freshBaseline.name);
+          setRoleDraft(freshBaseline.role);
+          setStatusDraft(freshBaseline.status);
+          setPlanDraft(freshBaseline.plan);
+          setCompanyDraft(freshBaseline.company);
+        }
+      } catch {
+        // ignore (likely RLS), fall back to props
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   // ----- dirty detection -----
-  const dirtyName = (nameDraft ?? '').trim() !== (initialName ?? '').trim();
-  const dirtyRole = roleDraft.toLowerCase() !== (user.role || 'User').toLowerCase();
-  const dirtyStatus = (statusDraft === 'Active') !== !!user.isActive;
-  const dirtyPlan = planDraft !== initialPlan;
-
-  const isDirty = dirtyName || dirtyRole || dirtyStatus || dirtyPlan;
+  const isDirty =
+    (nameDraft ?? '').trim() !== (baseline.name ?? '').trim() ||
+    roleDraft !== baseline.role ||
+    statusDraft !== baseline.status ||
+    planDraft !== baseline.plan ||
+    (companyDraft ?? '').trim() !== (baseline.company ?? '').trim();
 
   const handleCancel = () => onClose();
 
@@ -67,10 +128,11 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
 
     // Build minimal update payload
     const updates: Record<string, any> = {};
-    if (dirtyName) updates.full_name = nameDraft.trim();
-    if (dirtyRole) updates.role = roleDraft.toLowerCase(); // 'admin' | 'user'
-    if (dirtyStatus) updates.is_active = (statusDraft === 'Active'); // boolean
-    if (dirtyPlan) updates.plan = planDraft; // 'Starter' | 'Professional' | 'Basic'
+    if ((nameDraft ?? '').trim() !== (baseline.name ?? '').trim()) updates.full_name = nameDraft.trim();
+    if (roleDraft !== baseline.role) updates.role = roleDraft.toLowerCase(); // 'admin' | 'user'
+    if (statusDraft !== baseline.status) updates.is_active = (statusDraft === 'Active'); // boolean
+    if (planDraft !== baseline.plan) updates.plan = planDraft; // 'Starter' | 'Professional' | 'Basic'
+    if ((companyDraft ?? '').trim() !== (baseline.company ?? '').trim()) updates.company = companyDraft.trim();
 
     setIsSaving(true);
     try {
@@ -78,8 +140,8 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
         .from('profiles')
         .update(updates)
         .eq('id', user.id)
-        .select('id')     // keep so we know if row returned
-        .maybeSingle();   // avoid 406 when RLS blocks
+        .select('id')
+        .maybeSingle(); // avoids 406 "JSON object requested..." edge cases
 
       if (error) {
         console.error('[UserDetailDrawer] save failed:', error);
@@ -87,20 +149,21 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
         return;
       }
 
-      // Parent re-fetch (admin_list), then close
-      onSaved?.();
+      onSaved?.(); // let parent refresh grid
       onClose();
     } finally {
       setIsSaving(false);
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit'
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
-  };
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -109,7 +172,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
           <div className="flex items-center justify-between">
             <SheetTitle className="flex items-center space-x-2">
               <User className="w-5 h-5" />
-              <span>{user.fullName}</span>
+              <span>{baseline.name || user.fullName}</span>
             </SheetTitle>
 
             {isDirty && (
@@ -191,9 +254,17 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex justify-between">
+                  {/* Organization (editable -> profiles.company) */}
+                  <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Organization:</span>
-                    <span className="text-sm">{user.organization || 'N/A'}</span>
+                    <div className="min-w-[14rem]">
+                      <Input
+                        value={companyDraft}
+                        onChange={(e) => setCompanyDraft(e.target.value)}
+                        className="h-8"
+                        placeholder="Enter organization"
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
