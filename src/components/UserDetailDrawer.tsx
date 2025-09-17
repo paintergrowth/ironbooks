@@ -51,7 +51,9 @@ const handleSave = async () => {
     const { error } = await supabase
       .from('profiles')
       .update({ role: dbRole })
-      .eq('id', user.id);
+      .eq('id', user.id)
+      .select('id')
+      .maybeSingle(); 
 
     if (error) {
       console.error('[UserDetailDrawer] save role failed:', error);
