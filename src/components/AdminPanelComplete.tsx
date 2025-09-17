@@ -411,14 +411,14 @@ const AdminPanelComplete: React.FC = () => {
     setShowUserDrawer(false);
     setSelectedUser(null);
   }}
-  onSaved={() => {
-    // re-fetch with the current admin's id
-    supabase.auth.getUser().then(({ data }) => {
-      const uid = data?.user?.id;
-      if (uid) fetchAdmin(uid);
-    });
+  onSaved={async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.id) {
+      await fetchAdmin(user.id); // re-fetch the admin list to reflect the new role
+    }
   }}
 />
+
 
 
       <AddUserModal
