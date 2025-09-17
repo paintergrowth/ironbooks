@@ -422,10 +422,13 @@ const AdminPanelComplete: React.FC = () => {
                       <Badge>{user.plan}</Badge>
                     </td>
                     <td className="p-2 text-right font-bold">
-                      {user.revenueMTD ? formatCurrency(user.revenueMTD) : <span className="text-muted-foreground">—</span>}
+                      {user.revenueMTD !== null && user.revenueMTD !== undefined
+                        ? formatCurrency(user.revenueMTD)
+                        : <span className="text-muted-foreground">—</span>}
                     </td>
+                    
                     <td className="p-2 text-right font-bold">
-                      {user.netProfitMTD !== undefined ? (
+                      {user.netProfitMTD !== null && user.netProfitMTD !== undefined ? (
                         <span className={user.netProfitMTD < 0 ? 'text-red-500' : ''}>
                           {formatCurrency(user.netProfitMTD)}
                         </span>
@@ -433,6 +436,7 @@ const AdminPanelComplete: React.FC = () => {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
+
                     <td className="p-2 text-center">
                       {user.netMargin !== undefined ? getMarginBadge(user.netMargin) : <span className="text-muted-foreground">—</span>}
                     </td>
