@@ -41,35 +41,37 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
 
   const handleCancel = () => onClose();
 
-  const handleSave = async () => {
-    try {
-      console.debug('[UserDetailDrawer] saving role', { userId: user.id, dbRole });
+const handleSave = async () => {
+  // define first, then log
+  const dbRole = (roleDraft || 'User').toLowerCase() as 'admin' | 'user';
 
-      setIsSaving(true);
-      
-      const dbRole = roleDraft.toLowerCase(); // 'admin' | 'user'
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({ role: dbRole })        // 'admin' | 'user'
-        .eq('id', user.id)
-        .select('id')
-        .single();                       // ← forces an error if 0 rows (e.g., RLS)
-      
-      if (error) {
-        console.error('[UserDetailDrawer] save role failed:', error);
-        // Most common cause is RLS (policy not allowing you to update).
-        alert(error.message || 'Failed to save changes.');
-        return;
-      }
+  try {
+    setIsSaving(true);
+    console.debug('[UserDetailDrawer] saving role', { userId: user.id, dbRole });
 
-      // notify parent to refresh grid, then close
-      onSaved?.();
-      onClose();
-    } finally {
-      setIsSaving(false);
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ role: dbRole })
+      .eq('id', user.id)
+      .select('id')
+      .single(); // error if 0 rows (e.g., RLS)
+
+    if (error) {
+      console.error('[UserDetailDrawer] save role failed:', error);
+      alert(error.message || 'Failed to save changes.');
+      return;
     }
-  };
+
+    onSaved?.(); // refresh grid in parent
+    onClose();   // close drawer
+  } catch (err: any) {
+    console.error('[UserDetailDrawer] save role exception:', err);
+    alert(err?.message || 'Failed to save changes.');
+  } finally {
+    setIsSaving(false);
+  }
+};
+
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -79,7 +81,8 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
   };
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
+    <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+
       <SheetContent className="w-[600px] sm:max-w-[600px] overflow-y-auto">
         <SheetHeader>
           <div className="flex items-center justify-between">
