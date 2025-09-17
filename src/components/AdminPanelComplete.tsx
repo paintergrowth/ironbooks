@@ -140,6 +140,7 @@ const AdminPanelComplete: React.FC = () => {
   };
 
   const fetchAdmin = async (uid: string) => {
+    console.log('[AdminPanelComplete] fetchAdmin START', { uid });
     try {
       const { data, error } = await supabase.rpc('admin_list', { p_caller: uid });
       if (error) {
@@ -147,16 +148,17 @@ const AdminPanelComplete: React.FC = () => {
         setUsers([]);
         return;
       }
+      console.log('[admin_list OK] rows:', (data ?? []).length, 'sample:', (data && data[0]) || null);
 
-      // Base mapping from RPC (unchanged) — we’ll enrich with P&L from the view below.
-      const baseUsers = (data ?? []).map((r: any) => {
+      // Base mapping from RPC — only adding fields used by the three columns and realm tracking.
+      const baseUsers = (data ?? []).map((r: any, idx: number) => {
         const lastLogin = r.last_login;
         const isActive = !!r.is_active;
 
-        // IMPORTANT: adjust these two lines if your RPC uses a different field for realm id.
-        const realmId: string | null = r.qbo_realm_id || r.realm_id || null;
+        // IMPORTANT: if your RPC uses a different key for realm id, add it to this OR-chain.
+        const realmId: string | null = r.qbo_realm_id || r.realm_id || r.qboRealmId || null;
 
-        return {
+        const mappedRow = {
           id: r.id,
           email: r.email,
           fullName: r.full_name || '—',
@@ -175,19 +177,31 @@ const AdminPanelComplete: React.FC = () => {
           mrr: 0,
           createdAt: r.created_at,
           lastLogin,
-          // keep whatever RPC might already return, will be overwritten by view values if available
+
+          // These will be overridden by the view if available:
           revenueMTD: Number(r.revenue_mtd) || 0,
           netProfitMTD: Number(r.net_profit_mtd) || 0,
           netMargin: Number(r.net_margin_pct) || 0,
-          // keep realm for enrichment
+
+          // Keep realm for enrichment:
           realmId,
         };
+
+        console.log('[admin_list -> baseUser]', idx, {
+          id: mappedRow.id,
+          email: mappedRow.email,
+          realmId: mappedRow.realmId,
+          qboConnected: mappedRow.qboConnected,
+        });
+
+        return mappedRow;
       });
 
       // Enrich with this month's P&L from qbo_pnl_monthly_from_postings
       const today = new Date();
       const currentYear = today.getFullYear();
       const currentMonth = today.getMonth() + 1; // JS months are 0-based
+      console.log('[P&L params]', { currentYear, currentMonth });
 
       const realmIds = Array.from(
         new Set(
@@ -196,10 +210,15 @@ const AdminPanelComplete: React.FC = () => {
             .filter((x: string | null): x is string => !!x)
         )
       );
+      console.log('[P&L realmIds unique]', realmIds);
 
       let pnlByRealm: Record<string, { revenues: number; netIncome: number }> = {};
 
       if (realmIds.length > 0) {
+        console.log('[P&L query] selecting from view qbo_pnl_monthly_from_postings', {
+          realmIdsCount: realmIds.length, realmIdsPreview: realmIds.slice(0, 5)
+        });
+
         const { data: pnlRows, error: pnlErr } = await supabase
           .from('qbo_pnl_monthly_from_postings')
           .select('realm_id, year, month, revenues, net_income')
@@ -208,34 +227,52 @@ const AdminPanelComplete: React.FC = () => {
           .eq('month', currentMonth);
 
         if (pnlErr) {
-          console.error('[qbo_pnl_monthly_from_postings] fetch error:', pnlErr.message);
+          console.error('[P&L view fetch ERROR]', pnlErr);
         } else {
-          pnlByRealm = (pnlRows || []).reduce((acc: any, row: any) => {
-            acc[row.realm_id] = {
+          console.log('[P&L view fetch OK] rows:', (pnlRows ?? []).length, 'sample:', (pnlRows && pnlRows[0]) || null);
+          pnlByRealm = (pnlRows || []).reduce((acc: any, row: any, idx: number) => {
+            const rec = {
               revenues: Number(row.revenues) || 0,
               netIncome: Number(row.net_income) || 0,
             };
+            acc[row.realm_id] = rec;
+            console.log('[P&L row mapped]', idx, row.realm_id, rec);
             return acc;
           }, {});
         }
+      } else {
+        console.warn('[P&L] No realmIds found among users. The three columns will fall back to RPC values (if any).');
       }
 
       // Merge: override MTD fields with view data (if available), and compute margin %
-      const mapped = baseUsers.map(u => {
+      const mapped = baseUsers.map((u, idx) => {
         const pnl = u.realmId ? pnlByRealm[u.realmId] : undefined;
         const revenue = pnl ? pnl.revenues : u.revenueMTD || 0;
         const profit = pnl ? pnl.netIncome : u.netProfitMTD || 0;
         const marginPct = revenue === 0 ? 0 : (profit / revenue) * 100;
 
-        return {
+        const merged = {
           ...u,
           revenueMTD: revenue,
           netProfitMTD: profit,
           netMargin: marginPct,
         };
+
+        console.log('[User P&L merged]', idx, {
+          id: merged.id,
+          email: merged.email,
+          realmId: merged.realmId,
+          revenueMTD: merged.revenueMTD,
+          netProfitMTD: merged.netProfitMTD,
+          netMarginPct: merged.netMargin,
+          source: pnl ? 'VIEW' : 'RPC/FALLBACK'
+        });
+
+        return merged;
       });
 
       setUsers(mapped);
+      console.log('[AdminPanelComplete] fetchAdmin DONE. Users length:', mapped.length);
     } catch (e) {
       console.error('[AdminPanelComplete] admin_list fetch failed:', e);
       setUsers([]);
