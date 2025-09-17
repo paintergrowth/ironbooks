@@ -48,7 +48,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
       const { error } = await supabase
         .from('profiles')
         .update({ role: dbRole })
-        .eq('id', user.id);
+        .eq('id', user.id)
         .select('id'); 
       if (error) {
         console.error('[UserDetailDrawer] save role failed:', error);
