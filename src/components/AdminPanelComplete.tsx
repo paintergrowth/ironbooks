@@ -26,7 +26,7 @@ const AdminPanelComplete: React.FC = () => {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState('This Month');
-  const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
+  const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' as 'asc' | 'desc' });
   const [users, setUsers] = useState<any[]>([]);
 
   // NEW: track my user id so we can refresh after save
@@ -52,7 +52,7 @@ const AdminPanelComplete: React.FC = () => {
   };
 
   const handleSort = (key: string) => {
-    let direction = 'asc';
+    let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
     }
@@ -112,10 +112,8 @@ const AdminPanelComplete: React.FC = () => {
     })
     .sort((a, b) => {
       if (!sortConfig.key) return 0;
-      
       const aValue = a[sortConfig.key as keyof typeof a];
       const bValue = b[sortConfig.key as keyof typeof b];
-      
       if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
@@ -150,9 +148,14 @@ const AdminPanelComplete: React.FC = () => {
         return;
       }
 
-      const mapped = (data ?? []).map((r: any) => {
+      // Base mapping from RPC (unchanged) — we’ll enrich with P&L from the view below.
+      const baseUsers = (data ?? []).map((r: any) => {
         const lastLogin = r.last_login;
         const isActive = !!r.is_active;
+
+        // IMPORTANT: adjust these two lines if your RPC uses a different field for realm id.
+        const realmId: string | null = r.qbo_realm_id || r.realm_id || null;
+
         return {
           id: r.id,
           email: r.email,
@@ -172,9 +175,63 @@ const AdminPanelComplete: React.FC = () => {
           mrr: 0,
           createdAt: r.created_at,
           lastLogin,
+          // keep whatever RPC might already return, will be overwritten by view values if available
           revenueMTD: Number(r.revenue_mtd) || 0,
           netProfitMTD: Number(r.net_profit_mtd) || 0,
           netMargin: Number(r.net_margin_pct) || 0,
+          // keep realm for enrichment
+          realmId,
+        };
+      });
+
+      // Enrich with this month's P&L from qbo_pnl_monthly_from_postings
+      const today = new Date();
+      const currentYear = today.getFullYear();
+      const currentMonth = today.getMonth() + 1; // JS months are 0-based
+
+      const realmIds = Array.from(
+        new Set(
+          baseUsers
+            .map(u => u.realmId)
+            .filter((x: string | null): x is string => !!x)
+        )
+      );
+
+      let pnlByRealm: Record<string, { revenues: number; netIncome: number }> = {};
+
+      if (realmIds.length > 0) {
+        const { data: pnlRows, error: pnlErr } = await supabase
+          .from('qbo_pnl_monthly_from_postings')
+          .select('realm_id, year, month, revenues, net_income')
+          .in('realm_id', realmIds)
+          .eq('year', currentYear)
+          .eq('month', currentMonth);
+
+        if (pnlErr) {
+          console.error('[qbo_pnl_monthly_from_postings] fetch error:', pnlErr.message);
+        } else {
+          pnlByRealm = (pnlRows || []).reduce((acc: any, row: any) => {
+            acc[row.realm_id] = {
+              revenues: Number(row.revenues) || 0,
+              netIncome: Number(row.net_income) || 0,
+            };
+            return acc;
+          }, {});
+        }
+      }
+
+      // Merge: override MTD fields with view data (if available), and compute margin %
+      const mapped = baseUsers.map(u => {
+        const pnl = u.realmId ? pnlByRealm[u.realmId] : undefined;
+        const revenue = pnl ? pnl.revenues : u.revenueMTD || 0;
+        const profit = pnl ? pnl.netIncome : u.netProfitMTD || 0;
+        const marginPct = revenue === 0 ? 0 : (profit / revenue) * 100;
+
+        return {
+          ...u,
+          revenueMTD: revenue,
+          netProfitMTD: profit,
+          netMargin: marginPct,
         };
       });
 
@@ -404,20 +461,17 @@ const AdminPanelComplete: React.FC = () => {
       />
 
       {/* Drawer: now with onSaved to refresh + close */}
-<UserDetailDrawer
-  user={selectedUser}
-  isOpen={showUserDrawer}
-  onClose={() => {
-    setShowUserDrawer(false);
-    setSelectedUser(null);
-  }}
-  onSaved={async () => {
-    if (myUid) await fetchAdmin(myUid);
-  }}
-/>
-
-
-
+      <UserDetailDrawer
+        user={selectedUser}
+        isOpen={showUserDrawer}
+        onClose={() => {
+          setShowUserDrawer(false);
+          setSelectedUser(null);
+        }}
+        onSaved={async () => {
+          if (myUid) await fetchAdmin(myUid);
+        }}
+      />
 
       <AddUserModal
         isOpen={showAddUser}
