@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -6,9 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  User, Shield, Building, Calendar, Activity, 
-  Link, Key, Mail, UserX, CreditCard
+import { Input } from '@/components/ui/input';
+import {
+  User, Shield, Link, Key, Mail, UserX, CreditCard
 } from 'lucide-react';
 
 interface UserDetailDrawerProps {
@@ -19,6 +19,10 @@ interface UserDetailDrawerProps {
   onSaved?: () => void;
 }
 
+type RoleDraft = 'Admin' | 'User';
+type StatusDraft = 'Active' | 'Suspended';
+type PlanDraft = 'Starter' | 'Professional' | 'Basic';
+
 const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
   user,
   isOpen,
@@ -27,49 +31,69 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
 }) => {
   if (!user) return null;
 
-  // ----- role editing state -----
-  const initialTitleCase = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
-  const [roleDraft, setRoleDraft] = useState<'Admin' | 'User'>(initialTitleCase);
+  // ----- initial values (normalize display-only placeholders) -----
+  const initialName = useMemo(() => (user.fullName === '—' ? '' : (user.fullName ?? '')), [user?.id]);
+  const initialRoleTitle: RoleDraft = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
+  const initialStatus: StatusDraft = user.isActive ? 'Active' : 'Suspended';
+  const initialPlan: PlanDraft = (['Starter', 'Professional', 'Basic'].includes(user.plan) ? user.plan : 'Starter') as PlanDraft;
+
+  // ----- local drafts -----
+  const [nameDraft, setNameDraft] = useState<string>(initialName);
+  const [roleDraft, setRoleDraft] = useState<RoleDraft>(initialRoleTitle);
+  const [statusDraft, setStatusDraft] = useState<StatusDraft>(initialStatus);
+  const [planDraft, setPlanDraft] = useState<PlanDraft>(initialPlan);
   const [isSaving, setIsSaving] = useState(false);
 
+  // re-init when a different user opens
   useEffect(() => {
-    const titleCase = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
-    setRoleDraft(titleCase);
-  }, [user?.id]); // re-init when a different user is opened
+    setNameDraft(initialName);
+    setRoleDraft(initialRoleTitle);
+    setStatusDraft(initialStatus);
+    setPlanDraft(initialPlan);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isDirty = roleDraft.toLowerCase() !== (user.role || 'User').toLowerCase();
+  // ----- dirty detection -----
+  const dirtyName = (nameDraft ?? '').trim() !== (initialName ?? '').trim();
+  const dirtyRole = roleDraft.toLowerCase() !== (user.role || 'User').toLowerCase();
+  const dirtyStatus = (statusDraft === 'Active') !== !!user.isActive;
+  const dirtyPlan = planDraft !== initialPlan;
+
+  const isDirty = dirtyName || dirtyRole || dirtyStatus || dirtyPlan;
 
   const handleCancel = () => onClose();
 
-const handleSave = async () => {
-  setIsSaving(true);
-  try {
-    const dbRole = roleDraft.toLowerCase(); // 'admin' | 'user'
-    console.debug('[UserDetailDrawer] saving role', { userId: user.id, dbRole });
+  const handleSave = async () => {
+    if (!isDirty) return;
 
-    // IMPORTANT: do NOT call .single() or .select() here to avoid 406s under RLS
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: dbRole })
-      .eq('id', user.id)
-      .select('id')
-      .maybeSingle(); 
+    // Build minimal update payload
+    const updates: Record<string, any> = {};
+    if (dirtyName) updates.full_name = nameDraft.trim();
+    if (dirtyRole) updates.role = roleDraft.toLowerCase(); // 'admin' | 'user'
+    if (dirtyStatus) updates.is_active = (statusDraft === 'Active'); // boolean
+    if (dirtyPlan) updates.plan = planDraft; // 'Starter' | 'Professional' | 'Basic'
 
-    if (error) {
-      console.error('[UserDetailDrawer] save role failed:', error);
-      alert(error.message || 'Failed to save changes.');
-      return;
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id)
+        .select('id')     // keep so we know if row returned
+        .maybeSingle();   // avoid 406 when RLS blocks
+
+      if (error) {
+        console.error('[UserDetailDrawer] save failed:', error);
+        alert(error.message || 'Failed to save changes.');
+        return;
+      }
+
+      // Parent re-fetch (admin_list), then close
+      onSaved?.();
+      onClose();
+    } finally {
+      setIsSaving(false);
     }
-
-    // tell parent to refetch via admin_list(), then close the drawer
-    onSaved?.();
-    onClose();
-  } finally {
-    setIsSaving(false);
-  }
-};
-
-
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -80,7 +104,6 @@ const handleSave = async () => {
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-
       <SheetContent className="w-[600px] sm:max-w-[600px] overflow-y-auto">
         <SheetHeader>
           <div className="flex items-center justify-between">
@@ -111,29 +134,52 @@ const handleSave = async () => {
               <TabsTrigger value="actions">Actions</TabsTrigger>
             </TabsList>
 
+            {/* OVERVIEW */}
             <TabsContent value="overview" className="space-y-4">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm">Profile</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {/* Name (editable) – shown ABOVE Email */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Name:</span>
+                    <div className="min-w-[14rem]">
+                      <Input
+                        value={nameDraft}
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        className="h-8"
+                        placeholder="Enter full name"
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-600">Email:</span>
                     <span className="text-sm font-medium">{user.email}</span>
                   </div>
 
-                  <div className="flex justify-between">
+                  {/* Status (editable) */}
+                  <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Status:</span>
-                    <Badge variant={user.isActive ? "default" : "secondary"}>
-                      {user.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
+                    <div className="min-w-[10rem]">
+                      <Select value={statusDraft} onValueChange={(v) => setStatusDraft(v as StatusDraft)}>
+                        <SelectTrigger className="h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Suspended">Suspended</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
-                  {/* Role editor (dropdown) */}
+                  {/* Role (editable) */}
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Role:</span>
                     <div className="min-w-[8rem]">
-                      <Select value={roleDraft} onValueChange={(v) => setRoleDraft(v as 'Admin' | 'User')}>
+                      <Select value={roleDraft} onValueChange={(v) => setRoleDraft(v as RoleDraft)}>
                         <SelectTrigger className="h-8">
                           <SelectValue placeholder="Select role" />
                         </SelectTrigger>
@@ -179,6 +225,7 @@ const handleSave = async () => {
               </Card>
             </TabsContent>
 
+            {/* ACTIVITY */}
             <TabsContent value="activity" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -221,16 +268,30 @@ const handleSave = async () => {
               </Card>
             </TabsContent>
 
+            {/* BILLING */}
             <TabsContent value="billing" className="space-y-4">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm">Plan & Billing</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex justify-between">
+                  {/* Plan (editable) */}
+                  <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Plan:</span>
-                    <Badge>{user.plan || 'Professional'}</Badge>
+                    <div className="min-w-[12rem]">
+                      <Select value={planDraft} onValueChange={(v) => setPlanDraft(v as PlanDraft)}>
+                        <SelectTrigger className="h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Starter">Starter</SelectItem>
+                          <SelectItem value="Professional">Professional</SelectItem>
+                          <SelectItem value="Basic">Basic</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-600">Status:</span>
                     <Badge variant={user.billingStatus === 'active' ? 'default' : 'destructive'}>
@@ -245,6 +306,7 @@ const handleSave = async () => {
               </Card>
             </TabsContent>
 
+            {/* ACTIONS */}
             <TabsContent value="actions" className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <Button size="sm" variant="outline" className="justify-start">
