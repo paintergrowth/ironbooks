@@ -43,16 +43,23 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({
 
   const handleSave = async () => {
     try {
+      console.debug('[UserDetailDrawer] saving role', { userId: user.id, dbRole });
+
       setIsSaving(true);
+      
       const dbRole = roleDraft.toLowerCase(); // 'admin' | 'user'
-      const { error } = await supabase
+      
+      const { data, error } = await supabase
         .from('profiles')
-        .update({ role: dbRole })
+        .update({ role: dbRole })        // 'admin' | 'user'
         .eq('id', user.id)
-        .select('id'); 
+        .select('id')
+        .single();                       // ← forces an error if 0 rows (e.g., RLS)
+      
       if (error) {
         console.error('[UserDetailDrawer] save role failed:', error);
-        alert('Failed to save changes.');
+        // Most common cause is RLS (policy not allowing you to update).
+        alert(error.message || 'Failed to save changes.');
         return;
       }
 
