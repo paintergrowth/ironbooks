@@ -411,11 +411,11 @@ const AdminPanelComplete: React.FC = () => {
     setShowUserDrawer(false);
     setSelectedUser(null);
   }}
-onSaved={async () => {
-  if (myUid) await fetchAdmin(myUid);  // reuse the uid we already have
-}}
-
+  onSaved={async () => {
+    if (myUid) await fetchAdmin(myUid);
+  }}
 />
+
 
 
 
