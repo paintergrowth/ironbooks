@@ -46,7 +46,7 @@ const Settings: React.FC = () => {
   });
   const { theme, setTheme } = useTheme();
   const [saving, setSaving] = useState(false);
-
+  const [isAdmin, setIsAdmin] = useState(false); // NEW
   // -------- Load current user's profile on mount --------
   useEffect(() => {
     (async () => {
@@ -61,7 +61,7 @@ const Settings: React.FC = () => {
         // Fetch profiles row (nullable fields OK)
         const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, phone, company, designation, settings')
+          .select('full_name, phone, company, designation, settings, role')  // NEW: load role
           .eq('id', user.id)
           .maybeSingle();
 
@@ -76,6 +76,7 @@ const Settings: React.FC = () => {
             designation: data.designation ?? '',
           }));
 
+        setIsAdmin(data.role === 'admin');
           const defaults = { email: true, push: false, reports: true };
           const saved = (data.settings as any)?.notifications ?? {};
           setNotifications((n) => ({
@@ -321,7 +322,17 @@ const Settings: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-
+      {/* Admin Panel (visible only to admins) */}
+      {isAdmin && (
+        <div className="flex justify-end">
+         <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+           <a href="/admin">
+              <Shield className="mr-2 h-4 w-4" />
+              Open Admin Panel
+           </a>
+         </Button>
+        </div>
+      )}
       <Separator />
 
       {/* Actions */}
