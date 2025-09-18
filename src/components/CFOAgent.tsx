@@ -575,7 +575,7 @@ try {
                 <Bot className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">CFO Agent</h1>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white normal-case">CFO Agent</h1>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Your AI-powered financial advisor</p>
               </div>
             </div>
