@@ -9,7 +9,7 @@ import { LoginNew } from "@/components/LoginNew";
 import { DemoAuth } from "@/pages/DemoAuth";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
-import Settings from "@/components/Settings";
+import Settings from "@/pages/Settings";
 import AdminPanelComplete from "@/components/AdminPanelComplete";
 
 const queryClient = new QueryClient();
