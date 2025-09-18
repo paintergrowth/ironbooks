@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 // ✅ add this import (top of file with the others)
 import { supabase } from '@/lib/supabase';
-
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -327,7 +327,7 @@ const Settings: React.FC = () => {
       {isAdmin && (
         <div className="flex justify-end">
          <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
-           <a href="/admin">
+           <a href="/admin-panel">
               <Shield className="mr-2 h-4 w-4" />
               Open Admin Panel
            </a>
