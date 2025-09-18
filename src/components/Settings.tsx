@@ -327,10 +327,10 @@ const Settings: React.FC = () => {
       {isAdmin && (
         <div className="flex justify-end">
          <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
-           <a href="/admin-panel">
+           <Link to="/admin-panel">
               <Shield className="mr-2 h-4 w-4" />
               Open Admin Panel
-           </a>
+           </Link>
          </Button>
         </div>
       )}
