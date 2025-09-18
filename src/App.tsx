@@ -9,8 +9,6 @@ import { LoginNew } from "@/components/LoginNew";
 import { DemoAuth } from "@/pages/DemoAuth";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
-import Settings from "@/components/Settings";
-import AdminPanelComplete from "@/components/AdminPanelComplete";
 
 const queryClient = new QueryClient();
 
@@ -45,8 +43,8 @@ const AppContent = () => {
            <Route path="/cfo" element={<Dashboard />} />
            <Route path="/reports" element={<Dashboard />} />
            <Route path="/add-ons" element={<Dashboard />} />
-           <Route path="/settings" element={<Settings />} />
-           <Route path="/admin-panel" element={<AdminPanelComplete />} />
+           <Route path="/settings" element={<Dashboard />} />
+           <Route path="/admin-panel" element={<Dashboard />} />
            <Route path="*" element={<Dashboard />} />
           </>
         )}
