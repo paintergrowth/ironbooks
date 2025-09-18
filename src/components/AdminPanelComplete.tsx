@@ -321,10 +321,7 @@ const AdminPanelComplete: React.FC = () => {
           <h1 className="text-3xl font-bold">Admin Panel</h1>
           <p className="text-gray-600">Manage users and system settings</p>
         </div>
-        <Button onClick={() => setShowAddUser(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add User
-        </Button>
+        
       </div>
 
       <AdminKPICards stats={stats} onCardClick={handleFilterToggle} />
