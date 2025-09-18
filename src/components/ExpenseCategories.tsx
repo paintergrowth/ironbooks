@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 
-type UiTimeframe = 'This Month' | 'Last Month' | 'YTD';
+//type UiTimeframe = 'This Month' | 'Last Month' | 'YTD';
 type ApiPeriod = 'this_month' | 'last_month' | 'ytd';
 
 function toApiPeriod(tf: UiTimeframe): ApiPeriod {
@@ -50,11 +50,12 @@ interface TxnRow {
   amount: number | string; // (server may send string; we coerce)
 }
 
-export default function ExpenseCategories({ timeframe }: { timeframe: UiTimeframe }) {
+export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod }) {
+
   const [loading, setLoading] = useState(false);
   const [cats, setCats] = useState<CategoryRow[]>([]);
   const [totalCurr, setTotalCurr] = useState(0);
-  const [period, setPeriod] = useState<ApiPeriod>(toApiPeriod(timeframe));
+  const [period, setPeriod] = useState<ApiPeriod>(timeframe);
 
   // modal state
   const [open, setOpen] = useState(false);
@@ -62,9 +63,7 @@ export default function ExpenseCategories({ timeframe }: { timeframe: UiTimefram
   const [selected, setSelected] = useState<CategoryRow | null>(null);
   const [txns, setTxns] = useState<TxnRow[]>([]);
 
-  useEffect(() => {
-    setPeriod(toApiPeriod(timeframe));
-  }, [timeframe]);
+useEffect(() => { setPeriod(timeframe); }, [timeframe]);
 
   useEffect(() => {
     let cancelled = false;
