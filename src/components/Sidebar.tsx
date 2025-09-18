@@ -31,7 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onClose, isMobile }) => {
     { id: 'reports', label: 'Reports', icon: FileText, path: '/reports' },
     { id: 'add-ons', label: 'Add-Ons', icon: Plus, path: '/add-ons' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
-    { id: 'admin-panel', label: 'Admin Panel', icon: Settings, path: '/admin-panel' },
+    
   ];
 
   const handleItemClick = (path: string) => {
