@@ -19,7 +19,7 @@ interface UserDetailDrawerProps {
 
 type RoleDraft = 'Admin' | 'User';
 type StatusDraft = 'Active' | 'Suspended';
-type PlanDraft = 'Starter' | 'Professional' | 'Basic';
+type PlanDraft = 'No Subscription' | 'Iron' | 'Gold' | 'Platinum';
 
 type Baseline = {
   name: string;
@@ -36,7 +36,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const initialName = useMemo(() => (user.fullName === '—' ? '' : (user.fullName ?? '')), [user?.id]);
   const initialRoleTitle: RoleDraft = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
   const initialStatus: StatusDraft = user.isActive ? 'Active' : 'Suspended';
-  const initialPlan: PlanDraft = (['Starter', 'Professional', 'Basic'].includes(user.plan) ? user.plan : 'Starter') as PlanDraft;
+  const initialPlan: PlanDraft = (['No Subscription', 'Iron', 'Gold', 'Platinum'].includes(user.plan) ? user.plan : 'No Subscription') as PlanDraft;
   // Try to use any company-ish prop if present; otherwise empty string
   const initialCompany = useMemo(
     () => (user.company ?? user.organization ?? '') as string,
@@ -93,7 +93,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
             name: data.full_name ?? '',
             role: (data.role === 'admin' ? 'Admin' : 'User') as RoleDraft,
             status: (data.is_active ? 'Active' : 'Suspended') as StatusDraft,
-            plan: (['Starter', 'Professional', 'Basic'].includes(data.plan) ? data.plan : 'Starter') as PlanDraft,
+            plan: (['No Subscription', 'Iron', 'Gold', 'Platinum'].includes(data.plan) ? data.plan : 'No Subscription') as PlanDraft,
             company: data.company ?? '',
           };
           setBaseline(freshBaseline);
@@ -354,11 +354,12 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                         <SelectTrigger className="h-8">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Starter">Starter</SelectItem>
-                          <SelectItem value="Professional">Professional</SelectItem>
-                          <SelectItem value="Basic">Basic</SelectItem>
-                        </SelectContent>
+                       <SelectContent>
+                        <SelectItem value="No Subscription">No Subscription</SelectItem>
+                        <SelectItem value="Iron">Iron</SelectItem>
+                        <SelectItem value="Gold">Gold</SelectItem>
+                        <SelectItem value="Platinum">Platinum</SelectItem>
+                      </SelectContent>
                       </Select>
                     </div>
                   </div>
