@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Menu, X } from 'lucide-react';
-import { AppSidebar } from './app-sidebar';
+import { AppSidebar } from './sidebar-07/components/app-sidebar';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from './ui/sidebar';
-import Dashboard from './Dashboard';
+import DashboardNew from './DashboardNew';
 import CFOAgent from './CFOAgent';
 import Reports from './Reports';
 import AddOns from './AddOns';
@@ -69,7 +69,7 @@ const AppLayout: React.FC = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
-        return <Dashboard onNavigateToReports={handleNavigateToReports} />;
+        return <DashboardNew onNavigateToReports={handleNavigateToReports} />;
       case 'cfo-agent':
         return <CFOAgent />;
       case 'reports':
@@ -81,7 +81,7 @@ const AppLayout: React.FC = () => {
       case 'admin-panel':
         return <AdminPanelComplete />;
       default:
-        return <Dashboard onNavigateToReports={handleNavigateToReports} />;
+        return <DashboardNew onNavigateToReports={handleNavigateToReports} />;
     }
   };
 
