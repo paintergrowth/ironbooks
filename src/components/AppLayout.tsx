@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Menu, X } from 'lucide-react';
-import Sidebar from './Sidebar';
+import { AppSidebar } from './app-sidebar';
+import { SidebarProvider, SidebarInset, SidebarTrigger } from './ui/sidebar';
 import Dashboard from './Dashboard';
 import CFOAgent from './CFOAgent';
 import Reports from './Reports';
@@ -85,55 +86,22 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 relative">
-      {/* Mobile Overlay */}
-      {isMobile && sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <div className={`
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${isMobile ? 'fixed z-50' : 'relative'}
-        transition-transform duration-300 ease-in-out
-        h-full
-      `}>
-        <Sidebar
-          activeTab={activeSection}
-          onClose={() => setSidebarOpen(false)}
-          isMobile={isMobile}
-        />
-      </div>
-      
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header with Menu Toggle */}
-        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2"
-          >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
-            {activeSection.replace('-', ' ')}
-          </h2>
-          <div className="w-9" /> {/* Spacer for centering */}
-        </header>
-
-        {/* Content Area */}
-        <div className="flex-1 min-h-0 p-4 md:p-6">
-          <div className="h-full">
+    <SidebarProvider>
+      <div className="flex h-screen w-full">
+        <AppSidebar />
+        <SidebarInset>
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+            <SidebarTrigger className="-ml-1" />
+            <h2 className="text-lg font-semibold capitalize">
+              {activeSection.replace('-', ' ')}
+            </h2>
+          </header>
+          <div className="flex-1 overflow-auto p-4">
             {renderContent()}
           </div>
-        </div>
-      </main>
-    </div>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
   );
 };
 
