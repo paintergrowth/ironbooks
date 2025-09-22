@@ -72,9 +72,13 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const [companyDraft, setCompanyDraft] = useState<string>(initialCompany);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ====== NEW: Financials tab state (kept isolated) ======
+  // ====== Financials tab state (isolated) ======
   const [viewerIsAdmin, setViewerIsAdmin] = useState<boolean>(false);
-  const realmId: string | null = user.realmId || user.realm_id || user.qbo_realm_id || null;
+
+  // NEW: Resolve realm id robustly (use grid value if present; otherwise fetch from profiles)
+  const initialRealmGuess: string | null =
+    user.realmId || user.realm_id || user.qbo_realm_id || null;
+  const [resolvedRealmId, setResolvedRealmId] = useState<string | null>(initialRealmGuess);
 
   const buildMonths = () => {
     const out: { y: number; m: number; key: MonthKey; label: string }[] = [];
@@ -170,7 +174,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
     if ((nameDraft ?? '').trim() !== (baseline.name ?? '').trim()) updates.full_name = nameDraft.trim();
     if (roleDraft !== baseline.role) updates.role = roleDraft.toLowerCase(); // 'admin' | 'user'
     if (statusDraft !== baseline.status) updates.is_active = (statusDraft === 'Active'); // boolean
-    if (planDraft !== baseline.plan) updates.plan = planDraft; // 'Starter' | 'Professional' | 'Basic'
+    if (planDraft !== baseline.plan) updates.plan = planDraft;
     if ((companyDraft ?? '').trim() !== (baseline.company ?? '').trim()) updates.company = companyDraft.trim();
 
     setIsSaving(true);
@@ -180,7 +184,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
         .update(updates)
         .eq('id', user.id)
         .select('id')
-        .maybeSingle(); // avoids 406 "JSON object requested..." edge cases
+        .maybeSingle();
 
       if (error) {
         console.error('[UserDetailDrawer] save failed:', error);
@@ -204,7 +208,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
       minute: '2-digit',
     });
 
-  // ====== NEW: determine if current viewer is admin ======
+  // Determine if current viewer is admin
   useEffect(() => {
     let cancelled = false;
     const loadViewer = async () => {
@@ -225,11 +229,45 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  // ====== NEW: load artifacts for selected user's realm (admin-only tab) ======
+  // NEW: Resolve realm id if not passed by grid
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      // if grid already provided it, keep it
+      if (initialRealmGuess) {
+        if (!cancelled) setResolvedRealmId(initialRealmGuess);
+        return;
+      }
+
+      // else fetch from profiles
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('qbo_realm_id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!cancelled) {
+          const r = data?.qbo_realm_id ?? null;
+          setResolvedRealmId(r);
+          console.log('[UserDetailDrawer] realm resolved via profiles', { userId: user.id, qbo_realm_id: r, error });
+        }
+      } catch {
+        if (!cancelled) setResolvedRealmId(null);
+      }
+    };
+
+    if (isOpen && user?.id) run();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, user?.id, initialRealmGuess]);
+
+  // Load artifacts for selected user's realm (admin-only)
   useEffect(() => {
     let cancelled = false;
     const loadArtifacts = async () => {
-      if (!isOpen || !viewerIsAdmin || !realmId) {
+      if (!isOpen || !viewerIsAdmin || !resolvedRealmId) {
         setArtifacts({});
         setVideoDrafts({});
         setSignedLinks({});
@@ -241,7 +279,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
         const { data, error } = await supabase
           .from('qbo_financial_artifacts')
           .select('id,realm_id,year,month,pdf_path,video_url,pnl_generated,video_added')
-          .eq('realm_id', realmId)
+          .eq('realm_id', resolvedRealmId)
           .in('year', years);
         if (error) throw error;
 
@@ -284,20 +322,20 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
     };
     loadArtifacts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, viewerIsAdmin, realmId, user?.id]);
+  }, [isOpen, viewerIsAdmin, resolvedRealmId, user?.id]);
 
-  // ====== NEW: financial handlers (isolated) ======
+  // Financial handlers
   const monthKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
   const setBusy = (k: MonthKey, v: boolean) => setSavingByMonth(prev => ({ ...prev, [k]: v }));
   const pdfPathFor = (realm: string, y: number, m: number) => `${realm}/${y}/${String(m).padStart(2, '0')}/report.pdf`;
 
   async function refreshOne(y: number, m: number) {
-    if (!realmId) return;
+    if (!resolvedRealmId) return;
     const key = monthKey(y, m);
     const { data: r } = await supabase
       .from('qbo_financial_artifacts')
       .select('id,realm_id,year,month,pdf_path,video_url,pnl_generated,video_added')
-      .eq('realm_id', realmId).eq('year', y).eq('month', m).maybeSingle();
+      .eq('realm_id', resolvedRealmId).eq('year', y).eq('month', m).maybeSingle();
     setArtifacts(prev => ({ ...prev, [key]: (r as ArtifactRow) || null }));
     if ((r as ArtifactRow | null)?.pdf_path) {
       const { data: s } = await supabase.storage.from('financial-reports').createSignedUrl((r as ArtifactRow).pdf_path!, 3600);
@@ -308,8 +346,8 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   }
 
   async function upsertRow(y: number, m: number, patch: Partial<ArtifactRow>) {
-    if (!realmId) return;
-    const payload: any = { realm_id: realmId, year: y, month: m, ...patch };
+    if (!resolvedRealmId) return;
+    const payload: any = { realm_id: resolvedRealmId, year: y, month: m, ...patch };
     const { error } = await supabase
       .from('qbo_financial_artifacts')
       .upsert([payload], { onConflict: 'realm_id,year,month' });
@@ -317,11 +355,11 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   }
 
   async function handleUpload(y: number, m: number, file: File) {
-    if (!realmId) return;
+    if (!resolvedRealmId) return;
     const key = monthKey(y, m);
     try {
       setBusy(key, true);
-      const path = pdfPathFor(realmId, y, m);
+      const path = pdfPathFor(resolvedRealmId, y, m);
       const { error: upErr } = await supabase.storage.from('financial-reports').upload(path, file, { upsert: true });
       if (upErr) throw upErr;
 
@@ -338,7 +376,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   }
 
   async function handleDelete(y: number, m: number) {
-    if (!realmId) return;
+    if (!resolvedRealmId) return;
     const key = monthKey(y, m);
     try {
       setBusy(key, true);
@@ -358,7 +396,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   }
 
   async function handleSaveVideo(y: number, m: number, url: string) {
-    if (!realmId) return;
+    if (!resolvedRealmId) return;
     const key = monthKey(y, m);
     try {
       setBusy(key, true);
@@ -399,7 +437,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
 
         <div className="mt-6">
           <Tabs defaultValue="overview" className="w-full">
-            {/* CHANGED: grid-cols from 4 -> 5 to add Financials */}
+            {/* grid-cols from 4 -> 5 to add Financials */}
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -513,7 +551,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                 <CardHeader>
                   <CardTitle className="text-sm">CFO Agent Usage</CardTitle>
                 </CardHeader>
-              <CardContent>
+                <CardContent>
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Total Uses:</span>
@@ -565,12 +603,12 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                         <SelectTrigger className="h-8">
                           <SelectValue />
                         </SelectTrigger>
-                       <SelectContent>
-                        <SelectItem value="No Subscription">No Subscription</SelectItem>
-                        <SelectItem value="Iron">Iron</SelectItem>
-                        <SelectItem value="Gold">Gold</SelectItem>
-                        <SelectItem value="Platinum">Platinum</SelectItem>
-                      </SelectContent>
+                        <SelectContent>
+                          <SelectItem value="No Subscription">No Subscription</SelectItem>
+                          <SelectItem value="Iron">Iron</SelectItem>
+                          <SelectItem value="Gold">Gold</SelectItem>
+                          <SelectItem value="Platinum">Platinum</SelectItem>
+                        </SelectContent>
                       </Select>
                     </div>
                   </div>
@@ -619,7 +657,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
               </div>
             </TabsContent>
 
-            {/* ===== NEW: FINANCIALS (admin-only) ===== */}
+            {/* FINANCIALS (admin-only) */}
             <TabsContent value="financials" className="space-y-4">
               {!viewerIsAdmin ? (
                 <Card>
@@ -627,7 +665,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                     Only admins can view Financials.
                   </CardContent>
                 </Card>
-              ) : !realmId ? (
+              ) : !resolvedRealmId ? (
                 <Card>
                   <CardContent className="text-sm text-gray-600">
                     This user does not have a connected QuickBooks realm.
@@ -636,7 +674,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
               ) : (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-sm">Financials (Realm: {realmId})</CardTitle>
+                    <CardTitle className="text-sm">Financials (Realm: {resolvedRealmId})</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {loadingArtifacts ? (
