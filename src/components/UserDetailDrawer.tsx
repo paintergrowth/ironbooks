@@ -29,6 +29,19 @@ type Baseline = {
   company: string;
 };
 
+type ArtifactRow = {
+  id?: string;
+  realm_id: string;
+  year: number;
+  month: number;
+  pdf_path: string | null;
+  video_url: string | null;
+  pnl_generated: boolean;
+  video_added: boolean;
+};
+
+type MonthKey = string; // "YYYY-MM"
+
 const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClose, onSaved }) => {
   if (!user) return null;
 
@@ -58,6 +71,32 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const [planDraft, setPlanDraft] = useState<PlanDraft>(initialPlan);
   const [companyDraft, setCompanyDraft] = useState<string>(initialCompany);
   const [isSaving, setIsSaving] = useState(false);
+
+  // ====== NEW: Financials tab state (kept isolated) ======
+  const [viewerIsAdmin, setViewerIsAdmin] = useState<boolean>(false);
+  const realmId: string | null = user.realmId || user.realm_id || user.qbo_realm_id || null;
+
+  const buildMonths = () => {
+    const out: { y: number; m: number; key: MonthKey; label: string }[] = [];
+    const now = new Date();
+    const start = new Date(now.getFullYear() - 1, 0, 1); // last year Jan 1
+    const end = new Date(now.getFullYear(), now.getMonth(), 1); // current month start
+    for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      const label = d.toLocaleString('en-US', { year: 'numeric', month: 'short' });
+      out.push({ y, m, key, label });
+    }
+    return out;
+  };
+  const months = useMemo(buildMonths, [user?.id]);
+
+  const [artifacts, setArtifacts] = useState<Record<MonthKey, ArtifactRow | null>>({});
+  const [videoDrafts, setVideoDrafts] = useState<Record<MonthKey, string>>({});
+  const [signedLinks, setSignedLinks] = useState<Record<MonthKey, string>>({});
+  const [loadingArtifacts, setLoadingArtifacts] = useState(false);
+  const [savingByMonth, setSavingByMonth] = useState<Record<MonthKey, boolean>>({});
 
   // Re-init from incoming user on open / user change
   useEffect(() => {
@@ -165,6 +204,176 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
       minute: '2-digit',
     });
 
+  // ====== NEW: determine if current viewer is admin ======
+  useEffect(() => {
+    let cancelled = false;
+    const loadViewer = async () => {
+      try {
+        const { data: { user: u } } = await supabase.auth.getUser();
+        if (!u) return;
+        const { data: me } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', u.id)
+          .maybeSingle();
+        if (!cancelled) setViewerIsAdmin(me?.role === 'admin');
+      } catch {
+        if (!cancelled) setViewerIsAdmin(false);
+      }
+    };
+    if (isOpen) loadViewer();
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  // ====== NEW: load artifacts for selected user's realm (admin-only tab) ======
+  useEffect(() => {
+    let cancelled = false;
+    const loadArtifacts = async () => {
+      if (!isOpen || !viewerIsAdmin || !realmId) {
+        setArtifacts({});
+        setVideoDrafts({});
+        setSignedLinks({});
+        return;
+      }
+      setLoadingArtifacts(true);
+      try {
+        const years = Array.from(new Set(months.map(m => m.y)));
+        const { data, error } = await supabase
+          .from('qbo_financial_artifacts')
+          .select('id,realm_id,year,month,pdf_path,video_url,pnl_generated,video_added')
+          .eq('realm_id', realmId)
+          .in('year', years);
+        if (error) throw error;
+
+        const map: Record<MonthKey, ArtifactRow | null> = {};
+        months.forEach(({ y, m, key }) => {
+          const row = (data || []).find(r => r.year === y && r.month === m) as ArtifactRow | undefined;
+          map[key] = row || null;
+        });
+
+        const drafts: Record<MonthKey, string> = {};
+        Object.entries(map).forEach(([k, r]) => { drafts[k] = r?.video_url || ''; });
+
+        // Pre-generate signed URLs for rows that have a pdf_path
+        const links: Record<MonthKey, string> = {};
+        for (const { key } of months) {
+          const r = map[key];
+          if (r?.pdf_path) {
+            const { data: s } = await supabase
+              .storage.from('financial-reports')
+              .createSignedUrl(r.pdf_path, 3600);
+            if (s?.signedUrl) links[key] = s.signedUrl;
+          }
+        }
+
+        if (!cancelled) {
+          setArtifacts(map);
+          setVideoDrafts(drafts);
+          setSignedLinks(links);
+        }
+      } catch (e) {
+        console.error('[Financials] load error', e);
+        if (!cancelled) {
+          setArtifacts({});
+          setVideoDrafts({});
+          setSignedLinks({});
+        }
+      } finally {
+        if (!cancelled) setLoadingArtifacts(false);
+      }
+    };
+    loadArtifacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, viewerIsAdmin, realmId, user?.id]);
+
+  // ====== NEW: financial handlers (isolated) ======
+  const monthKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
+  const setBusy = (k: MonthKey, v: boolean) => setSavingByMonth(prev => ({ ...prev, [k]: v }));
+  const pdfPathFor = (realm: string, y: number, m: number) => `${realm}/${y}/${String(m).padStart(2, '0')}/report.pdf`;
+
+  async function refreshOne(y: number, m: number) {
+    if (!realmId) return;
+    const key = monthKey(y, m);
+    const { data: r } = await supabase
+      .from('qbo_financial_artifacts')
+      .select('id,realm_id,year,month,pdf_path,video_url,pnl_generated,video_added')
+      .eq('realm_id', realmId).eq('year', y).eq('month', m).maybeSingle();
+    setArtifacts(prev => ({ ...prev, [key]: (r as ArtifactRow) || null }));
+    if ((r as ArtifactRow | null)?.pdf_path) {
+      const { data: s } = await supabase.storage.from('financial-reports').createSignedUrl((r as ArtifactRow).pdf_path!, 3600);
+      setSignedLinks(prev => ({ ...prev, [key]: s?.signedUrl || '' }));
+    } else {
+      setSignedLinks(prev => ({ ...prev, [key]: '' }));
+    }
+  }
+
+  async function upsertRow(y: number, m: number, patch: Partial<ArtifactRow>) {
+    if (!realmId) return;
+    const payload: any = { realm_id: realmId, year: y, month: m, ...patch };
+    const { error } = await supabase
+      .from('qbo_financial_artifacts')
+      .upsert([payload], { onConflict: 'realm_id,year,month' });
+    if (error) throw error;
+  }
+
+  async function handleUpload(y: number, m: number, file: File) {
+    if (!realmId) return;
+    const key = monthKey(y, m);
+    try {
+      setBusy(key, true);
+      const path = pdfPathFor(realmId, y, m);
+      const { error: upErr } = await supabase.storage.from('financial-reports').upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+
+      const { data: { user: u } } = await supabase.auth.getUser();
+      await upsertRow(y, m, { pdf_path: path, uploaded_by: u?.id || null });
+
+      await refreshOne(y, m);
+      onSaved?.();
+    } catch (e: any) {
+      alert(e.message || 'Upload failed');
+    } finally {
+      setBusy(key, false);
+    }
+  }
+
+  async function handleDelete(y: number, m: number) {
+    if (!realmId) return;
+    const key = monthKey(y, m);
+    try {
+      setBusy(key, true);
+      const row = artifacts[key];
+      if (row?.pdf_path) {
+        await supabase.storage.from('financial-reports').remove([row.pdf_path]);
+      }
+      await upsertRow(y, m, { pdf_path: null });
+
+      await refreshOne(y, m);
+      onSaved?.();
+    } catch (e: any) {
+      alert(e.message || 'Delete failed');
+    } finally {
+      setBusy(key, false);
+    }
+  }
+
+  async function handleSaveVideo(y: number, m: number, url: string) {
+    if (!realmId) return;
+    const key = monthKey(y, m);
+    try {
+      setBusy(key, true);
+      const clean = url.trim() || null;
+      await upsertRow(y, m, { video_url: clean });
+
+      await refreshOne(y, m);
+      onSaved?.();
+    } catch (e: any) {
+      alert(e.message || 'Save failed');
+    } finally {
+      setBusy(key, false);
+    }
+  }
+
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent className="w-[600px] sm:max-w-[600px] overflow-y-auto">
@@ -190,11 +399,13 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
 
         <div className="mt-6">
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            {/* CHANGED: grid-cols from 4 -> 5 to add Financials */}
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
               <TabsTrigger value="billing">Billing</TabsTrigger>
               <TabsTrigger value="actions">Actions</TabsTrigger>
+              <TabsTrigger value="financials">Financials</TabsTrigger>
             </TabsList>
 
             {/* OVERVIEW */}
@@ -302,7 +513,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                 <CardHeader>
                   <CardTitle className="text-sm">CFO Agent Usage</CardTitle>
                 </CardHeader>
-                <CardContent>
+              <CardContent>
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Total Uses:</span>
@@ -406,6 +617,112 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                   Grant Credit
                 </Button>
               </div>
+            </TabsContent>
+
+            {/* ===== NEW: FINANCIALS (admin-only) ===== */}
+            <TabsContent value="financials" className="space-y-4">
+              {!viewerIsAdmin ? (
+                <Card>
+                  <CardContent className="text-sm text-gray-600">
+                    Only admins can view Financials.
+                  </CardContent>
+                </Card>
+              ) : !realmId ? (
+                <Card>
+                  <CardContent className="text-sm text-gray-600">
+                    This user does not have a connected QuickBooks realm.
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Financials (Realm: {realmId})</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {loadingArtifacts ? (
+                      <div className="text-sm text-gray-600">Loading…</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {months.map(({ y, m, key, label }) => {
+                          const row = artifacts[key];
+                          const busy = !!savingByMonth[key];
+                          const signedUrl = signedLinks[key];
+                          return (
+                            <div key={key} className="grid grid-cols-12 items-center gap-2 border rounded-md p-2">
+                              <div className="col-span-2 text-sm font-medium">{label}</div>
+
+                              {/* P&L Generated (read-only) */}
+                              <div className="col-span-2 text-sm">
+                                <div className="flex items-center space-x-2">
+                                  <input type="checkbox" readOnly checked={!!row?.pnl_generated} />
+                                  <span>P&L Generated</span>
+                                </div>
+                              </div>
+
+                              {/* Video Added (read-only) */}
+                              <div className="col-span-2 text-sm">
+                                <div className="flex items-center space-x-2">
+                                  <input type="checkbox" readOnly checked={!!row?.video_added} />
+                                  <span>Video Added</span>
+                                </div>
+                              </div>
+
+                              {/* PDF controls */}
+                              <div className="col-span-3 flex items-center space-x-2">
+                                {row?.pdf_path && signedUrl ? (
+                                  <>
+                                    <a className="text-blue-600 underline text-sm" href={signedUrl} target="_blank" rel="noreferrer">
+                                      View PDF
+                                    </a>
+                                    <Button size="sm" variant="outline" disabled={busy} onClick={() => handleDelete(y, m)}>
+                                      {busy ? 'Deleting…' : 'Delete'}
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <label className="text-sm">
+                                    <input
+                                      type="file"
+                                      accept="application/pdf"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) handleUpload(y, m, f);
+                                      }}
+                                    />
+                                    <span className="inline-block">
+                                      <Button size="sm" variant="outline" disabled={busy}>
+                                        {busy ? 'Uploading…' : 'Upload PDF'}
+                                      </Button>
+                                    </span>
+                                  </label>
+                                )}
+                              </div>
+
+                              {/* Video URL controls */}
+                              <div className="col-span-3 flex items-center space-x-2">
+                                <Input
+                                  value={videoDrafts[key] ?? ''}
+                                  onChange={(e) => setVideoDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                                  placeholder="https://video…"
+                                  className="h-8"
+                                  disabled={busy}
+                                />
+                                <Button
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() => handleSaveVideo(y, m, videoDrafts[key] ?? '')}
+                                >
+                                  {busy ? 'Saving…' : 'Save'}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           </Tabs>
         </div>
