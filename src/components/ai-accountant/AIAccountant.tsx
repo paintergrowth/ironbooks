@@ -23,6 +23,20 @@ interface AIAccountantProps {
 const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen }) => {
     const { user } = useAppContext();
     const { toast } = useToast();
+
+    // Disable page scrolling when component mounts
+    useEffect(() => {
+        // Save current overflow style
+        const originalStyle = window.getComputedStyle(document.body).overflow;
+        
+        // Disable page scrolling
+        document.body.style.overflow = 'hidden';
+        
+        // Restore original overflow on cleanup
+        return () => {
+            document.body.style.overflow = originalStyle;
+        };
+    }, []);
     const {
         sessions,
         currentSession,
@@ -246,9 +260,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     return (
         <div className="h-full flex bg-background overflow-hidden">
             {/* Main Chat Area */}
-            <div className="flex-1 relative">
+            <div className="flex-1 relative h-full">
             {/* Chat Messages Area - Absolute positioned with bottom margin for input */}
-            <div className="absolute inset-0 bottom-18 overflow-y-scroll">
+            <div className="absolute inset-0 bottom-24 overflow-y-auto">
                     {chatMessages.length === 0 ? (
                         // Welcome Screen
                         <div className="h-full flex flex-col items-center justify-center p-8 space-y-8">
@@ -360,7 +374,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 </div>
 
                 {/* Chat Input - Absolutely positioned at bottom */}
-                <div className="absolute bottom-0 left-0 right-0 border-t bg-background p-4">
+                <div className="absolute bottom-0 left-0 right-0 border-t bg-background p-4 z-10">
                     <div className="max-w-2xl mx-auto">
                         <div className="flex gap-2">
                             <div className="flex-1 relative">
