@@ -1,3 +1,4 @@
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -71,6 +72,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const [planDraft, setPlanDraft] = useState<PlanDraft>(initialPlan);
   const [companyDraft, setCompanyDraft] = useState<string>(initialCompany);
   const [isSaving, setIsSaving] = useState(false);
+  const fileInputs = useRef<Record<MonthKey, HTMLInputElement | null>>({});
 
   // ====== Financials tab state (isolated) ======
   const [viewerIsAdmin, setViewerIsAdmin] = useState<boolean>(false);
@@ -705,36 +707,43 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                                 </div>
                               </div>
 
-                              {/* PDF controls */}
-                              <div className="col-span-3 flex items-center space-x-2">
-                                {row?.pdf_path && signedUrl ? (
-                                  <>
-                                    <a className="text-blue-600 underline text-sm" href={signedUrl} target="_blank" rel="noreferrer">
-                                      View PDF
-                                    </a>
-                                    <Button size="sm" variant="outline" disabled={busy} onClick={() => handleDelete(y, m)}>
-                                      {busy ? 'Deleting…' : 'Delete'}
-                                    </Button>
-                                  </>
-                                ) : (
-                                  <label className="text-sm">
-                                    <input
-                                      type="file"
-                                      accept="application/pdf"
-                                      className="hidden"
-                                      onChange={(e) => {
-                                        const f = e.target.files?.[0];
-                                        if (f) handleUpload(y, m, f);
-                                      }}
-                                    />
-                                    <span className="inline-block">
-                                      <Button size="sm" variant="outline" disabled={busy}>
-                                        {busy ? 'Uploading…' : 'Upload PDF'}
-                                      </Button>
-                                    </span>
-                                  </label>
-                                )}
-                              </div>
+              {/* PDF controls */}
+              <div className="col-span-3 flex items-center space-x-2">
+                {row?.pdf_path && signedUrl ? (
+                  <>
+                    <a className="text-blue-600 underline text-sm" href={signedUrl} target="_blank" rel="noreferrer">
+                      View PDF
+                    </a>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => handleDelete(y, m)}>
+                      {busy ? 'Deleting…' : 'Delete'}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      ref={(el) => { fileInputs.current[key] = el; }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleUpload(y, m, f);
+                        // allow picking the same file name again later
+                        e.currentTarget.value = '';
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => fileInputs.current[key]?.click()}
+                    >
+                      {busy ? 'Uploading…' : 'Upload PDF'}
+                    </Button>
+                  </>
+                )}
+              </div>
+
 
                               {/* Video URL controls */}
                               <div className="col-span-3 flex items-center space-x-2">
