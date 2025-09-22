@@ -1,4 +1,3 @@
-// src/components/CFOAgent.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -9,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import PremiumChatInterface from './PremiumChatInterface';
+import { useEffectiveIdentity } from '@/lib/useEffectiveIdentity'; // 👈 NEW
 
 interface Message {
   id: string;
@@ -39,7 +39,7 @@ function randomState(len = 24) {
     return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   }
 }
- 
+
 function buildQboAuthUrl() {
   const state = randomState();
   try {
@@ -79,11 +79,16 @@ const CFOAgent = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [currentReasoning, setCurrentReasoning] = useState<Array<{id: string; title: string; content: string; type?: string}>>([]);
 
-  // User & toast
+  // Real authenticated user (kept for OAuth flows that must write to YOUR account)
   const { user } = useAppContext();
+
+  // ✅ Effective identity (impersonated OR real) for all READS & realm-scoped work
+  const { loaded: idLoaded, userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
+  console.log('[CFOAgent] effective identity:', { idLoaded, effUserId, effRealmId, isImpersonating });
+
   const { toast } = useToast();
 
-  // QBO status badge
+  // QBO status badge (driven from effective realm)
   const [qboConnected, setQboConnected] = useState(false);
   const [qboRealmId, setQboRealmId] = useState<string | null>(null);
 
@@ -99,27 +104,18 @@ const CFOAgent = () => {
   const [netProfit, setNetProfit] = useState<{ current: number | null, previous: number | null }>({ current: null, previous: null });
 
   // Sync status
-  const [syncStatus, setSyncStatus] = useState(null);
+  const [syncStatus, setSyncStatus] = useState<any>(null);
   const [loadingSyncStatus, setLoadingSyncStatus] = useState(true);
 
-  // Load existing profile -> badge + realm
+  // 🔄 Keep the UI badge/realm in sync with the EFFECTIVE realm
   useEffect(() => {
-    const loadProfile = async () => {
-      if (!user?.id) return;
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('qbo_realm_id, qbo_connected')
-        .eq('id', user.id)
-        .single();
-      if (!error) {
-        setQboConnected(Boolean(data?.qbo_connected));
-        setQboRealmId(data?.qbo_realm_id ?? null);
-      }
-    };
-    loadProfile();
-  }, [user?.id]);
+    if (!idLoaded) return;
+    setQboRealmId(effRealmId ?? null);
+    setQboConnected(!!effRealmId);
+    console.log('[CFOAgent] sync badge from effective identity →', { effRealmId, qboConnected: !!effRealmId });
+  }, [idLoaded, effRealmId]);
 
-  // OAuth callback saver (also exchanges tokens so qbo-company can work)
+  // OAuth callback saver (writes to the REAL authed user; not the impersonated)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('connected') !== 'qbo') return;
@@ -146,12 +142,11 @@ const CFOAgent = () => {
     }
 
     (async () => {
-try {
-        // Ensure we have an authenticated user before calling the exchange
+      try {
+        // Use real authed user for token exchange
         const { data: { user: authedUser } } = await supabase.auth.getUser();
-
         if (!authedUser) {
-          // Stash and defer until user hydrates
+          // Defer if not hydrated yet
           if (code)       { try { sessionStorage.setItem('pending_qbo_code', code); } catch {} }
           if (incomingRealm) { try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {} }
           try { sessionStorage.setItem('pending_qbo_redirect', QBO_REDIRECT_URI); } catch {}
@@ -185,27 +180,23 @@ try {
             console.warn('[QBO] profiles update failed:', error.message);
             toast({ title: 'QuickBooks', description: 'Failed to save connection.', variant: 'destructive' });
           } else {
-            setQboConnected(true);
-            setQboRealmId(incomingRealm);
+            // Note: this updates YOUR (real) profile; the effective identity may still be
+            // someone else if you’re impersonating.
             toast({ title: 'QuickBooks', description: 'Connected successfully!' });
-
-            // Trigger full sync
             await supabase.functions.invoke('qbo-sync-transactions', {
               body: { realmId: incomingRealm, userId: authedUser.id, mode: 'full' }
             });
-         }
+          }
         }
       } finally {
         finishAndClean();
-     }
+      }
     })();
   }, [toast]);
 
-  // If we stashed code/realm before user.id was ready, run the exchange now
+  // If we stashed code/realm before user.id was ready, run the exchange now (REAL user)
   useEffect(() => {
     if (!user?.id) return;
-
-
 
     const pendingRealm = sessionStorage.getItem('pending_qbo_realm');
     const pendingCode = sessionStorage.getItem('pending_qbo_code');
@@ -213,7 +204,6 @@ try {
     if (!pendingRealm || !pendingCode) return;
 
     (async () => {
-      // 1) Run the exchange now that we have a userId
       const { error: fnErr } = await supabase.functions.invoke('qbo-oauth-exchange', {
         body: { code: pendingCode, realmId: pendingRealm, redirectUri: pendingRedirect, userId: user.id },
       });
@@ -227,7 +217,6 @@ try {
         return;
       }
 
-      // 2) Save profile flags now
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -236,9 +225,8 @@ try {
           qbo_connected_at: new Date().toISOString(),
         })
         .eq('id', user.id);
+
       if (!error) {
-        setQboConnected(true);
-        setQboRealmId(pendingRealm);
         await supabase.functions.invoke('qbo-sync-transactions', {
           body: { realmId: pendingRealm, userId: user.id, mode: 'full' }
         });
@@ -253,14 +241,23 @@ try {
     })();
   }, [user?.id]);
 
-  // Load live metrics (PRIMARY source for company name — mirrors Dashboard)
+  // Load live metrics (✅ uses effective identity)
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
+        if (!idLoaded) return;
+        if (!effUserId || !effRealmId) {
+          setRevenue({ current: null, previous: null });
+          setExpenses({ current: null, previous: null });
+          setNetProfit({ current: null, previous: null });
+          return;
+        }
+
         setLoadingMetrics(true);
+        console.log('[CFOAgent] qbo-dashboard invoke with effective identity', { period, effRealmId, effUserId });
         const { data, error } = await invokeWithAuth('qbo-dashboard', {
-  body: { period, realmId: qboRealmId, userId: user.id },
-});
+          body: { period, realmId: effRealmId, userId: effUserId },
+        });
         if (error) throw error;
 
         setRevenue(data?.revenue ?? { current: null, previous: null });
@@ -274,7 +271,6 @@ try {
         console.error('qbo-dashboard FULL error:', e);
         console.error('qbo-dashboard error details:', JSON.stringify(e, null, 2));
         
-        // Check if this is a reauth required error
         if (e?.message?.includes('qbo_reauth_required') || e?.context?.error === 'qbo_reauth_required') {
           setQboConnected(false);
           setQboRealmId(null);
@@ -290,25 +286,25 @@ try {
         setLoadingMetrics(false);
       }
     };
-    if (user?.id) fetchMetrics();
-  }, [user?.id, period, toast]);
+    fetchMetrics();
+  }, [idLoaded, effUserId, effRealmId, period, toast]);
 
-  // SECONDARY: get company name via qbo-company (same pattern as Dashboard)
+  // SECONDARY: company name via qbo-company (✅ uses effective identity)
   useEffect(() => {
     let cancelled = false;
 
     const run = async () => {
-      if (!qboRealmId || companyName) return;
+      if (!idLoaded || !effRealmId || companyName) return;
 
       try {
-  const { data, error } = await invokeWithAuth('qbo-company', {
-  body: { realmId: qboRealmId, userId: user.id, nonce: Date.now() },
-});
+        console.log('[CFOAgent] qbo-company invoke with effective identity', { effRealmId, effUserId });
+        const { data, error } = await invokeWithAuth('qbo-company', {
+          body: { realmId: effRealmId, userId: effUserId, nonce: Date.now() },
+        });
 
         if (error) {
-          // If tokens don’t exist for this realm, nothing else to do here.
           if ((error as any)?.message?.includes('no_tokens_for_realm')) {
-            console.warn('[QBO] No tokens stored for realm', qboRealmId, '— company name fallback skipped.');
+            console.warn('[QBO] No tokens stored for realm', effRealmId, '— company name fallback skipped.');
           } else {
             console.error('qbo-company FULL error:', error);
             console.error('qbo-company error details:', JSON.stringify(error, null, 2));
@@ -320,7 +316,6 @@ try {
           setCompanyName((data as any).companyName);
         }
       } catch (e: any) {
-        // Check if this is a reauth required error in the catch block too
         if (e?.message?.includes('qbo_reauth_required') || e?.context?.error === 'qbo_reauth_required') {
           setQboConnected(false);
           setQboRealmId(null);
@@ -337,16 +332,17 @@ try {
 
     run();
     return () => { cancelled = true; };
-  }, [qboRealmId, companyName]);
+  }, [idLoaded, effRealmId, companyName, effUserId, toast]);
 
-  // Load sync status
+  // Load sync status (✅ uses effective identity)
   useEffect(() => {
     const fetchSyncStatus = async () => {
-      if (!qboRealmId || !user?.id) return;
+      if (!idLoaded || !effRealmId || !effUserId) return;
       try {
         setLoadingSyncStatus(true);
+        console.log('[CFOAgent] qbo-sync-status invoke with effective identity', { effRealmId, effUserId });
         const { data, error } = await supabase.functions.invoke('qbo-sync-status', {
-          body: { realmId: qboRealmId, userId: user.id }
+          body: { realmId: effRealmId, userId: effUserId }
         });
         if (error) throw error;
         setSyncStatus(data);
@@ -357,9 +353,9 @@ try {
       }
     };
     fetchSyncStatus();
-    const interval = setInterval(fetchSyncStatus, 30000); // Poll every 30s
+    const interval = setInterval(fetchSyncStatus, 30000);
     return () => clearInterval(interval);
-  }, [qboRealmId, user?.id]);
+  }, [idLoaded, effRealmId, effUserId]);
 
   const suggestedQuestions = [
     "Show me my top expenses this month",
@@ -368,10 +364,8 @@ try {
     "Analyze my revenue growth"
   ];
 
-  // Helper function to generate reasoning steps based on query
   const generateReasoningSteps = (query: string) => {
-    const baseSteps = [];
-    
+    const baseSteps:any[] = [];
     if (query.toLowerCase().includes('expense')) {
       return [
         { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
@@ -380,7 +374,6 @@ try {
         { id: '4', title: 'Generating insights', content: 'Identifying trends, outliers, and actionable recommendations based on expense patterns.', type: 'synthesis' }
       ];
     }
-    
     if (query.toLowerCase().includes('revenue') || query.toLowerCase().includes('profit')) {
       return [
         { id: '1', title: 'Understanding revenue request', content: 'Parsing query to determine if user wants revenue trends, profit margins, or comparative analysis.', type: 'analysis' },
@@ -388,8 +381,6 @@ try {
         { id: '3', title: 'Synthesizing response', content: 'Combining revenue data with industry benchmarks to provide contextual business insights.', type: 'synthesis' }
       ];
     }
-    
-    // Default reasoning steps
     return [
       { id: '1', title: 'Processing query', content: 'Analyzing the user\'s question to understand the financial information being requested.', type: 'analysis' },
       { id: '2', title: 'Accessing data', content: 'Connecting to QuickBooks Online to retrieve relevant financial records and metrics.', type: 'lookup' },
@@ -397,7 +388,6 @@ try {
     ];
   };
 
-  // Helper function to generate sources
   const generateSources = (query: string) => {
     if (query.toLowerCase().includes('expense')) {
       return [
@@ -406,7 +396,6 @@ try {
         { id: '3', title: 'Industry Benchmark Data', type: 'api', description: 'Compared your expenses against industry averages for small businesses.' }
       ];
     }
-    
     return [
       { id: '1', title: 'QuickBooks Online - Financial Data', type: 'quickbooks', description: 'General financial information retrieved from your QuickBooks Online account.' },
       { id: '2', title: 'Financial Analysis Report', type: 'report', description: 'Generated analytical insights based on your financial data.' }
@@ -424,24 +413,18 @@ try {
     setMessages(prev => [...prev, userMessage]);
     setIsTyping(true);
 
-    // Generate reasoning steps and sources for this query
     const reasoningSteps = generateReasoningSteps(query);
     const sources = generateSources(query);
 
-    // Stream reasoning steps over ~5 seconds
     let currentStepIndex = 0;
     setCurrentReasoning([]);
-
     const reasoningInterval = setInterval(() => {
       if (currentStepIndex < reasoningSteps.length) {
         setCurrentReasoning(prev => [...prev, reasoningSteps[currentStepIndex]]);
         currentStepIndex++;
       } else {
         clearInterval(reasoningInterval);
-        
-        // After reasoning is complete, start generating the response
         setTimeout(async () => {
-          // Create initial streaming message
           const messageId = (Date.now() + 1).toString();
           const streamingMessage: Message = {
             id: messageId,
@@ -453,22 +436,19 @@ try {
             reasoningSteps,
             sources
           };
-          
           setMessages(prev => [...prev, streamingMessage]);
-          setCurrentReasoning([]); // Clear current reasoning
-          
-          // Get the response (real API call or fallback)
+          setCurrentReasoning([]);
+
           let finalResponse = '';
-          
           try {
+            console.log('[CFOAgent] qbo-query-agent invoke with effective identity', { effRealmId, effUserId });
             const { data, error } = await supabase.functions.invoke('qbo-query-agent', {
-              body: { query, realmId: qboRealmId, userId: user.id }
+              body: { query, realmId: effRealmId, userId: effUserId }
             });
             if (error) throw error;
             finalResponse = data.response || "Sorry, I couldn't process that query.";
           } catch (e) {
             console.error('AI query error:', e);
-            // Fallback to random response
             const responses = [
               "Based on your financial data, I can see some interesting trends. Your expenses have increased by 15% this quarter, primarily driven by operational costs.",
               "Your profit margins are looking healthy at 28.9%. This is above industry average and shows strong financial management.",
@@ -477,30 +457,24 @@ try {
             ];
             finalResponse = responses[Math.floor(Math.random() * responses.length)];
           }
-          
-          // Simulate streaming text response
+
           const words = finalResponse.split(' ');
           let currentText = '';
-          
           for (let i = 0; i < words.length; i++) {
             currentText += (i > 0 ? ' ' : '') + words[i];
-            
             setMessages(prev => prev.map(msg => 
               msg.id === messageId 
                 ? { ...msg, text: currentText, isStreaming: i < words.length - 1 }
                 : msg
             ));
-            
-            // Wait between words for streaming effect
             if (i < words.length - 1) {
               await new Promise(resolve => setTimeout(resolve, 50));
             }
           }
-          
           setIsTyping(false);
-        }, 500); // Small delay after reasoning completes
+        }, 500);
       }
-    }, 1250); // ~5 seconds total for all reasoning steps
+    }, 1250);
   };
 
   const handleSuggestedClick = (question: string) => {
@@ -526,14 +500,13 @@ try {
   };
 
   const handleImportTranx = async () => {
-    if (!qboConnected || !qboRealmId || !user?.id) {
+    if (!qboConnected || !qboRealmId || !effUserId) {
       toast({ title: 'Sync Error', description: 'Not connected or missing info.', variant: 'destructive' });
       return;
     }
-
     try {
       const { data, error } = await supabase.functions.invoke('qbo-sync-transactions', {
-        body: { realmId: qboRealmId, userId: user.id, mode: 'full' }
+        body: { realmId: qboRealmId, userId: effUserId, mode: 'full' }
       });
       if (error) {
         console.error('[Manual Sync] Failed:', error.message);
@@ -647,7 +620,7 @@ try {
               <TrendingUp className="h-8 w-8 text-green-500" />
             </div>
             <p className={`text-xs mt-1 ${((revenue.current ?? 0) - (revenue.previous ?? 0)) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {loadingMetrics ? '—' : `${(pct(revenue.current, revenue.previous)).toFixed(1)}% ${changeLabelText}`}
+              {loadingMetrics ? '—' : `${(pct(revenue.current, revenue.previous)).toFixed(1)}% ${period === 'ytd' ? 'from last year' : 'from last month'}`}
             </p>
           </Card>
 
@@ -663,7 +636,7 @@ try {
               <DollarSign className="h-8 w-8 text-red-500" />
             </div>
             <p className={`text-xs mt-1 ${((expenses.current ?? 0) - (expenses.previous ?? 0)) <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {loadingMetrics ? '—' : `${(pct(expenses.current, expenses.previous)).toFixed(1)}% ${changeLabelText}`}
+              {loadingMetrics ? '—' : `${(pct(expenses.current, expenses.previous)).toFixed(1)}% ${period === 'ytd' ? 'from last year' : 'from last month'}`}
             </p>
           </Card>
 
@@ -709,7 +682,7 @@ try {
           </div>
         </div>
 
-        {/* Sync Status Tile (below Import Tranx) */}
+        {/* Sync Status Tile */}
         {qboConnected && syncStatus && (
           <div className="pt-4 border-t">
             <h4 className="font-medium text-gray-900 dark:text-white mb-3">Sync Status</h4>
