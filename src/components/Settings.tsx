@@ -12,10 +12,10 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/components/theme-provider';
-import { 
-  LogOut, 
-  Key, 
-  HelpCircle, 
+import {
+  LogOut,
+  Key,
+  HelpCircle,
   Moon,
   Sun,
   Shield,
@@ -26,8 +26,13 @@ import {
   Smartphone,
   Save
 } from 'lucide-react';
+import { useImpersonation } from '@/lib/impersonation';
+
+console.log('[Settings] file loaded');
 
 const Settings: React.FC = () => {
+  console.log('[Settings] component mount start');
+
   // Keep initial visuals the same; state will be hydrated from DB on mount.
   const [notifications, setNotifications] = useState({
     email: true,
@@ -46,25 +51,38 @@ const Settings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false); // NEW
 
+  // Snapshot impersonation (helps verify provider + state)
+  const { isImpersonating, target } = useImpersonation();
+  console.log('[Settings] impersonation snapshot:', { isImpersonating, target });
+
   // -------- Load current user's profile on mount --------
   useEffect(() => {
     (async () => {
       try {
+        console.log('[Settings] loading auth user…');
         const { data: { user }, error: userErr } = await supabase.auth.getUser();
-        if (userErr) throw userErr;
+        if (userErr) {
+          console.error('[Settings] supabase.auth.getUser error:', userErr);
+          throw userErr;
+        }
+        console.log('[Settings] auth user =', user?.id, user?.email);
         if (!user) return;
 
         // Always reflect auth email in the field (readable; not persisted here)
         setProfile((p) => ({ ...p, email: user.email ?? p.email }));
 
-        // Fetch profiles row (nullable fields OK)
+        console.log('[Settings] fetching profiles row…');
         const { data, error } = await supabase
           .from('profiles')
           .select('full_name, phone, company, designation, settings, role')  // NEW: load role
           .eq('id', user.id)
           .maybeSingle();
 
-        if (error) throw error;
+        if (error) {
+          console.error('[Settings] profiles query error:', error);
+          throw error;
+        }
+        console.log('[Settings] profiles row =', data);
 
         if (data) {
           setProfile((p) => ({
@@ -75,7 +93,9 @@ const Settings: React.FC = () => {
             designation: data.designation ?? '',
           }));
 
-          setIsAdmin(data.role === 'admin');
+          const admin = data.role === 'admin';
+          setIsAdmin(admin);
+          console.log('[Settings] role =', data.role, '→ isAdmin =', admin);
 
           const defaults = { email: true, push: false, reports: true };
           const saved = (data.settings as any)?.notifications ?? {};
@@ -95,10 +115,14 @@ const Settings: React.FC = () => {
 
   // -------- Save handler: upsert into public.profiles --------
   const handleSave = async () => {
+    console.log('[Settings] handleSave clicked');
     try {
       setSaving(true);
       const { data: { user }, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
+      if (userErr) {
+        console.error('[Settings] getUser error:', userErr);
+        throw userErr;
+      }
       if (!user) {
         alert('Please sign in first.');
         return;
@@ -119,11 +143,16 @@ const Settings: React.FC = () => {
         },
       };
 
+      console.log('[Settings] upserting profile payload:', payload);
       const { error } = await supabase
         .from('profiles')
         .upsert(payload, { onConflict: 'id' });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Settings] upsert error:', error);
+        throw error;
+      }
+      console.log('[Settings] save success');
       alert('Settings saved successfully!');
     } catch (e) {
       console.error('[Settings] save failed:', e);
@@ -134,12 +163,15 @@ const Settings: React.FC = () => {
   };
 
   const handleLogout = () => {
+    console.log('[Settings] logout clicked');
     alert('Logging out...');
   };
 
+  console.log('[Settings] render header: isAdmin =', isAdmin);
+
   return (
     <div className="h-[100dvh]">
-      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">  
+      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
@@ -153,6 +185,7 @@ const Settings: React.FC = () => {
                 asChild
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 title="Open Admin Panel"
+                onClick={() => console.log('[Settings] Open Admin Panel clicked')}
               >
                 <Link to="/admin-panel">
                   <Shield className="mr-2 h-4 w-4" />
@@ -183,35 +216,35 @@ const Settings: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="name">Full Name</Label>
-                <Input 
-                  id="name" 
+                <Input
+                  id="name"
                   value={profile.name}
-                  onChange={(e) => setProfile({...profile, name: e.target.value})}
+                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
                 />
               </div>
               <div>
                 <Label htmlFor="email">Email Address</Label>
-                <Input 
-                  id="email" 
-                  type="email" 
+                <Input
+                  id="email"
+                  type="email"
                   value={profile.email}
                   disabled
                 />
               </div>
               <div>
                 <Label htmlFor="phone">Phone Number</Label>
-                <Input 
-                  id="phone" 
+                <Input
+                  id="phone"
                   value={profile.phone}
-                  onChange={(e) => setProfile({...profile, phone: e.target.value})}
+                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                 />
               </div>
               <div>
                 <Label htmlFor="designation">Designation</Label>
-                <Input 
-                  id="designation" 
+                <Input
+                  id="designation"
                   value={profile.designation}
-                  onChange={(e) => setProfile({...profile, designation: e.target.value})}
+                  onChange={(e) => setProfile({ ...profile, designation: e.target.value })}
                 />
               </div>
             </div>
@@ -231,7 +264,7 @@ const Settings: React.FC = () => {
               <Button
                 variant={theme === 'light' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setTheme('light')}
+                onClick={() => { console.log('[Settings] theme → light'); setTheme('light'); }}
               >
                 <Sun className="mr-2 h-4 w-4" />
                 Light
@@ -239,7 +272,7 @@ const Settings: React.FC = () => {
               <Button
                 variant={theme === 'dark' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setTheme('dark')}
+                onClick={() => { console.log('[Settings] theme → dark'); setTheme('dark'); }}
               >
                 <Moon className="mr-2 h-4 w-4" />
                 Dark
@@ -262,9 +295,12 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Email Notifications</p>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Receive updates via email</p>
               </div>
-              <Switch 
+              <Switch
                 checked={notifications.email}
-                onCheckedChange={(checked) => setNotifications({...notifications, email: checked})}
+                onCheckedChange={(checked) => {
+                  console.log('[Settings] notif: email →', checked);
+                  setNotifications({ ...notifications, email: checked });
+                }}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -272,9 +308,12 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Push Notifications</p>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Browser push notifications</p>
               </div>
-              <Switch 
+              <Switch
                 checked={notifications.push}
-                onCheckedChange={(checked) => setNotifications({...notifications, push: checked})}
+                onCheckedChange={(checked) => {
+                  console.log('[Settings] notif: push →', checked);
+                  setNotifications({ ...notifications, push: checked });
+                }}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -282,9 +321,12 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Weekly Reports</p>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Automated financial summaries</p>
               </div>
-              <Switch 
+              <Switch
                 checked={notifications.reports}
-                onCheckedChange={(checked) => setNotifications({...notifications, reports: checked})}
+                onCheckedChange={(checked) => {
+                  console.log('[Settings] notif: reports →', checked);
+                  setNotifications({ ...notifications, reports: checked });
+                }}
               />
             </div>
           </CardContent>
