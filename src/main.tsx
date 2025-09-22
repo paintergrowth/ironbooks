@@ -4,7 +4,7 @@ import App from './App.tsx';
 import './index.css';
 
 // ✅ Wrap the whole app so any component (e.g., ViewingAsChip) can use the hook
-import { ImpersonationProvider } from '@/components/impersonation';
+import { ImpersonationProvider } from '@/lib/impersonation';
 
 console.log("src/main.tsx live: components/CFOAgent.tsx (QBO card build)");
 
