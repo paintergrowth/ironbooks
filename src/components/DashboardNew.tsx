@@ -83,11 +83,11 @@ const changeLabel = (period: UiTimeframe) =>
 const chartConfig = {
   revenue: {
     label: "Revenue",
-    color: "hsl(var(--chart-1))",
+    color: "hsl(var(--chart-1))", // Green for revenue
   },
   expenses: {
-    label: "Expenses", 
-    color: "hsl(var(--chart-2))",
+    label: "Expenses",
+    color: "hsl(var(--chart-2))", // Red for expenses
   },
 } satisfies ChartConfig;
 

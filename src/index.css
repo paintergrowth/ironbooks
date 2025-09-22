@@ -57,9 +57,9 @@
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
 
-    /* Custom Accent Colors */
-    --purple: 262 83% 58%; /* #8B5CF6 */
-    --teal: 188 96% 53%; /* #06B6D4 */
+    /* Chart Colors */
+    --chart-1: 142 76% 36%; /* Green for revenue */
+    --chart-2: 0 84% 60%;    /* Red for expenses */
   }
 
   .dark {
@@ -111,9 +111,9 @@
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
 
-    /* Custom Accent Colors */
-    --purple: 262 83% 77%; /* #A78BFA */
-    --teal: 186 77% 54%; /* #22D3EE */
+    /* Chart Colors */
+    --chart-1: 160 84% 45%; /* Brighter green for revenue */
+    --chart-2: 0 84% 65%;    /* Brighter red for expenses */
   }
 }
 
