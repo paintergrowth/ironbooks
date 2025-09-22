@@ -1,74 +1,187 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileText, Download, Play, Calendar, Filter } from 'lucide-react';
+import { FileText, Download, Play, Calendar, Filter, X } from 'lucide-react';
 
 interface ReportsProps {
   initialFilter?: string;
   initialTimeframe?: string;
 }
 
+type ReportRow = {
+  id: string;              // "YYYY-MM"
+  year: number;
+  month: number;
+  monthLabel: string;      // "July 2024"
+  pdfSignedUrl: string;
+  videoUrl: string | null;
+  generatedAtISO: string;
+  status: 'completed' | 'processing';
+  revenue: string | null;  // formatted currency or null
+  expenses: string | null; // formatted currency or null
+  profit: string | null;   // formatted currency or null
+};
+
+const currency = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+  minimumFractionDigits: 0,
+});
+
 const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) => {
   const [activeFilter, setActiveFilter] = useState(initialFilter || 'all');
   const [timeframe, setTimeframe] = useState(initialTimeframe || 'thisMonth');
 
+  // data
+  const [loading, setLoading] = useState<boolean>(true);
+  const [reports, setReports] = useState<ReportRow[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // video modal
+  const [showPlayer, setShowPlayer] = useState(false);
+  const [playerUrl, setPlayerUrl] = useState<string | null>(null);
+
   useEffect(() => {
-    if (initialFilter) {
-      setActiveFilter(initialFilter);
-    }
-    if (initialTimeframe) {
-      setTimeframe(initialTimeframe);
-    }
+    if (initialFilter) setActiveFilter(initialFilter);
+    if (initialTimeframe) setTimeframe(initialTimeframe);
   }, [initialFilter, initialTimeframe]);
 
-  const reports = [
-    {
-      id: '1',
-      month: 'July 2024',
-      pdfUrl: '#',
-      videoUrl: '#',
-      date: '2024-07-31',
-      status: 'completed',
-      revenue: '$162,300',
-      expenses: '$108,900',
-      profit: '$53,400'
-    },
-    {
-      id: '2',
-      month: 'June 2024',
-      pdfUrl: '#',
-      videoUrl: '#',
-      date: '2024-06-30',
-      status: 'completed',
-      revenue: '$160,000',
-      expenses: '$110,000',
-      profit: '$50,000'
-    },
-    {
-      id: '3',
-      month: 'May 2024',
-      pdfUrl: '#',
-      videoUrl: '#',
-      date: '2024-05-31',
-      status: 'completed',
-      revenue: '$155,000',
-      expenses: '$108,000',
-      profit: '$47,000'
-    },
-    {
-      id: '4',
-      month: 'April 2024',
-      pdfUrl: '#',
-      videoUrl: '#',
-      date: '2024-04-30',
-      status: 'processing',
-      revenue: '$150,000',
-      expenses: '$105,000',
-      profit: '$45,000'
+  // helper
+  const ymKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
+  const monthLabel = (y: number, m: number) =>
+    new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setErrorMsg(null);
+      try {
+        // 1) who am I -> realm id
+        const { data: auth } = await supabase.auth.getUser();
+        const uid = auth.user?.id;
+        if (!uid) {
+          if (!cancelled) {
+            setReports([]);
+            setErrorMsg('Not signed in.');
+          }
+          return;
+        }
+
+        const { data: prof, error: profErr } = await supabase
+          .from('profiles')
+          .select('qbo_realm_id')
+          .eq('id', uid)
+          .maybeSingle();
+        if (profErr) throw profErr;
+
+        const realmId: string | null = prof?.qbo_realm_id ?? null;
+        if (!realmId) {
+          if (!cancelled) {
+            setReports([]);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // 2) artifacts with pdf uploaded (only these months appear)
+        const { data: arts, error: artErr } = await supabase
+          .from('qbo_financial_artifacts')
+          .select('year,month,pdf_path,video_url,updated_at,created_at')
+          .eq('realm_id', realmId)
+          .not('pdf_path', 'is', null)
+          .order('year', { ascending: false })
+          .order('month', { ascending: false });
+
+        if (artErr) throw artErr;
+
+        const artifacts = (arts || []);
+        if (artifacts.length === 0) {
+          if (!cancelled) {
+            setReports([]);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // 3) signed URLs for each pdf
+        const signPromises = artifacts.map(async (r) => {
+          const path = r.pdf_path as string;
+          const { data: s } = await supabase
+            .storage
+            .from('financial-reports')
+            .createSignedUrl(path, 3600);
+          return { key: ymKey(r.year, r.month), signedUrl: s?.signedUrl || '' };
+        });
+        const signed = await Promise.all(signPromises);
+        const signedMap = signed.reduce<Record<string, string>>((acc, x) => {
+          acc[x.key] = x.signedUrl;
+          return acc;
+        }, {});
+
+        // 4) P&L numbers from view (fetch per-year and map by Y-M)
+        const years = Array.from(new Set(artifacts.map((a) => a.year)));
+        const { data: pnlRows, error: pnlErr } = await supabase
+          .from('qbo_pnl_monthly_from_postings')
+          .select('year,month,revenues,expenses,net_income')
+          .eq('realm_id', realmId)
+          .in('year', years);
+
+        if (pnlErr) throw pnlErr;
+
+        const pnlMap = (pnlRows || []).reduce<Record<string, { rev: number; exp: number; net: number }>>(
+          (acc, r: any) => {
+            const k = ymKey(r.year, r.month);
+            acc[k] = {
+              rev: Number(r.revenues) || 0,
+              exp: Number(r.expenses) || 0,
+              net: Number(r.net_income) || 0,
+            };
+            return acc;
+          },
+          {}
+        );
+
+        // 5) compose reports list (only months with pdf_path)
+        const merged: ReportRow[] = artifacts.map((a: any) => {
+          const k = ymKey(a.year, a.month);
+          const pnl = pnlMap[k];
+          const dISO =
+            (a.updated_at as string) ||
+            (a.created_at as string) ||
+            new Date(a.year, a.month - 1, 1).toISOString();
+
+          return {
+            id: k,
+            year: a.year,
+            month: a.month,
+            monthLabel: monthLabel(a.year, a.month),
+            pdfSignedUrl: signedMap[k] || '',
+            videoUrl: a.video_url || null,
+            generatedAtISO: dISO,
+            status: 'completed',
+            revenue: pnl ? currency.format(pnl.rev) : null,
+            expenses: pnl ? currency.format(pnl.exp) : null,
+            profit: pnl ? currency.format(pnl.net) : null,
+          };
+        });
+
+        if (!cancelled) setReports(merged);
+      } catch (e: any) {
+        if (!cancelled) setErrorMsg(e?.message || 'Failed to load reports.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  ];
+
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   const getFilterLabel = (filter: string) => {
     switch (filter) {
@@ -113,7 +226,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
               <SelectItem value="all">All Reports</SelectItem>
               <SelectItem value="revenue">Revenue Reports</SelectItem>
               <SelectItem value="expenses">Expense Reports</SelectItem>
-              <SelectItem value="profit-loss">Profit & Loss Reports</SelectItem>
+              <SelectItem value="profit-loss">Profit &amp; Loss Reports</SelectItem>
             </SelectContent>
           </Select>
           <Select value={timeframe} onValueChange={setTimeframe}>
@@ -130,8 +243,16 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
         </div>
       </div>
 
+      {/* Errors / Loading */}
+      {errorMsg && (
+        <div className="text-sm text-red-600">{errorMsg}</div>
+      )}
+      {loading && (
+        <div className="text-sm text-gray-600">Loading…</div>
+      )}
+
       <div className="grid gap-6">
-        {reports.map((report) => (
+        {!loading && reports.map((report) => (
           <Card key={report.id} className="border-2 shadow-lg hover:shadow-xl transition-shadow duration-200 dark:border-gray-700">
             <CardHeader className="pb-4">
               <div className="flex justify-between items-start">
@@ -141,17 +262,17 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
                   </div>
                   <div>
                     <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
-                      {report.month} Financial Report
+                      {report.monthLabel} Financial Report
                     </CardTitle>
                     <div className="flex items-center space-x-2 mt-1">
                       <Calendar className="h-4 w-4 text-gray-500" />
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Generated on {new Date(report.date).toLocaleDateString()}
+                        Generated on {new Date(report.generatedAtISO).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
                 </div>
-                <Badge 
+                <Badge
                   variant={report.status === 'completed' ? 'default' : 'secondary'}
                   className={report.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' : ''}
                 >
@@ -162,12 +283,14 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
             <CardContent>
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className={`text-center p-3 rounded-lg ${
-                  activeFilter === 'revenue' || activeFilter === 'all' 
-                    ? 'bg-green-50 dark:bg-green-900/10 ring-2 ring-green-200' 
+                  activeFilter === 'revenue' || activeFilter === 'all'
+                    ? 'bg-green-50 dark:bg-green-900/10 ring-2 ring-green-200'
                     : 'bg-green-50 dark:bg-green-900/10'
                 }`}>
                   <div className="text-sm font-medium text-green-700 dark:text-green-400">Revenue</div>
-                  <div className="text-lg font-bold text-green-900 dark:text-green-300">{report.revenue}</div>
+                  <div className="text-lg font-bold text-green-900 dark:text-green-300">
+                    {report.revenue ?? '—'}
+                  </div>
                 </div>
                 <div className={`text-center p-3 rounded-lg ${
                   activeFilter === 'expenses' || activeFilter === 'all'
@@ -175,7 +298,9 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
                     : 'bg-red-50 dark:bg-red-900/10'
                 }`}>
                   <div className="text-sm font-medium text-red-700 dark:text-red-400">Expenses</div>
-                  <div className="text-lg font-bold text-red-900 dark:text-red-300">{report.expenses}</div>
+                  <div className="text-lg font-bold text-red-900 dark:text-red-300">
+                    {report.expenses ?? '—'}
+                  </div>
                 </div>
                 <div className={`text-center p-3 rounded-lg ${
                   activeFilter === 'profit-loss' || activeFilter === 'all'
@@ -183,24 +308,37 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
                     : 'bg-blue-50 dark:bg-blue-900/10'
                 }`}>
                   <div className="text-sm font-medium text-blue-700 dark:text-blue-400">Net Profit</div>
-                  <div className="text-lg font-bold text-blue-900 dark:text-blue-300">{report.profit}</div>
+                  <div className="text-lg font-bold text-blue-900 dark:text-blue-300">
+                    {report.profit ?? '—'}
+                  </div>
                 </div>
               </div>
+
               <div className="flex flex-col sm:flex-row gap-3">
-                <Button 
-                  variant="default" 
-                  size="sm" 
+                <Button
+                  variant="default"
+                  size="sm"
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  disabled={report.status !== 'completed'}
+                  disabled={!report.pdfSignedUrl}
+                  onClick={() => {
+                    if (report.pdfSignedUrl) window.open(report.pdfSignedUrl, '_blank', 'noopener,noreferrer');
+                  }}
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download PDF
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="flex-1 border-2"
-                  disabled={report.status !== 'completed'}
+                  disabled={!report.videoUrl}
+                  onClick={() => {
+                    if (report.videoUrl) {
+                      setPlayerUrl(report.videoUrl);
+                      setShowPlayer(true);
+                    }
+                  }}
                 >
                   <Play className="mr-2 h-4 w-4" />
                   Watch Review
@@ -211,7 +349,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
         ))}
       </div>
 
-      {reports.length === 0 && (
+      {!loading && reports.length === 0 && (
         <Card className="border-2 shadow-lg dark:border-gray-700">
           <CardContent className="text-center py-12">
             <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
@@ -221,6 +359,50 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
             <p className="text-gray-600 dark:text-gray-400">Your monthly reports will appear here once generated.</p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Simple modal for video playback (no external deps) */}
+      {showPlayer && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/70"
+            onClick={() => { setShowPlayer(false); setPlayerUrl(null); }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="relative w-full max-w-3xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden">
+              <button
+                className="absolute right-3 top-3 rounded-md p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+                onClick={() => { setShowPlayer(false); setPlayerUrl(null); }}
+                aria-label="Close"
+              >
+                <X className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+              </button>
+              <div className="w-full aspect-video bg-black">
+                {playerUrl ? (
+                  <iframe
+                    src={playerUrl}
+                    title="Report Review"
+                    className="w-full h-full"
+                    allow="autoplay; encrypted-media; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : null}
+              </div>
+              {playerUrl && (
+                <div className="p-3 text-right">
+                  <a
+                    href={playerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-blue-600 hover:text-blue-700 underline"
+                  >
+                    Open in new tab
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
