@@ -6,6 +6,8 @@ import { useImpersonation } from "@/lib/impersonation";
 const ViewingAsChip: React.FC<{ className?: string }> = ({ className }) => {
   const { isImpersonating, target, clearImpersonation } = useImpersonation();
 
+  console.log('[ViewingAsChip] render → isImpersonating =', isImpersonating, 'target =', target);
+
   if (!isImpersonating || !target) return null;
 
   return (
@@ -27,7 +29,10 @@ const ViewingAsChip: React.FC<{ className?: string }> = ({ className }) => {
         size="sm"
         variant="outline"
         className="h-7 border-amber-300 text-amber-800 hover:bg-amber-100"
-        onClick={clearImpersonation}
+        onClick={() => {
+          console.log('[ViewingAsChip] Back to me clicked');
+          clearImpersonation();
+        }}
       >
         Back to me
       </Button>
