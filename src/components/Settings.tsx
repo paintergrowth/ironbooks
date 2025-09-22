@@ -1,6 +1,7 @@
 // src/pages/Settings.tsx
 // update settings.
 import React, { useEffect, useState } from 'react';
+import ViewingAsChip from "@/components/ViewingAsChip";
 // ✅ add this import (top of file with the others)
 import { supabase } from '@/lib/supabase';
 import { Link } from "react-router-dom";
@@ -147,7 +148,7 @@ const Settings: React.FC = () => {
       </div>
     
       {/* Right-aligned actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {isAdmin && (
           <Button
             asChild
@@ -160,7 +161,8 @@ const Settings: React.FC = () => {
             </Link>
           </Button>
         )}
-    
+         {/* Chip only renders when impersonating */}
+          <ViewingAsChip />
         <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700" disabled={saving}>
           <Save className="mr-2 h-4 w-4" />
           {saving ? 'Saving…' : 'Save Changes'}
