@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   LayoutDashboard,
   Bot,
+  MessageSquare,
   FileText,
   Plus,
   Settings,
@@ -24,6 +25,7 @@ import {
 const navItems = [
   { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
   { id: 'cfo-agent', title: 'CFO Agent', icon: Bot, url: '/cfo' },
+  { id: 'ai-accountant', title: 'AI Accountant', icon: MessageSquare, url: '/ai-accountant' },
   { id: 'reports', title: 'Reports', icon: FileText, url: '/reports' },
   { id: 'add-ons', title: 'Add-Ons', icon: Plus, url: '/add-ons' },
   { id: 'settings', title: 'Settings', icon: Settings, url: '/settings' },

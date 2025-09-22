@@ -1,12 +1,13 @@
 // src/components/AppLayout.tsx
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Button } from './ui/button';
-import { Menu, X } from 'lucide-react';
 import { AppSidebar } from './sidebar-07/components/app-sidebar';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from './ui/sidebar';
-import DashboardNew from './DashboardNew';
+import { Menu } from 'lucide-react';
+import { Button } from './ui/button';
+import Dashboard from './Dashboard';
 import CFOAgent from './CFOAgent';
+import AIAccountant from './ai-accountant/AIAccountant';
 import Reports from './Reports';
 import AddOns from './AddOns';
 import Settings from './Settings';
@@ -20,7 +21,7 @@ const AppLayout: React.FC = () => {
   console.log("src/components/AppLayout.tsx live: components/CFOAgent.tsx (QBO card build)");
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [aiAccountantSidebarOpen, setAiAccountantSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [reportFilter, setReportFilter] = useState<string | undefined>();
@@ -30,6 +31,7 @@ const AppLayout: React.FC = () => {
   const getActiveSectionFromPath = (pathname: string) => {
     if (pathname === '/' || pathname === '/dashboard') return 'dashboard';
     if (pathname === '/cfo') return 'cfo-agent';
+    if (pathname === '/ai-accountant') return 'ai-accountant';
     if (pathname === '/reports') return 'reports';
     if (pathname === '/add-ons') return 'add-ons';
     if (pathname === '/settings') return 'settings';
@@ -43,7 +45,6 @@ const AppLayout: React.FC = () => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      setSidebarOpen(!mobile); // Hide sidebar by default on mobile
     };
 
     checkMobile();
@@ -69,9 +70,11 @@ const AppLayout: React.FC = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
-        return <DashboardNew onNavigateToReports={handleNavigateToReports} />;
+        return <Dashboard onNavigateToReports={handleNavigateToReports} />;
       case 'cfo-agent':
         return <CFOAgent />;
+      case 'ai-accountant':
+        return <AIAccountant sidebarOpen={aiAccountantSidebarOpen} setSidebarOpen={setAiAccountantSidebarOpen} />;
       case 'reports':
         return <Reports initialFilter={reportFilter} initialTimeframe={reportTimeframe} />;
       case 'add-ons':
@@ -81,26 +84,47 @@ const AppLayout: React.FC = () => {
       case 'admin-panel':
         return <AdminPanelComplete />;
       default:
-        return <DashboardNew onNavigateToReports={handleNavigateToReports} />;
+        return <Dashboard onNavigateToReports={handleNavigateToReports} />;
     }
   };
 
   return (
-    <SidebarProvider>
-      <div className="flex h-screen w-full">
-        <AppSidebar />
-        <SidebarInset>
-          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+    <SidebarProvider defaultOpen={!isMobile}>
+      <AppSidebar />
+      <SidebarInset>
+        {/* Header with Menu Toggle */}
+        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <SidebarTrigger className="-ml-1" />
-            <h2 className="text-lg font-semibold capitalize">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
               {activeSection.replace('-', ' ')}
             </h2>
-          </header>
-          <div className="flex-1 overflow-auto p-4">
-            {renderContent()}
           </div>
-        </SidebarInset>
-      </div>
+          <div className="flex items-center gap-2">
+            {activeSection === 'ai-accountant' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden"
+                onClick={() => setAiAccountantSidebarOpen(true)}
+              >
+                <Menu size={20} />
+              </Button>
+            )}
+          </div>
+        </header>
+
+        {/* Content Area */}
+        <div className={`flex-1 min-h-0 ${activeSection === 'ai-accountant' ? '' : 'p-4 md:p-6'}`}>
+          {activeSection === 'ai-accountant' ? (
+            renderContent()
+          ) : (
+            <div className="h-full">
+              {renderContent()}
+            </div>
+          )}
+        </div>
+      </SidebarInset>
     </SidebarProvider>
   );
 };
