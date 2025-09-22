@@ -7,6 +7,12 @@ import './index.css';
 import { ImpersonationProvider } from '@/lib/impersonation';
 
 console.log("src/main.tsx live: components/CFOAgent.tsx (QBO card build)");
+console.log('[main] boot: mounting <ImpersonationProvider> + <App>')
+console.log('[main] localStorage["impersonation:v1"]:', localStorage.getItem('impersonation:v1') || '(none)')
+
+window.addEventListener('impersonation:changed', () => {
+  console.log('[main] event: impersonation:changed → localStorage snapshot =', localStorage.getItem('impersonation:v1') || '(none)')
+})
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
