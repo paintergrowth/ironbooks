@@ -2,6 +2,7 @@
 // update settings.
 import React, { useEffect, useState } from 'react';
 import ViewingAsChip from "@/components/ViewingAsChip";
+import ImpersonateDropdown from "@/components/ImpersonateDropdown";
 import { supabase } from '@/lib/supabase';
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,10 +13,10 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/components/theme-provider';
-import {
-  LogOut,
-  Key,
-  HelpCircle,
+import { 
+  LogOut, 
+  Key, 
+  HelpCircle, 
   Moon,
   Sun,
   Shield,
@@ -51,7 +52,7 @@ const Settings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false); // NEW
 
-  // Snapshot impersonation (helps verify provider + state)
+  // Impersonation snapshot (for debugging)
   const { isImpersonating, target } = useImpersonation();
   console.log('[Settings] impersonation snapshot:', { isImpersonating, target });
 
@@ -74,7 +75,7 @@ const Settings: React.FC = () => {
         console.log('[Settings] fetching profiles row…');
         const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, phone, company, designation, settings, role')  // NEW: load role
+          .select('full_name, phone, company, designation, settings, role')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -106,7 +107,6 @@ const Settings: React.FC = () => {
             reports: saved.reports ?? defaults.reports,
           }));
         }
-        // If no row exists yet, keep defaults; first save will create it.
       } catch (e) {
         console.error('[Settings] load failed:', e);
       }
@@ -171,7 +171,7 @@ const Settings: React.FC = () => {
 
   return (
     <div className="h-[100dvh]">
-      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">
+      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">  
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
@@ -181,17 +181,22 @@ const Settings: React.FC = () => {
           {/* Right-aligned actions */}
           <div className="flex items-center gap-3">
             {isAdmin && (
-              <Button
-                asChild
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                title="Open Admin Panel"
-                onClick={() => console.log('[Settings] Open Admin Panel clicked')}
-              >
-                <Link to="/admin-panel">
-                  <Shield className="mr-2 h-4 w-4" />
-                  Open Admin Panel
-                </Link>
-              </Button>
+              <>
+                {/* NEW: Admin-only impersonation dropdown */}
+                <ImpersonateDropdown />
+
+                <Button
+                  asChild
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  title="Open Admin Panel"
+                  onClick={() => console.log('[Settings] Open Admin Panel clicked')}
+                >
+                  <Link to="/admin-panel">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Open Admin Panel
+                  </Link>
+                </Button>
+              </>
             )}
 
             {/* Chip only renders when impersonating */}
@@ -216,35 +221,35 @@ const Settings: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
+                <Input 
+                  id="name" 
                   value={profile.name}
-                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                  onChange={(e) => setProfile({...profile, name: e.target.value})}
                 />
               </div>
               <div>
                 <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
+                <Input 
+                  id="email" 
+                  type="email" 
                   value={profile.email}
                   disabled
                 />
               </div>
               <div>
                 <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
+                <Input 
+                  id="phone" 
                   value={profile.phone}
-                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                  onChange={(e) => setProfile({...profile, phone: e.target.value})}
                 />
               </div>
               <div>
                 <Label htmlFor="designation">Designation</Label>
-                <Input
-                  id="designation"
+                <Input 
+                  id="designation" 
                   value={profile.designation}
-                  onChange={(e) => setProfile({ ...profile, designation: e.target.value })}
+                  onChange={(e) => setProfile({...profile, designation: e.target.value})}
                 />
               </div>
             </div>
@@ -295,11 +300,11 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Email Notifications</p>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Receive updates via email</p>
               </div>
-              <Switch
+              <Switch 
                 checked={notifications.email}
                 onCheckedChange={(checked) => {
                   console.log('[Settings] notif: email →', checked);
-                  setNotifications({ ...notifications, email: checked });
+                  setNotifications({...notifications, email: checked});
                 }}
               />
             </div>
@@ -308,11 +313,11 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Push Notifications</p>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Browser push notifications</p>
               </div>
-              <Switch
+              <Switch 
                 checked={notifications.push}
                 onCheckedChange={(checked) => {
                   console.log('[Settings] notif: push →', checked);
-                  setNotifications({ ...notifications, push: checked });
+                  setNotifications({...notifications, push: checked});
                 }}
               />
             </div>
@@ -321,11 +326,11 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Weekly Reports</p>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Automated financial summaries</p>
               </div>
-              <Switch
+              <Switch 
                 checked={notifications.reports}
                 onCheckedChange={(checked) => {
                   console.log('[Settings] notif: reports →', checked);
-                  setNotifications({ ...notifications, reports: checked });
+                  setNotifications({...notifications, reports: checked});
                 }}
               />
             </div>
