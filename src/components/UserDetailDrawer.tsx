@@ -682,90 +682,128 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                     {loadingArtifacts ? (
                       <div className="text-sm text-gray-600">Loading…</div>
                     ) : (
-                      <div className="space-y-2">
-                        {months.map(({ y, m, key, label }) => {
-                          const row = artifacts[key];
-                          const busy = !!savingByMonth[key];
-                          const signedUrl = signedLinks[key];
-                          return (
-                            <div key={key} className="grid grid-cols-12 items-center gap-2 border rounded-md p-2">
-                              <div className="col-span-2 text-sm font-medium">{label}</div>
+{/* nicer monthly cards */}
+<div className="grid grid-cols-1 gap-3">
+  {months.map(({ y, m, key, label }) => {
+    const row = artifacts[key];
+    const busy = !!savingByMonth[key];
+    const signedUrl = signedLinks[key];
 
-                              {/* P&L Generated (read-only) */}
-                              <div className="col-span-2 text-sm">
-                                <div className="flex items-center space-x-2">
-                                  <input type="checkbox" readOnly checked={!!row?.pnl_generated} />
-                                  <span>P&L Generated</span>
-                                </div>
-                              </div>
+    return (
+      <div
+        key={key}
+        className="rounded-xl border bg-white/50 p-4 shadow-sm hover:shadow-md transition-colors"
+      >
+        {/* Row 1 — Month & Year */}
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">{label}</div>
+          {/* optional tiny status chips */}
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${
+              row?.pdf_path ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'
+            }`}>
+              PDF {row?.pdf_path ? 'attached' : 'missing'}
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${
+              row?.video_added ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'
+            }`}>
+              Video {row?.video_added ? 'added' : 'pending'}
+            </span>
+          </div>
+        </div>
 
-                              {/* Video Added (read-only) */}
-                              <div className="col-span-2 text-sm">
-                                <div className="flex items-center space-x-2">
-                                  <input type="checkbox" readOnly checked={!!row?.video_added} />
-                                  <span>Video Added</span>
-                                </div>
-                              </div>
+        <div className="mt-3 space-y-3 divide-y">
+          {/* Row 2 — P&L Generated + PDF controls */}
+          <div className="pt-1 first:pt-0 flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                readOnly
+                checked={!!row?.pnl_generated}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/30"
+              />
+              <span className="text-gray-700">P&amp;L Generated</span>
+            </label>
 
-              {/* PDF controls */}
-              <div className="col-span-3 flex items-center space-x-2">
-                {row?.pdf_path && signedUrl ? (
-                  <>
-                    <a className="text-blue-600 underline text-sm" href={signedUrl} target="_blank" rel="noreferrer">
-                      View PDF
-                    </a>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => handleDelete(y, m)}>
-                      {busy ? 'Deleting…' : 'Delete'}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      ref={(el) => { fileInputs.current[key] = el; }}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleUpload(y, m, f);
-                        // allow picking the same file name again later
-                        e.currentTarget.value = '';
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => fileInputs.current[key]?.click()}
-                    >
-                      {busy ? 'Uploading…' : 'Upload PDF'}
-                    </Button>
-                  </>
-                )}
-              </div>
+            <div className="flex items-center gap-2">
+              {row?.pdf_path && signedUrl ? (
+                <>
+                  <a
+                    className="text-sm underline text-blue-700 hover:text-blue-800"
+                    href={signedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View PDF
+                  </a>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => handleDelete(y, m)}>
+                    {busy ? 'Deleting…' : 'Delete'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    ref={(el) => { fileInputs.current[key] = el; }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUpload(y, m, f);
+                      e.currentTarget.value = '';
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => fileInputs.current[key]?.click()}
+                  >
+                    {busy ? 'Uploading…' : 'Upload PDF'}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
 
+          {/* Row 3 — Video Added + URL input (full width) */}
+          <div className="pt-3 flex flex-col gap-2">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                readOnly
+                checked={!!row?.video_added}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/30"
+              />
+              <span className="text-gray-700">Video Added</span>
+            </label>
 
-                              {/* Video URL controls */}
-                              <div className="col-span-3 flex items-center space-x-2">
-                                <Input
-                                  value={videoDrafts[key] ?? ''}
-                                  onChange={(e) => setVideoDrafts(prev => ({ ...prev, [key]: e.target.value }))}
-                                  placeholder="https://video…"
-                                  className="h-8"
-                                  disabled={busy}
-                                />
-                                <Button
-                                  size="sm"
-                                  disabled={busy}
-                                  onClick={() => handleSaveVideo(y, m, videoDrafts[key] ?? '')}
-                                >
-                                  {busy ? 'Saving…' : 'Save'}
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+            <Input
+              value={videoDrafts[key] ?? ''}
+              onChange={(e) => setVideoDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+              placeholder="https://video-url…"
+              className="h-9 w-full"
+              disabled={busy}
+            />
+          </div>
+
+          {/* Row 4 — Save button (right aligned) */}
+          <div className="pt-3 flex justify-end">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => handleSaveVideo(y, m, videoDrafts[key] ?? '')}
+              className="min-w-[88px]"
+            >
+              {busy ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  })}
+</div>
+
                     )}
                   </CardContent>
                 </Card>
