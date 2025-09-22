@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import React, { useEffect, useMemo, useState } from 'react';
+
 import { supabase } from '@/lib/supabase';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -682,6 +682,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                     {loadingArtifacts ? (
                       <div className="text-sm text-gray-600">Loading…</div>
                     ) : (
+                    <>
 {/* nicer monthly cards */}
 <div className="grid grid-cols-1 gap-3">
   {months.map(({ y, m, key, label }) => {
@@ -803,7 +804,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
     );
   })}
 </div>
-
+</>
                     )}
                   </CardContent>
                 </Card>
