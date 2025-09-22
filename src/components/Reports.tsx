@@ -92,7 +92,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
         // 2) artifacts with pdf uploaded (only these months appear)
         const { data: arts, error: artErr } = await supabase
           .from('qbo_financial_artifacts')
-          .select('year,month,pdf_path,video_url,updated_at,created_at')
+          .select('year,month,pdf_path,video_url,uploaded_at')
           .eq('realm_id', realmId)
           .not('pdf_path', 'is', null)
           .order('year', { ascending: false })
@@ -152,8 +152,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           const k = ymKey(a.year, a.month);
           const pnl = pnlMap[k];
           const dISO =
-            (a.updated_at as string) ||
-            (a.created_at as string) ||
+            (a.uploaded_at as string) ||
             new Date(a.year, a.month - 1, 1).toISOString();
 
           return {
