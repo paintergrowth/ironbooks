@@ -140,16 +140,34 @@ const Settings: React.FC = () => {
   return (
     <div className="h-[100dvh]">
     <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">  
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
-          <p className="text-gray-600 dark:text-gray-300 mt-1">Manage your account and preferences</p>
-        </div>
+    <div className="flex items-center justify-between">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
+        <p className="text-gray-600 dark:text-gray-300 mt-1">Manage your account and preferences</p>
+      </div>
+    
+      {/* Right-aligned actions */}
+      <div className="flex items-center gap-2">
+        {isAdmin && (
+          <Button
+            asChild
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            title="Open Admin Panel"
+          >
+            <Link to="/admin-panel">
+              <Shield className="mr-2 h-4 w-4" />
+              Open Admin Panel
+            </Link>
+          </Button>
+        )}
+    
         <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700" disabled={saving}>
           <Save className="mr-2 h-4 w-4" />
           {saving ? 'Saving…' : 'Save Changes'}
         </Button>
       </div>
+    </div>
+
 
       {/* Profile Settings */}
       <Card>
@@ -323,17 +341,7 @@ const Settings: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-      {/* Admin Panel (visible only to admins) */}
-      {isAdmin && (
-        <div className="flex justify-end">
-         <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
-           <Link to="/admin-panel">
-              <Shield className="mr-2 h-4 w-4" />
-              Open Admin Panel
-           </Link>
-         </Button>
-        </div>
-      )}
+
       <Separator />
 
       {/* Actions */}
