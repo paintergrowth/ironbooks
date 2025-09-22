@@ -18,13 +18,30 @@ export const useQBOStatus = () => {
     loading: true
   });
 
-  const checkQBOStatus = async () => {
+  // Cache key for storing last known status
+  const getCacheKey = () => `qboStatus:${user?.id}`;
+
+  const checkQBOStatus = async (forceRefresh = false) => {
     if (!user?.id) {
       setStatus({ connected: false, loading: false });
       return;
     }
 
-    setStatus(prev => ({ ...prev, loading: true }));
+    // Load cached status first if available and not forcing refresh
+    if (!forceRefresh) {
+      try {
+        const cached = localStorage.getItem(getCacheKey());
+        if (cached) {
+          const cachedStatus = JSON.parse(cached);
+          // Set cached status immediately but keep loading true for background refresh
+          setStatus(prev => ({ ...cachedStatus, loading: true }));
+        }
+      } catch (error) {
+        console.warn('Failed to load cached QBO status:', error);
+      }
+    } else {
+      setStatus(prev => ({ ...prev, loading: true }));
+    }
 
     try {
       // First try to get from profiles table directly (faster)
@@ -35,12 +52,14 @@ export const useQBOStatus = () => {
         .single();
 
       if (!profileError && profile) {
-        setStatus({
+        const newStatus = {
           connected: Boolean(profile.qbo_connected),
           realm_id: profile.qbo_realm_id,
           loading: false,
           error: undefined
-        });
+        };
+        
+        setStatus(newStatus);
 
         // If we have realm_id, try to get company name from qbo-company
         if (profile.qbo_realm_id && profile.qbo_connected) {
@@ -49,14 +68,42 @@ export const useQBOStatus = () => {
               body: { realmId: profile.qbo_realm_id, userId: user.id }
             });
             if (companyData?.companyName) {
-              setStatus(prev => ({
-                ...prev,
+              const finalStatus = {
+                ...newStatus,
                 company_name: companyData.companyName
-              }));
+              };
+              setStatus(finalStatus);
+              
+              // Cache the final status
+              try {
+                localStorage.setItem(getCacheKey(), JSON.stringify(finalStatus));
+              } catch (error) {
+                console.warn('Failed to cache QBO status:', error);
+              }
+            } else {
+              // Cache status without company name
+              try {
+                localStorage.setItem(getCacheKey(), JSON.stringify(newStatus));
+              } catch (error) {
+                console.warn('Failed to cache QBO status:', error);
+              }
             }
           } catch (err) {
             // Non-critical error, just log it
             console.warn('Could not fetch company name:', err);
+            // Still cache the basic status
+            try {
+              localStorage.setItem(getCacheKey(), JSON.stringify(newStatus));
+            } catch (error) {
+              console.warn('Failed to cache QBO status:', error);
+            }
+          }
+        } else {
+          // Cache the status
+          try {
+            localStorage.setItem(getCacheKey(), JSON.stringify(newStatus));
+          } catch (error) {
+            console.warn('Failed to cache QBO status:', error);
           }
         }
         return;
@@ -77,14 +124,23 @@ export const useQBOStatus = () => {
         return;
       }
 
-      setStatus({
+      const finalStatus = {
         connected: data?.connected || false,
         company_name: data?.company_name,
         realm_id: data?.realm_id,
         last_sync: data?.last_sync,
         loading: false,
         error: undefined
-      });
+      };
+      
+      setStatus(finalStatus);
+      
+      // Cache the status
+      try {
+        localStorage.setItem(getCacheKey(), JSON.stringify(finalStatus));
+      } catch (error) {
+        console.warn('Failed to cache QBO status:', error);
+      }
     } catch (err) {
       console.error('QBO status error:', err);
       setStatus({

@@ -98,7 +98,7 @@ export const useChatHistory = () => {
       
       const newSession = data as ChatSession;
       setSessions(prev => [newSession, ...prev]);
-      setCurrentSession(newSession);
+      // Don't set current session here - let the caller do it after saving the first message
       return newSession;
     } catch (error) {
       console.error('Error creating session:', error);
@@ -115,15 +115,32 @@ export const useChatHistory = () => {
     content: string,
     tokens_in = 0,
     tokens_out = 0,
-    cost = 0
+    cost = 0,
+    sessionId?: string // Allow overriding the session ID
   ): Promise<ChatMessage | null> => {
-    if (!currentSession?.id) return null;
+    const targetSessionId = sessionId || currentSession?.id;
+    if (!targetSessionId) return null;
+
+    // Add optimistic message for instant UI feedback
+    const tempId = crypto.randomUUID();
+    const tempMessage: ChatMessage = {
+      id: tempId,
+      session_id: targetSessionId,
+      role,
+      content,
+      tokens_in,
+      tokens_out,
+      cost,
+      created_at: new Date().toISOString()
+    };
+    
+    setMessages(prev => [...prev, tempMessage]);
 
     try {
       const { data, error } = await supabase
         .from('chat_messages')
         .insert({
-          session_id: currentSession.id,
+          session_id: targetSessionId,
           role,
           content,
           tokens_in,
@@ -136,17 +153,23 @@ export const useChatHistory = () => {
       if (error) throw error;
       
       const newMessage = data as ChatMessage;
-      setMessages(prev => [...prev, newMessage]);
+      
+      // Replace the optimistic message with the real one
+      setMessages(prev => prev.map(msg => 
+        msg.id === tempId ? newMessage : msg
+      ));
       
       // Update session timestamp
       await supabase
         .from('chat_sessions')
         .update({ updated_at: new Date().toISOString() })
-        .eq('id', currentSession.id);
+        .eq('id', targetSessionId);
       
       return newMessage;
     } catch (error) {
       console.error('Error saving message:', error);
+      // Remove the optimistic message on error
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
       return null;
     }
   };

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Plus, Search, Settings2, Sparkles, BarChart3, FileText, Calculator, RotateCcw, ThumbsUp, ThumbsDown, Copy, Trash2, CheckCircle, XCircle, ExternalLink, AlertCircle, Menu, X } from 'lucide-react';
+import { Send, Plus, Search, Settings2, Sparkles, BarChart3, FileText, Calculator, RotateCcw, ThumbsUp, ThumbsDown, Copy, Trash2, CheckCircle, XCircle, ExternalLink, AlertCircle, Menu, X, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Response } from '@/components/ai-elements/response';
 import { Actions, Action } from '@/components/ai-elements/actions';
@@ -120,8 +120,13 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             if (!session) return;
         }
 
-        // Save user message
-        await saveMessage('user', messageContent);
+        // Save user message with session ID to avoid race condition
+        await saveMessage('user', messageContent, 0, 0, 0, session.id);
+
+        // Set current session after saving the first message to prevent race condition
+        if (!currentSession) {
+            selectSession(session);
+        }
 
         // Auto-generate session title from first user message if it's still "New Chat"
         if (session.title === 'New Chat' && chatMessages.length === 0) {
@@ -140,7 +145,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 response,
                 metadata?.tokens_in || 0,
                 metadata?.tokens_out || 0,
-                metadata?.cost || 0
+                metadata?.cost || 0,
+                session.id
             );
         } catch (error) {
             console.error('Error getting AI response:', error);
@@ -155,7 +161,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 }
             }
 
-            await saveMessage('assistant', fallbackResponse, 0, 0, 0);
+            await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
         }
     };
 
@@ -391,20 +397,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 <div className="p-4 border-b">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                            {qboStatus.loading ? (
-                                <Badge variant="secondary" className="text-xs">
-                                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse mr-2"></div>
-                                    Checking...
-                                </Badge>
-                            ) : qboStatus.connected ? (
+                            {qboStatus.connected ? (
                                 <Badge variant="default" className="text-xs bg-green-100 text-green-800 border-green-200">
                                     <CheckCircle size={12} className="mr-1" />
                                     {qboStatus.company_name || 'QuickBooks'}
+                                    {qboStatus.loading && <Loader2 size={10} className="ml-1 animate-spin" />}
                                 </Badge>
                             ) : (
                                 <Badge variant="destructive" className="text-xs">
                                     <XCircle size={12} className="mr-1" />
                                     Not Connected
+                                    {qboStatus.loading && <Loader2 size={10} className="ml-1 animate-spin" />}
                                 </Badge>
                             )}
                         </div>
@@ -444,7 +447,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                     variant="outline"
                                     onClick={handleSyncTransactions}
                                     className="h-7 px-2 text-xs"
+                                    disabled={qboStatus.loading}
                                 >
+                                    {qboStatus.loading && <Loader2 size={12} className="mr-1 animate-spin" />}
                                     Sync Data
                                 </Button>
                             </div>
@@ -682,20 +687,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         <div className="p-4 border-b">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
-                                    {qboStatus.loading ? (
-                                        <Badge variant="outline" className="text-xs animate-pulse">
-                                            <BarChart3 size={12} className="mr-1" />
-                                            Checking...
-                                        </Badge>
-                                    ) : qboStatus.connected ? (
+                                    {qboStatus.connected ? (
                                         <Badge variant="default" className="text-xs bg-green-100 text-green-800 border-green-200">
                                             <CheckCircle size={12} className="mr-1" />
                                             Connected
+                                            {qboStatus.loading && <Loader2 size={10} className="ml-1 animate-spin" />}
                                         </Badge>
                                     ) : (
                                         <Badge variant="destructive" className="text-xs">
                                             <XCircle size={12} className="mr-1" />
                                             Not Connected
+                                            {qboStatus.loading && <Loader2 size={10} className="ml-1 animate-spin" />}
                                         </Badge>
                                     )}
                                 </div>
@@ -735,7 +737,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                             variant="outline"
                                             onClick={handleSyncTransactions}
                                             className="h-7 px-2 text-xs"
+                                            disabled={qboStatus.loading}
                                         >
+                                            {qboStatus.loading && <Loader2 size={12} className="mr-1 animate-spin" />}
                                             Sync Data
                                         </Button>
                                     </div>
