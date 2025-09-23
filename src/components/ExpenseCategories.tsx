@@ -2,16 +2,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { invokeWithAuth } from '@/lib/supabase';
+import { useEffectiveIdentity } from '@/lib/impersonation';
 
-//type UiTimeframe = 'This Month' | 'Last Month' | 'YTD';
 type ApiPeriod = 'this_month' | 'last_month' | 'ytd';
-
-function toApiPeriod(tf: UiTimeframe): ApiPeriod {
-  if (tf === 'This Month') return 'this_month';
-  if (tf === 'Last Month') return 'last_month';
-  return 'ytd';
-}
 
 function fmt0(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -25,6 +20,12 @@ function pctChange(curr: number, prev: number): number | null {
 function changeLabel(period: ApiPeriod) {
   return period === 'ytd' ? 'from last year' : 'from last month';
 }
+
+const periodLabel: Record<ApiPeriod, string> = {
+  this_month: 'This Month',
+  last_month: 'Last Month',
+  ytd: 'YTD',
+};
 
 interface CategoryRow {
   name: string;
@@ -47,10 +48,12 @@ interface TxnRow {
   docnum?: string;
   name?: string;
   memo?: string;
-  amount: number | string; // (server may send string; we coerce)
+  amount: number | string; // server may send string; we coerce
 }
 
 export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod }) {
+  // 🔑 Effective identity (supports impersonation)
+  const { userId: effUserId, realmId: effRealmId } = useEffectiveIdentity();
 
   const [loading, setLoading] = useState(false);
   const [cats, setCats] = useState<CategoryRow[]>([]);
@@ -63,15 +66,22 @@ export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod 
   const [selected, setSelected] = useState<CategoryRow | null>(null);
   const [txns, setTxns] = useState<TxnRow[]>([]);
 
-useEffect(() => { setPeriod(timeframe); }, [timeframe]);
+  useEffect(() => { setPeriod(timeframe); }, [timeframe]);
 
+  // Fetch categories (impersonation-aware)
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (!effUserId) return; // wait until identity is known
       setLoading(true);
       try {
-        const { data, error } = await supabase.functions.invoke('qbo-expense-categories', {
-          body: { period, nonce: Date.now() },
+        const { data, error } = await invokeWithAuth('qbo-expense-categories', {
+          body: {
+            period,
+            userId: effUserId ?? null,
+            realmId: effRealmId ?? null,
+            nonce: Date.now(),
+          },
         });
         if (error) throw error;
         const payload = data as CategoriesPayload;
@@ -90,25 +100,27 @@ useEffect(() => { setPeriod(timeframe); }, [timeframe]);
       }
     })();
     return () => { cancelled = true; };
-  }, [period]);
+  }, [period, effUserId, effRealmId]);
 
   const periodChangeText = useMemo(() => changeLabel(period), [period]);
 
+  // Open modal + fetch transactions (impersonation-aware)
   const openDetails = async (row: CategoryRow) => {
     setSelected(row);
     setOpen(true);
     setLoadingTxns(true);
     try {
-      const { data, error } = await supabase.functions.invoke('qbo-expense-transactions', {
+      const { data, error } = await invokeWithAuth('qbo-expense-transactions', {
         body: {
           period,
           accountId: row.accountId ?? undefined,
           accountName: row.name,
+          userId: effUserId ?? null,
+          realmId: effRealmId ?? null,
           nonce: Date.now(),
         },
       });
       if (error) throw error;
-      // 🔧 Ensure amounts are numeric so sums are correct (esp. YTD)
       const coerced = Array.isArray(data?.transactions)
         ? data.transactions.map((t: TxnRow) => ({
             ...t,
@@ -138,11 +150,30 @@ useEffect(() => { setPeriod(timeframe); }, [timeframe]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Top Expense Categories <span className="text-sm text-gray-500">({period === 'ytd' ? 'YoY Change' : 'MoM Change'})</span>
-        </h3>
-        {loading ? <span className="text-xs text-gray-500">Loading…</span> : null}
+      {/* Header with dropdown */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Top Expense Categories <span className="text-sm text-gray-500">({period === 'ytd' ? 'YoY Change' : 'MoM Change'})</span>
+          </h3>
+          {totalCurr > 0 && (
+            <p className="text-xs text-gray-500 mt-0.5">Total (current): {fmt0(totalCurr)}</p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {loading && <span className="text-xs text-gray-500">Loading…</span>}
+          <Select value={period} onValueChange={(v: ApiPeriod) => setPeriod(v)}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Select period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="this_month">{periodLabel.this_month}</SelectItem>
+              <SelectItem value="last_month">{periodLabel.last_month}</SelectItem>
+              <SelectItem value="ytd">{periodLabel.ytd}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Grid of category cards */}
@@ -176,7 +207,7 @@ useEffect(() => { setPeriod(timeframe); }, [timeframe]);
                 <div className={`text-xs ${isUp ? 'text-red-600' : 'text-green-600'}`}>
                   {`${isUp ? '+' : '-'}${fmt0(Math.abs(delta))}`}
                   {pct !== null ? ` (${isUp ? '+' : '-'}${Math.abs(pct).toFixed(1)}%)` : ' (—)'}{' '}
-                  {periodChangeText}
+                  {changeLabel(period)}
                 </div>
               </div>
             </Card>
@@ -195,10 +226,9 @@ useEffect(() => { setPeriod(timeframe); }, [timeframe]);
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h4 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {selected?.name} — {timeframe}
+                  {selected?.name} — {periodLabel[period]}
                 </h4>
                 <p className="text-sm text-gray-500">
-                  {/* 🔁 Use the *sum of visible txns* instead of aggregated category total */}
                   {fmt0(txnTotal)} total • {((selected?.share || 0) * 100).toFixed(1)}% of expenses
                 </p>
               </div>
