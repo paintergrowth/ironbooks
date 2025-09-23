@@ -1,4 +1,3 @@
-// src/components/CFOAgent.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -9,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import PremiumChatInterface from './PremiumChatInterface';
-import { useEffectiveIdentity } from '@/lib/impersonation';
+import { useImpersonation } from '@/lib/impersonation';
 
 interface Message {
   id: string;
@@ -47,7 +46,6 @@ function buildQboAuthUrl() {
     localStorage.setItem('qbo_oauth_state', state);
     localStorage.setItem('qbo_postAuthReturn', window.location.pathname + window.location.search + window.location.hash);
   } catch {}
-
   const url =
     `${QBO_AUTHORIZE_URL}` +
     `?client_id=${encodeURIComponent(QBO_CLIENT_ID)}` +
@@ -56,7 +54,6 @@ function buildQboAuthUrl() {
     `&scope=${encodeURIComponent(QBO_SCOPES)}` +
     `&state=${encodeURIComponent(state)}` +
     `&prompt=consent`;
-
   return url;
 }
 
@@ -80,12 +77,19 @@ const CFOAgent = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [currentReasoning, setCurrentReasoning] = useState<Array<{id: string; title: string; content: string; type?: string}>>([]);
 
-  // Real authed user (used ONLY for connect/reconnect flows)
+  // Real authed user (only for connect/reconnect flows)
   const { user: realUser } = useAppContext();
   const { toast } = useToast();
 
-  // EFFECTIVE identity (impersonated if active)
-  const { userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
+  // Impersonation state
+  const { isImpersonating, target } = useImpersonation();
+
+  // Real user's realm (when not impersonating)
+  const [realRealmId, setRealRealmId] = useState<string | null>(null);
+
+  // Effective identity: user + realm we will use for ALL calls
+  const effUserId = isImpersonating ? target?.userId ?? null : realUser?.id ?? null;
+  const effRealmId = isImpersonating ? target?.realmId ?? null : realRealmId;
 
   // QBO status badge
   const [qboConnected, setQboConnected] = useState(false);
@@ -105,9 +109,21 @@ const CFOAgent = () => {
   const [syncStatus, setSyncStatus] = useState<any>(null);
   const [loadingSyncStatus, setLoadingSyncStatus] = useState(true);
 
-  // --------- Reflect "connected" badge for the EFFECTIVE user ----------
+  // Load REAL user's realm id (used when not impersonating)
   useEffect(() => {
-    let cancelled = false;
+    (async () => {
+      if (!realUser?.id) return;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('qbo_realm_id')
+        .eq('id', realUser.id)
+        .single();
+      if (!error) setRealRealmId(data?.qbo_realm_id ?? null);
+    })();
+  }, [realUser?.id]);
+
+  // Badge "connected?" (for the *effective* user)
+  useEffect(() => {
     (async () => {
       if (!effUserId) return;
       const { data, error } = await supabase
@@ -115,20 +131,16 @@ const CFOAgent = () => {
         .select('qbo_connected, qbo_realm_id')
         .eq('id', effUserId)
         .single();
-
-      if (!cancelled) {
-        if (error) {
-          console.warn('[CFOAgent] load connected flag error:', error);
-          setQboConnected(Boolean(effRealmId)); // best effort
-          return;
-        }
-        setQboConnected(Boolean(data?.qbo_connected) || Boolean(data?.qbo_realm_id || effRealmId));
+      if (!error) {
+        const connected = Boolean(data?.qbo_connected) || Boolean(data?.qbo_realm_id || effRealmId);
+        setQboConnected(connected);
+      } else {
+        setQboConnected(Boolean(effRealmId));
       }
     })();
-    return () => { cancelled = true; };
   }, [effUserId, effRealmId]);
 
-  // --------- OAuth callback saver (ALWAYS on the real user) ----------
+  // OAuth (always complete for REAL user)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('connected') !== 'qbo') return;
@@ -145,21 +157,15 @@ const CFOAgent = () => {
     };
 
     if (storedState && state && storedState !== state) {
-      toast({
-        title: 'QuickBooks',
-        description: 'Security check failed (state mismatch). Please reconnect.',
-        variant: 'destructive',
-      });
+      toast({ title: 'QuickBooks', description: 'Security check failed (state mismatch). Please reconnect.', variant: 'destructive' });
       finishAndClean();
       return;
     }
 
     (async () => {
       try {
-        // Always complete connection for the REAL logged-in user
         const { data: { user: authedUser } } = await supabase.auth.getUser();
         if (!authedUser) {
-          // stash and bail if not hydrated yet
           if (code)       { try { sessionStorage.setItem('pending_qbo_code', code); } catch {} }
           if (incomingRealm) { try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {} }
           try { sessionStorage.setItem('pending_qbo_redirect', QBO_REDIRECT_URI); } catch {}
@@ -194,7 +200,6 @@ const CFOAgent = () => {
             toast({ title: 'QuickBooks', description: 'Failed to save connection.', variant: 'destructive' });
           } else {
             toast({ title: 'QuickBooks', description: 'Connected successfully!' });
-            // Kick off full sync for real user
             await supabase.functions.invoke('qbo-sync-transactions', {
               body: { realmId: incomingRealm, userId: authedUser.id, mode: 'full' }
             });
@@ -206,7 +211,7 @@ const CFOAgent = () => {
     })();
   }, [toast]);
 
-  // --------- Deferred exchange saver (still for REAL user) ----------
+  // Deferred exchange saver (still REAL user)
   useEffect(() => {
     if (!realUser?.id) return;
 
@@ -237,7 +242,6 @@ const CFOAgent = () => {
           qbo_connected_at: new Date().toISOString(),
         })
         .eq('id', realUser.id);
-
       if (!error) {
         await supabase.functions.invoke('qbo-sync-transactions', {
           body: { realmId: pendingRealm, userId: realUser.id, mode: 'full' }
@@ -253,7 +257,12 @@ const CFOAgent = () => {
     })();
   }, [realUser?.id]);
 
-  // --------- Load live metrics (EFFECTIVE identity) ----------
+  // Build act-as headers for every EFFECTIVE call
+  const actHeaders = (effUserId && effRealmId)
+    ? { 'x-ib-act-as-user': effUserId, 'x-ib-act-as-realm': effRealmId }
+    : {};
+
+  // Load live metrics (EFFECTIVE identity)
   useEffect(() => {
     const fetchMetrics = async () => {
       if (!effUserId || !effRealmId) return;
@@ -261,6 +270,7 @@ const CFOAgent = () => {
         setLoadingMetrics(true);
         const { data, error } = await invokeWithAuth('qbo-dashboard', {
           body: { period, realmId: effRealmId, userId: effUserId, nonce: Date.now() },
+          headers: actHeaders,
         });
         if (error) throw error;
 
@@ -288,9 +298,9 @@ const CFOAgent = () => {
       }
     };
     fetchMetrics();
-  }, [effUserId, effRealmId, period, toast]);
+  }, [effUserId, effRealmId, period]); // toast removed to avoid loop
 
-  // --------- Company name fallback via qbo-company (EFFECTIVE identity) ----------
+  // Company name fallback via qbo-company (EFFECTIVE identity)
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
@@ -298,10 +308,10 @@ const CFOAgent = () => {
       try {
         const { data, error } = await invokeWithAuth('qbo-company', {
           body: { realmId: effRealmId, userId: effUserId, nonce: Date.now() },
+          headers: actHeaders,
         });
 
         if (error) {
-          // Missing tokens for that realm? Just skip.
           if ((error as any)?.message?.includes('no_tokens_for_realm')) {
             console.warn('[QBO] No tokens stored for realm', effRealmId, '— company name fallback skipped.');
           } else {
@@ -329,16 +339,17 @@ const CFOAgent = () => {
 
     run();
     return () => { cancelled = true; };
-  }, [effUserId, effRealmId, companyName, toast]);
+  }, [effUserId, effRealmId, companyName]);
 
-  // --------- Load sync status (EFFECTIVE identity) ----------
+  // Load sync status (EFFECTIVE identity)
   useEffect(() => {
     const fetchSyncStatus = async () => {
       if (!effUserId || !effRealmId) return;
       try {
         setLoadingSyncStatus(true);
         const { data, error } = await invokeWithAuth('qbo-sync-status', {
-          body: { realmId: effRealmId, userId: effUserId }
+          body: { realmId: effRealmId, userId: effUserId },
+          headers: actHeaders,
         });
         if (error) throw error;
         setSyncStatus(data);
@@ -349,7 +360,7 @@ const CFOAgent = () => {
       }
     };
     fetchSyncStatus();
-    const interval = setInterval(fetchSyncStatus, 30000); // Poll every 30s
+    const interval = setInterval(fetchSyncStatus, 30000);
     return () => clearInterval(interval);
   }, [effUserId, effRealmId]);
 
@@ -362,7 +373,6 @@ const CFOAgent = () => {
   ];
 
   const generateReasoningSteps = (query: string) => {
-    const baseSteps: any[] = [];
     if (query.toLowerCase().includes('expense')) {
       return [
         { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
@@ -444,7 +454,8 @@ const CFOAgent = () => {
           try {
             if (!effUserId || !effRealmId) throw new Error('Missing identity');
             const { data, error } = await invokeWithAuth('qbo-query-agent', {
-              body: { query, realmId: effRealmId, userId: effUserId }
+              body: { query, realmId: effRealmId, userId: effUserId },
+              headers: actHeaders,
             });
             if (error) throw error;
             finalResponse = data.response || "Sorry, I couldn't process that query.";
@@ -499,9 +510,8 @@ const CFOAgent = () => {
       return;
     }
     const url = buildQboAuthUrl();
-    try {
-      window.location.assign(url);
-    } catch {
+    try { window.location.assign(url); }
+    catch {
       const a = document.createElement('a');
       a.href = url;
       a.target = '_self';
@@ -518,7 +528,8 @@ const CFOAgent = () => {
     }
     try {
       const { data, error } = await invokeWithAuth('qbo-sync-transactions', {
-        body: { realmId: effRealmId, userId: effUserId, mode: 'full' }
+        body: { realmId: effRealmId, userId: effUserId, mode: 'full' },
+        headers: actHeaders,
       });
       if (error) {
         console.error('[Manual Sync] Failed:', error.message);
@@ -532,20 +543,13 @@ const CFOAgent = () => {
     }
   };
 
-  const revChange = useMemo(() => pct(revenue.current, revenue.previous), [revenue]);
-  const expChange = useMemo(() => pct(expenses.current, expenses.previous), [expenses]);
-  const netChange = useMemo(() => {
-    if (!netProfit.previous || netProfit.previous === 0 || netProfit.current == null) return 0;
-    return netProfit.current - netProfit.previous;
-  }, [netProfit]);
-
   const changeLabelText = period === 'ytd' ? 'from last year' : 'from last month';
 
   return (
     <div className="h-full flex bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Company name centered (effective identity) */}
+        {/* Company name (effective identity) */}
         <div className="flex justify-center pt-4 pb-2 flex-shrink-0">
           <h2 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white truncate max-w-[90%] text-center">
             {companyName || '—'}
@@ -580,7 +584,7 @@ const CFOAgent = () => {
                 size="sm"
                 onClick={handleConnectQuickBooks}
                 className="flex items-center gap-2"
-                title={isImpersonating ? 'Disabled while impersonating' : (qboConnected ? 'Reconnect QuickBooks' : 'Connect your QuickBooks Online account')}
+                title={isImpersonating ? 'Disabled while impersonating' : 'Connect your QuickBooks Online account'}
                 disabled={isImpersonating}
               >
                 <ExternalLink className="h-4 w-4" />
@@ -633,7 +637,7 @@ const CFOAgent = () => {
               <TrendingUp className="h-8 w-8 text-green-500" />
             </div>
             <p className={`text-xs mt-1 ${((revenue.current ?? 0) - (revenue.previous ?? 0)) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {loadingMetrics ? '—' : `${(pct(revenue.current, revenue.previous)).toFixed(1)}% ${changeLabelText}`}
+              {loadingMetrics ? '—' : `${(pct(revenue.current, revenue.previous)).toFixed(1)}% ${period === 'ytd' ? 'from last year' : 'from last month'}`}
             </p>
           </Card>
 
@@ -649,7 +653,7 @@ const CFOAgent = () => {
               <DollarSign className="h-8 w-8 text-red-500" />
             </div>
             <p className={`text-xs mt-1 ${((expenses.current ?? 0) - (expenses.previous ?? 0)) <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {loadingMetrics ? '—' : `${(pct(expenses.current, expenses.previous)).toFixed(1)}% ${changeLabelText}`}
+              {loadingMetrics ? '—' : `${(pct(expenses.current, expenses.previous)).toFixed(1)}% ${period === 'ytd' ? 'from last year' : 'from last month'}`}
             </p>
           </Card>
 
@@ -673,15 +677,9 @@ const CFOAgent = () => {
         <div className="pt-4 border-t">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Quick Actions</h4>
           <div className="space-y-2">
-            <Button variant="outline" size="sm" className="w-full justify-start">
-              Generate Report
-            </Button>
-            <Button variant="outline" size="sm" className="w-full justify-start">
-              View Forecasts
-            </Button>
-            <Button variant="outline" size="sm" className="w-full justify-start">
-              Export Data
-            </Button>
+            <Button variant="outline" size="sm" className="w-full justify-start">Generate Report</Button>
+            <Button variant="outline" size="sm" className="w-full justify-start">View Forecasts</Button>
+            <Button variant="outline" size="sm" className="w-full justify-start">Export Data</Button>
             {qboConnected && (
               <Button 
                 variant="outline" 
@@ -695,7 +693,6 @@ const CFOAgent = () => {
           </div>
         </div>
 
-        {/* Sync Status Tile (below Import Tranx) */}
         {qboConnected && syncStatus && (
           <div className="pt-4 border-t">
             <h4 className="font-medium text-gray-900 dark:text-white mb-3">Sync Status</h4>
