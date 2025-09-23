@@ -1,3 +1,4 @@
+// src/components/Reports.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -5,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileText, Download, Play, Calendar, Filter, X } from 'lucide-react';
+import { useEffectiveIdentity } from '@/lib/impersonation'; // 👈 honor impersonation
 
 interface ReportsProps {
   initialFilter?: string;
@@ -36,6 +38,9 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
   const [activeFilter, setActiveFilter] = useState(initialFilter || 'all');
   const [timeframe, setTimeframe] = useState(initialTimeframe || 'thisMonth');
 
+  // 🔑 effective identity (works for both: normal & impersonating)
+  const { realmId: effRealmId } = useEffectiveIdentity();
+
   // data
   const [loading, setLoading] = useState<boolean>(true);
   const [reports, setReports] = useState<ReportRow[]>([]);
@@ -55,32 +60,37 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
   const monthLabel = (y: number, m: number) =>
     new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
+  // ⬇️ MAIN LOAD (refires when impersonated realm changes)
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
       setErrorMsg(null);
+
       try {
-        // 1) who am I -> realm id
-        const { data: auth } = await supabase.auth.getUser();
-        const uid = auth.user?.id;
-        if (!uid) {
-          if (!cancelled) {
-            setReports([]);
-            setErrorMsg('Not signed in.');
+        // 0) resolve realm (effective)
+        let realmId = effRealmId;
+
+        // Fallback for older flows (should be rare): if no effRealmId yet, try profile of auth user.
+        if (!realmId) {
+          const { data: auth } = await supabase.auth.getUser();
+          const uid = auth.user?.id;
+          if (!uid) {
+            if (!cancelled) {
+              setReports([]);
+              setErrorMsg('Not signed in.');
+            }
+            return;
           }
-          return;
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('qbo_realm_id')
+            .eq('id', uid)
+            .maybeSingle();
+          realmId = prof?.qbo_realm_id ?? null;
         }
 
-        const { data: prof, error: profErr } = await supabase
-          .from('profiles')
-          .select('qbo_realm_id')
-          .eq('id', uid)
-          .maybeSingle();
-        if (profErr) throw profErr;
-
-        const realmId: string | null = prof?.qbo_realm_id ?? null;
         if (!realmId) {
           if (!cancelled) {
             setReports([]);
@@ -89,7 +99,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           return;
         }
 
-        // 2) artifacts with pdf uploaded (only these months appear)
+        // 1) artifacts with pdf uploaded (only these months appear)
         const { data: arts, error: artErr } = await supabase
           .from('qbo_financial_artifacts')
           .select('year,month,pdf_path,video_url,uploaded_at')
@@ -109,7 +119,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           return;
         }
 
-        // 3) signed URLs for each pdf
+        // 2) signed URLs for each pdf
         const signPromises = artifacts.map(async (r) => {
           const path = r.pdf_path as string;
           const { data: s } = await supabase
@@ -124,7 +134,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           return acc;
         }, {});
 
-        // 4) P&L numbers from view (fetch per-year and map by Y-M)
+        // 3) P&L numbers from view (fetch per-year and map by Y-M)
         const years = Array.from(new Set(artifacts.map((a) => a.year)));
         const { data: pnlRows, error: pnlErr } = await supabase
           .from('qbo_pnl_monthly_from_postings')
@@ -147,7 +157,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           {}
         );
 
-        // 5) compose reports list (only months with pdf_path)
+        // 4) compose reports list (only months with pdf_path)
         const merged: ReportRow[] = artifacts.map((a: any) => {
           const k = ymKey(a.year, a.month);
           const pnl = pnlMap[k];
@@ -178,9 +188,10 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
       }
     }
 
+    // run whenever the effective realm changes
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [effRealmId]); // 👈 key change: refetch when impersonation changes
 
   const getFilterLabel = (filter: string) => {
     switch (filter) {
