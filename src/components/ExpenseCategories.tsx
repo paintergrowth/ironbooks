@@ -167,7 +167,7 @@ export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={closeDetails} />
-          <div className="relative bg-white dark:bg-gray-900 w/full max-w-3xl rounded-xl shadow-xl border p-6">
+          <div className="relative bg-white dark:bg-gray-900 w-full max-w-3xl rounded-xl shadow-xl border p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h4 className="text-xl font-semibold text-gray-900 dark:text-white">
