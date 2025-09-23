@@ -25,8 +25,9 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
-import { supabase } from '@/lib/supabase';
+import { supabase, invokeWithAuth } from '@/lib/supabase';
 import { useAppContext } from '@/contexts/AppContext';
+import { useEffectiveIdentity } from '@/lib/impersonation';
 import ExpenseCategories from './ExpenseCategories';
 
 type UiTimeframe = 'thisMonth' | 'lastMonth' | 'ytd';
@@ -100,11 +101,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
+  // 🔑 Effective identity (honors impersonation)
+  const { userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
+  console.log('[Dashboard] effective identity', { effUserId, effRealmId, isImpersonating });
+
   const [timeframe, setTimeframe] = useState<UiTimeframe>('thisMonth');
   const [chartTimeRange, setChartTimeRange] = useState("30d");
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
+
+  // Keep a local realmId only for OAuth flows (real user). Data fetches use effRealmId.
   const [realmId, setRealmId] = useState<string | null>(null);
 
   // Metrics data
@@ -147,7 +154,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     console.log('Export dashboard snapshot as PDF');
   };
 
-  // All existing useEffect hooks from the original component
+  // ===============================
+  // OAuth flows (remain tied to real user account)
+  // ===============================
+
   // Complete QBO connection if we stashed realmId before user.id was ready
   useEffect(() => {
     if (!user?.id) return;
@@ -272,16 +282,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     })();
   }, [user?.id, toast]);
 
+  // ===============================
+  // Data fetches (use effective identity)
+  // ===============================
+
   // Fetch dashboard metrics
   useEffect(() => {
     let isCancelled = false;
     const run = async () => {
-      if (userLoading) return;
+      if (!effUserId) return; // wait until effective identity known
       setLoading(true);
       try {
         const period = toApiPeriod(timeframe);
-        const { data, error } = await supabase.functions.invoke('qbo-dashboard', {
-          body: { period, nonce: Date.now() },
+        const { data, error } = await invokeWithAuth('qbo-dashboard', {
+          body: { period, userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
 
         if (error) console.error('qbo-dashboard error:', error);
@@ -312,17 +326,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     };
     run();
     return () => { isCancelled = true; };
-  }, [timeframe, userLoading]);
+  }, [timeframe, effUserId, effRealmId]);
 
   // Fetch YTD chart data
   useEffect(() => {
     let isCancelled = false;
     const loadYtd = async () => {
-      if (userLoading) return;
+      if (!effUserId) return;
       setYtdLoading(true);
       try {
-        const { data, error } = await supabase.functions.invoke('qbo-dashboard', {
-          body: { period: 'ytd', nonce: Date.now() },
+        const { data, error } = await invokeWithAuth('qbo-dashboard', {
+          body: { period: 'ytd', userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
         if (error) console.error('qbo-dashboard (ytd series) error:', error);
 
@@ -349,13 +363,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
     loadYtd();
     return () => { isCancelled = true; };
-  }, [userLoading]);
+  }, [effUserId, effRealmId]);
 
-  // Load realm ID from profiles
+  // Load realm ID from profiles (only to support real-user OAuth UI; data fetches use effRealmId)
   useEffect(() => {
     let cancelled = false;
     const loadRealm = async () => {
-      if (userLoading || !user?.id) return;
+      if (userLoading || !user?.id || effRealmId) return; // skip if impersonating already provides realm
       const { data, error } = await supabase
         .from('profiles')
         .select('qbo_realm_id')
@@ -367,20 +381,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     };
     loadRealm();
     return () => { cancelled = true; };
-  }, [userLoading, user?.id]);
+  }, [userLoading, user?.id, effRealmId]);
 
-  // Fetch company name
+  // Fetch company name (from effective realm)
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (userLoading || !realmId || companyName) return;
+      if (!effUserId || !effRealmId || companyName) return;
 
       try {
-        const { data: s } = await supabase.auth.getSession();
-        const accessToken = s?.session?.access_token;
-        const { data, error } = await supabase.functions.invoke('qbo-company', {
-          body: { realmId, nonce: Date.now() },
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        const { data, error } = await invokeWithAuth('qbo-company', {
+          body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
 
         if (error) {
@@ -398,7 +409,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
     run();
     return () => { cancelled = true; };
-  }, [userLoading, realmId, companyName]);
+  }, [effUserId, effRealmId, companyName]);
 
   // Insight text for the banner
   const insightText = useMemo(() => {
@@ -646,7 +657,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       </Card>
 
       {/* Expense Categories */}
-      <ExpenseCategories timeframe={toApiPeriod(timeframe)} />
+      <ExpenseCategories
+        timeframe={toApiPeriod(timeframe)}
+        {...({ userId: effUserId, realmId: effRealmId } as any)} // passed for impersonation-aware fetches (ignored if component doesn't use them)
+      />
     </div>
   );
 };
