@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress';
 import PremiumChatInterface from './PremiumChatInterface';
 import { useImpersonation } from '@/lib/impersonation';
-
+const USE_HEADER_IMPERSONATION = false;
 interface Message {
   id: string;
   text: string;
@@ -270,7 +270,7 @@ const CFOAgent = () => {
         setLoadingMetrics(true);
         const { data, error } = await invokeWithAuth('qbo-dashboard', {
           body: { period, realmId: effRealmId, userId: effUserId, nonce: Date.now() },
-          headers: actHeaders,
+          headers: USE_HEADER_IMPERSONATION ? actHeaders : undefined,
         });
         if (error) throw error;
 
@@ -308,7 +308,7 @@ const CFOAgent = () => {
       try {
         const { data, error } = await invokeWithAuth('qbo-company', {
           body: { realmId: effRealmId, userId: effUserId, nonce: Date.now() },
-          headers: actHeaders,
+          headers: USE_HEADER_IMPERSONATION ? actHeaders : undefined,
         });
 
         if (error) {
@@ -349,7 +349,7 @@ const CFOAgent = () => {
         setLoadingSyncStatus(true);
         const { data, error } = await invokeWithAuth('qbo-sync-status', {
           body: { realmId: effRealmId, userId: effUserId },
-          headers: actHeaders,
+          headers: USE_HEADER_IMPERSONATION ? actHeaders : undefined,
         });
         if (error) throw error;
         setSyncStatus(data);
@@ -455,7 +455,7 @@ const CFOAgent = () => {
             if (!effUserId || !effRealmId) throw new Error('Missing identity');
             const { data, error } = await invokeWithAuth('qbo-query-agent', {
               body: { query, realmId: effRealmId, userId: effUserId },
-              headers: actHeaders,
+              headers: USE_HEADER_IMPERSONATION ? actHeaders : undefined,
             });
             if (error) throw error;
             finalResponse = data.response || "Sorry, I couldn't process that query.";
