@@ -32,8 +32,6 @@ import { useImpersonation } from '@/lib/impersonation';
 console.log('[Settings] file loaded');
 
 const Settings: React.FC = () => {
-  console.log('[Settings] component mount start');
-
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -52,15 +50,13 @@ const Settings: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
 
   // Impersonation state + reset key for dropdown
-  const { isImpersonating, target } = useImpersonation();
+  const { isImpersonating } = useImpersonation();
   const [impersonateKey, setImpersonateKey] = useState(0);
 
-  // When “Back to me” is clicked in ViewingAsChip, isImpersonating becomes false.
-  // We detect that and force-remount the dropdown so it clears to blank.
+  // When “Back to me” is clicked (inside ViewingAsChip), isImpersonating becomes false.
+  // Force-remount the dropdown so it clears to blank.
   useEffect(() => {
-    if (!isImpersonating) {
-      setImpersonateKey(k => k + 1);
-    }
+    if (!isImpersonating) setImpersonateKey(k => k + 1);
   }, [isImpersonating]);
 
   useEffect(() => {
@@ -89,8 +85,7 @@ const Settings: React.FC = () => {
             designation: data.designation ?? '',
           }));
 
-          const admin = data.role === 'admin';
-          setIsAdmin(admin);
+          setIsAdmin(data.role === 'admin');
 
           const defaults = { email: true, push: false, reports: true };
           const saved = (data.settings as any)?.notifications ?? {};
@@ -153,7 +148,7 @@ const Settings: React.FC = () => {
   return (
     <div className="h-[100dvh]">
       <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">  
-        {/* Header: keep clean — title, subtitle, SAVE ONLY */}
+        {/* Header: title + Save only */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
@@ -264,20 +259,35 @@ const Settings: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Row 1: Dropdown (full width on mobile, tidy on desktop) */}
-                <div className="w-full sm:max-w-md">
-                  {/* Remount on key change to clear selection after "Back to me" */}
-                  <ImpersonateDropdown key={impersonateKey} />
-                </div>
-
-                {/* Row 2: Viewing chip (only when impersonating) */}
-                {isImpersonating && (
-                  <div className="w-full sm:max-w-md">
-                    <div className="p-3 rounded-md border bg-amber-50 border-amber-200">
-                      <ViewingAsChip />
+                {/* Two columns with equal heights; both children fill vertically */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+                  {/* Left tile: Dropdown (full-length) */}
+                  <div className="h-full">
+                    <div className="h-full border rounded-lg p-4 flex flex-col justify-center">
+                      {/* Remount on key change to clear selection after "Back to me" */}
+                      <ImpersonateDropdown key={impersonateKey} />
                     </div>
                   </div>
-                )}
+
+                  {/* Right tile: Yellow “Viewing as” (full-length, nice oval look) */}
+                  <div className="h-full">
+                    <div className={`h-full p-4 border ${isImpersonating ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-dashed'} rounded-2xl flex`}>
+                      <div className="flex-1 flex items-center justify-center">
+                        {isImpersonating ? (
+                          // ViewingAsChip renders the label and the “Back to me” action.
+                          // Placed INSIDE the yellow tile so the button is within the oval.
+                          <div className="w-full">
+                            <ViewingAsChip />
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-600">
+                            Not impersonating anyone
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Sub-tile: Admin panel shortcut */}
