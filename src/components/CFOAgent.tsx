@@ -431,6 +431,10 @@ const CFOAgent = () => {
 
   // ----- Streaming caller (first try SSE, then JSON fallback with simulated stream) -----
   const callAgentStreaming = async (query: string, messageId: string) => {
+    // CHANGE #1: HARD GUARD to avoid 400s from Edge Function
+    if (!effUserId || !effRealmId) {
+      throw new Error('Missing identity');
+    }
     if (!FUNCTIONS_BASE) {
       throw new Error('Could not derive Supabase Functions URL. Ensure Supabase client initialized, or set VITE_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL.');
     }
@@ -491,7 +495,6 @@ const CFOAgent = () => {
             : msg
         ));
         if (i < words.length - 1) {
-          // tiny delay to feel like streaming
           // eslint-disable-next-line no-await-in-loop
           await new Promise(r => setTimeout(r, 30));
         }
@@ -559,6 +562,17 @@ const CFOAgent = () => {
   };
 
   const handleSend = async (query: string) => {
+    // CHANGE #1: EARLY GUARD — stop if identity not ready
+    if (!effUserId || !effRealmId) {
+      toast({
+        title: 'Connect QuickBooks',
+        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting.',
+        variant: 'destructive'
+      });
+      setIsTyping(false);
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       text: query,
@@ -694,6 +708,7 @@ const CFOAgent = () => {
   };
 
   const changeLabelText = period === 'ytd' ? 'from last year' : 'from last month';
+  const canChat = Boolean(effUserId && effRealmId);
 
   return (
     <div className="h-full flex bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
@@ -751,7 +766,7 @@ const CFOAgent = () => {
             onSendMessage={handleSend}
             isTyping={isTyping}
             currentReasoning={currentReasoning}
-            placeholder="Ask me about cash flow, profits, expenses, or KPIs..."
+            placeholder={canChat ? "Ask me about cash flow, profits, expenses, or KPIs..." : "Connect QuickBooks to chat"}
             suggestedQuestions={suggestedQuestions}
           />
         </div>
