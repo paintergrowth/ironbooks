@@ -172,36 +172,14 @@ const Settings: React.FC = () => {
   return (
     <div className="h-[100dvh]">
       <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">  
+        {/* Header: keep clean — title, subtitle, SAVE ONLY */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
             <p className="text-gray-600 dark:text-gray-300 mt-1">Manage your account and preferences</p>
           </div>
 
-          {/* Right-aligned actions */}
           <div className="flex items-center gap-3">
-            {isAdmin && (
-              <>
-                {/* NEW: Admin-only impersonation dropdown */}
-                <ImpersonateDropdown />
-
-                <Button
-                  asChild
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                  title="Open Admin Panel"
-                  onClick={() => console.log('[Settings] Open Admin Panel clicked')}
-                >
-                  <Link to="/admin-panel">
-                    <Shield className="mr-2 h-4 w-4" />
-                    Open Admin Panel
-                  </Link>
-                </Button>
-              </>
-            )}
-
-            {/* Chip only renders when impersonating */}
-            <ViewingAsChip />
-
             <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700" disabled={saving}>
               <Save className="mr-2 h-4 w-4" />
               {saving ? 'Saving…' : 'Save Changes'}
@@ -286,6 +264,54 @@ const Settings: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* --- NEW: Admin Options (below Appearance). Only visible to admins --- */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Shield className="mr-2 h-5 w-5" />
+                Admin Options
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Impersonation controls */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex-1">
+                  <p className="font-medium">Impersonate a Customer</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Select a customer to view the app exactly as they do.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <ImpersonateDropdown />
+                  <ViewingAsChip />
+                </div>
+              </div>
+
+              {/* Admin panel shortcut */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <p className="font-medium">Admin Panel</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Manage users, data, and integrations.
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  title="Open Admin Panel"
+                  onClick={() => console.log('[Settings] Open Admin Panel clicked')}
+                >
+                  <Link to="/admin-panel">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Open Admin Panel
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Notifications */}
         <Card>
           <CardHeader>
@@ -345,7 +371,7 @@ const Settings: React.FC = () => {
               Security & Privacy
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+        <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Two-Factor Authentication</p>
