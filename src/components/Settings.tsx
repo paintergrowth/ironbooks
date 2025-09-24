@@ -259,32 +259,30 @@ const Settings: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Two columns with equal heights; both children fill vertically */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
-                  {/* Left tile: Dropdown (full-length) */}
-                  <div className="h-full">
-                    <div className="h-full border rounded-lg p-4 flex flex-col justify-center">
-                      {/* Remount on key change to clear selection after "Back to me" */}
-                      <ImpersonateDropdown key={impersonateKey} />
-                    </div>
+                {/* Row 1: Dropdown (full-width) */}
+                <div className="w-full">
+                  <div className="w-full border rounded-lg p-4 box-border">
+                    <ImpersonateDropdown key={impersonateKey} />
                   </div>
+                </div>
 
-                  {/* Right tile: Yellow “Viewing as” (full-length, nice oval look) */}
-                  <div className="h-full">
-                    <div className={`h-full p-4 border ${isImpersonating ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-dashed'} rounded-2xl flex`}>
-                      <div className="flex-1 flex items-center justify-center">
-                        {isImpersonating ? (
-                          // ViewingAsChip renders the label and the “Back to me” action.
-                          // Placed INSIDE the yellow tile so the button is within the oval.
-                          <div className="w-full">
-                            <ViewingAsChip />
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-600">
-                            Not impersonating anyone
-                          </p>
-                        )}
-                      </div>
+                {/* Row 2: Yellow “Viewing as” tile (full-width). Content fully contained. */}
+                <div className="w-full">
+                  <div
+                    className={`w-full min-h-[72px] p-4 border rounded-2xl box-border overflow-hidden ${
+                      isImpersonating ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-dashed'
+                    }`}
+                  >
+                    <div className="max-w-full">
+                      {isImpersonating ? (
+                        // Button is INSIDE the yellow tile via ViewingAsChip.
+                        // Prevent any overflow from inner content.
+                        <div className="w-full break-words [word-break:break-word]">
+                          <ViewingAsChip />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-600">Not impersonating anyone</p>
+                      )}
                     </div>
                   </div>
                 </div>
