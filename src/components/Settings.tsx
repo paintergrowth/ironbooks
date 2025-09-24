@@ -87,6 +87,7 @@ const Settings: React.FC = () => {
   // QuickBooks connection state (real user only)
   const [qboConnected, setQboConnected] = useState(false);
   const [effRealmId, setEffRealmId] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null); // NEW
 
   const { toast } = useToast();
 
@@ -223,7 +224,7 @@ const Settings: React.FC = () => {
     })();
   }, [toast]);
 
-  // -------- Deferred exchange if user logged in after redirect (same idea as CFOAgent) --------
+  // -------- Deferred exchange if user logged in after redirect --------
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -263,6 +264,28 @@ const Settings: React.FC = () => {
       } catch {}
     })();
   }, []);
+
+  // -------- NEW: Fetch company name when connected --------
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!qboConnected || !effRealmId) return;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const uid = user?.id;
+        if (!uid) return;
+        const { data, error } = await supabase.functions.invoke('qbo-company', {
+          body: { realmId: effRealmId, userId: uid, nonce: Date.now() },
+        });
+        if (!error && !cancelled && (data as any)?.companyName) {
+          setCompanyName((data as any).companyName);
+        }
+      } catch {
+        // ignore; keep badge as "Connected"
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [qboConnected, effRealmId]);
 
   // -------- Save handler: upsert into public.profiles --------
   const handleSave = async () => {
@@ -430,8 +453,74 @@ const Settings: React.FC = () => {
         </Card>
 
         {/* --- Admin Options (below Appearance). Only visible to admins --- */}
-        {/* (unchanged UI from your working version) */}
-        {/* ... keep your Admin Options card here exactly as you had it ... */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Shield className="mr-2 h-5 w-5" />
+                Admin Options
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Sub-tile: Impersonation */}
+              <div className="p-4 border rounded-lg space-y-4">
+                <div>
+                  <p className="font-medium">Impersonate a Customer</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Select a customer to view the app exactly as they do.
+                  </p>
+                </div>
+
+                {/* Row 1: Dropdown (full-width) */}
+                <div className="w-full">
+                  <div className="w-full border rounded-lg p-4 box-border">
+                    <ImpersonateDropdown key={impersonateKey} />
+                  </div>
+                </div>
+
+                {/* Row 2: Yellow “Viewing as” tile (full-width). Content fully contained. */}
+                <div className="w-full">
+                  <div
+                    className={`w-full min-h-[72px] p-4 border rounded-2xl box-border overflow-hidden ${
+                      isImpersonating ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-dashed'
+                    }`}
+                  >
+                    <div className="max-w-full">
+                      {isImpersonating ? (
+                        <div className="w-full break-words [word-break:break-word]">
+                          <ViewingAsChip />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-600">Not impersonating anyone</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-tile: Admin panel shortcut */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div>
+                  <p className="font-medium">Admin Panel</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Manage users, data, and integrations.
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  title="Open Admin Panel"
+                  onClick={() => console.log('[Settings] Open Admin Panel clicked')}
+                >
+                  <Link to="/admin-panel">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Open Admin Panel
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Notifications */}
         <Card>
@@ -524,7 +613,7 @@ const Settings: React.FC = () => {
                   <p className="font-medium">QuickBooks Online</p>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
                     {qboConnected ? (
-                      <>Connected{effRealmId ? ` · ${effRealmId}` : ''}</>
+                      <>Connected{` · ${companyName || 'QuickBooks'}`}</>
                     ) : (
                       'Not connected'
                     )}
