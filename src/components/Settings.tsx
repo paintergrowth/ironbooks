@@ -34,56 +34,51 @@ console.log('[Settings] file loaded');
 const Settings: React.FC = () => {
   console.log('[Settings] component mount start');
 
-  // Keep initial visuals the same; state will be hydrated from DB on mount.
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
     reports: true,
-    security: true, // UI-only; not persisted
+    security: true,
   });
   const [profile, setProfile] = useState({
     name: 'John Smith',
     email: 'john.smith@company.com',
     phone: '+1 (555) 123-4567',
     company: 'Demo Company Inc.',
-    designation: 'CFO', // renamed from "role" → "designation"
+    designation: 'CFO',
   });
   const { theme, setTheme } = useTheme();
   const [saving, setSaving] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false); // NEW
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Impersonation snapshot (for debugging)
+  // Impersonation state + reset key for dropdown
   const { isImpersonating, target } = useImpersonation();
-  console.log('[Settings] impersonation snapshot:', { isImpersonating, target });
+  const [impersonateKey, setImpersonateKey] = useState(0);
 
-  // -------- Load current user's profile on mount --------
+  // When “Back to me” is clicked in ViewingAsChip, isImpersonating becomes false.
+  // We detect that and force-remount the dropdown so it clears to blank.
+  useEffect(() => {
+    if (!isImpersonating) {
+      setImpersonateKey(k => k + 1);
+    }
+  }, [isImpersonating]);
+
   useEffect(() => {
     (async () => {
       try {
-        console.log('[Settings] loading auth user…');
         const { data: { user }, error: userErr } = await supabase.auth.getUser();
-        if (userErr) {
-          console.error('[Settings] supabase.auth.getUser error:', userErr);
-          throw userErr;
-        }
-        console.log('[Settings] auth user =', user?.id, user?.email);
+        if (userErr) throw userErr;
         if (!user) return;
 
-        // Always reflect auth email in the field (readable; not persisted here)
         setProfile((p) => ({ ...p, email: user.email ?? p.email }));
 
-        console.log('[Settings] fetching profiles row…');
         const { data, error } = await supabase
           .from('profiles')
           .select('full_name, phone, company, designation, settings, role')
           .eq('id', user.id)
           .maybeSingle();
 
-        if (error) {
-          console.error('[Settings] profiles query error:', error);
-          throw error;
-        }
-        console.log('[Settings] profiles row =', data);
+        if (error) throw error;
 
         if (data) {
           setProfile((p) => ({
@@ -96,7 +91,6 @@ const Settings: React.FC = () => {
 
           const admin = data.role === 'admin';
           setIsAdmin(admin);
-          console.log('[Settings] role =', data.role, '→ isAdmin =', admin);
 
           const defaults = { email: true, push: false, reports: true };
           const saved = (data.settings as any)?.notifications ?? {};
@@ -113,16 +107,11 @@ const Settings: React.FC = () => {
     })();
   }, []);
 
-  // -------- Save handler: upsert into public.profiles --------
   const handleSave = async () => {
-    console.log('[Settings] handleSave clicked');
     try {
       setSaving(true);
       const { data: { user }, error: userErr } = await supabase.auth.getUser();
-      if (userErr) {
-        console.error('[Settings] getUser error:', userErr);
-        throw userErr;
-      }
+      if (userErr) throw userErr;
       if (!user) {
         alert('Please sign in first.');
         return;
@@ -143,16 +132,11 @@ const Settings: React.FC = () => {
         },
       };
 
-      console.log('[Settings] upserting profile payload:', payload);
       const { error } = await supabase
         .from('profiles')
         .upsert(payload, { onConflict: 'id' });
 
-      if (error) {
-        console.error('[Settings] upsert error:', error);
-        throw error;
-      }
-      console.log('[Settings] save success');
+      if (error) throw error;
       alert('Settings saved successfully!');
     } catch (e) {
       console.error('[Settings] save failed:', e);
@@ -163,11 +147,8 @@ const Settings: React.FC = () => {
   };
 
   const handleLogout = () => {
-    console.log('[Settings] logout clicked');
     alert('Logging out...');
   };
-
-  console.log('[Settings] render header: isAdmin =', isAdmin);
 
   return (
     <div className="h-[100dvh]">
@@ -247,7 +228,7 @@ const Settings: React.FC = () => {
               <Button
                 variant={theme === 'light' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => { console.log('[Settings] theme → light'); setTheme('light'); }}
+                onClick={() => setTheme('light')}
               >
                 <Sun className="mr-2 h-4 w-4" />
                 Light
@@ -255,7 +236,7 @@ const Settings: React.FC = () => {
               <Button
                 variant={theme === 'dark' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => { console.log('[Settings] theme → dark'); setTheme('dark'); }}
+                onClick={() => setTheme('dark')}
               >
                 <Moon className="mr-2 h-4 w-4" />
                 Dark
@@ -264,7 +245,7 @@ const Settings: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* --- NEW: Admin Options (below Appearance). Only visible to admins --- */}
+        {/* --- Admin Options (below Appearance). Only visible to admins --- */}
         {isAdmin && (
           <Card>
             <CardHeader>
@@ -274,22 +255,33 @@ const Settings: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Impersonation controls */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="flex-1">
+              {/* Sub-tile: Impersonation */}
+              <div className="p-4 border rounded-lg space-y-4">
+                <div>
                   <p className="font-medium">Impersonate a Customer</p>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
                     Select a customer to view the app exactly as they do.
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <ImpersonateDropdown />
-                  <ViewingAsChip />
+
+                {/* Row 1: Dropdown (full width on mobile, tidy on desktop) */}
+                <div className="w-full sm:max-w-md">
+                  {/* Remount on key change to clear selection after "Back to me" */}
+                  <ImpersonateDropdown key={impersonateKey} />
                 </div>
+
+                {/* Row 2: Viewing chip (only when impersonating) */}
+                {isImpersonating && (
+                  <div className="w-full sm:max-w-md">
+                    <div className="p-3 rounded-md border bg-amber-50 border-amber-200">
+                      <ViewingAsChip />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Admin panel shortcut */}
-              <div className="flex items-center justify-between p-3 border rounded-lg">
+              {/* Sub-tile: Admin panel shortcut */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div>
                   <p className="font-medium">Admin Panel</p>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -328,10 +320,7 @@ const Settings: React.FC = () => {
               </div>
               <Switch 
                 checked={notifications.email}
-                onCheckedChange={(checked) => {
-                  console.log('[Settings] notif: email →', checked);
-                  setNotifications({...notifications, email: checked});
-                }}
+                onCheckedChange={(checked) => setNotifications({...notifications, email: checked})}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -341,10 +330,7 @@ const Settings: React.FC = () => {
               </div>
               <Switch 
                 checked={notifications.push}
-                onCheckedChange={(checked) => {
-                  console.log('[Settings] notif: push →', checked);
-                  setNotifications({...notifications, push: checked});
-                }}
+                onCheckedChange={(checked) => setNotifications({...notifications, push: checked})}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -354,10 +340,7 @@ const Settings: React.FC = () => {
               </div>
               <Switch 
                 checked={notifications.reports}
-                onCheckedChange={(checked) => {
-                  console.log('[Settings] notif: reports →', checked);
-                  setNotifications({...notifications, reports: checked});
-                }}
+                onCheckedChange={(checked) => setNotifications({...notifications, reports: checked})}
               />
             </div>
           </CardContent>
@@ -371,7 +354,7 @@ const Settings: React.FC = () => {
               Security & Privacy
             </CardTitle>
           </CardHeader>
-        <CardContent className="space-y-4">
+          <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Two-Factor Authentication</p>
@@ -392,7 +375,7 @@ const Settings: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Integrations (QuickBooks removed) */}
+        {/* Integrations */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -401,7 +384,6 @@ const Settings: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Xero only (QuickBooks block removed as requested) */}
             <div className="flex items-center justify-between p-4 border rounded-lg">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
