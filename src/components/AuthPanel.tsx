@@ -219,7 +219,7 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({ mode = 'signin' }) => {
           to="/demo-auth"
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          Try the live demo (no sign-up required)
+          Try the live demo (no account needed)
         </Link>
       </div>
       {/* Legal */}
