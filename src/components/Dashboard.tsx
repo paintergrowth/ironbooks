@@ -50,6 +50,64 @@ interface QboDashboardPayload {
 
 const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
 
+// ===== DEMO DATA (Jan–Sep of current year) =====
+const thisYear = new Date().getFullYear();
+const currentMonthIndex = Math.min(new Date().getMonth() + 1, 9); // cap at Sep (9)
+const DEMO_MONTH_SERIES: { date: string; revenue: number; expenses: number }[] = [
+  { date: `${thisYear}-01-01`, revenue: 120_000, expenses:  85_000 },
+  { date: `${thisYear}-02-01`, revenue: 130_000, expenses:  90_000 },
+  { date: `${thisYear}-03-01`, revenue: 125_000, expenses:  92_000 },
+  { date: `${thisYear}-04-01`, revenue: 140_000, expenses: 100_000 },
+  { date: `${thisYear}-05-01`, revenue: 150_000, expenses: 110_000 },
+  { date: `${thisYear}-06-01`, revenue: 160_000, expenses: 115_000 },
+  { date: `${thisYear}-07-01`, revenue: 170_000, expenses: 120_000 },
+  { date: `${thisYear}-08-01`, revenue: 165_000, expenses: 118_000 },
+  { date: `${thisYear}-09-01`, revenue: 180_000, expenses: 130_000 },
+].slice(0, currentMonthIndex);
+
+// Helper to compute demo tiles based on timeframe
+function demoTiles(period: ApiPeriod) {
+  const monthIdx = currentMonthIndex; // 1..9
+  const month = (i: number) => DEMO_MONTH_SERIES[i - 1] ?? { revenue: 0, expenses: 0 };
+  const sumTo = (idx: number) => {
+    const slice = DEMO_MONTH_SERIES.slice(0, Math.max(0, idx));
+    const revenue = slice.reduce((a, r) => a + r.revenue, 0);
+    const expenses = slice.reduce((a, r) => a + r.expenses, 0);
+    return { revenue, expenses, net: revenue - expenses };
+  };
+
+  if (period === 'this_month') {
+    const cur = month(monthIdx);
+    const prev = month(Math.max(1, monthIdx - 1));
+    return {
+      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
+      expenses:{ current: cur.expenses, previous: prev.expenses || 1 },
+      netProfit:{ current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
+    };
+  }
+
+  if (period === 'last_month') {
+    const cur = month(Math.max(1, monthIdx - 1));
+    const prev = month(Math.max(1, monthIdx - 2));
+    return {
+      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
+      expenses:{ current: cur.expenses, previous: prev.expenses || 1 },
+      netProfit:{ current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
+    };
+  }
+
+  // ytd
+  const curAgg = sumTo(monthIdx);
+  // fabricate prior YTD as 90% of current (so % changes render nicely)
+  const prevAgg = { revenue: Math.round(curAgg.revenue * 0.9), expenses: Math.round(curAgg.expenses * 0.9) };
+  return {
+    revenue: { current: curAgg.revenue, previous: prevAgg.revenue || 1 },
+    expenses:{ current: curAgg.expenses, previous: prevAgg.expenses || 1 },
+    netProfit:{ current: curAgg.net,     previous: (prevAgg.revenue - prevAgg.expenses) || 1 },
+  };
+}
+
+// ===== Fallback chart data kept for safety =====
 const fallbackChartData = [
   { date: "2024-01-01", revenue: 0, expenses: 0 },
   { date: "2024-02-01", revenue: 0, expenses: 0 },
@@ -84,11 +142,11 @@ const changeLabel = (period: UiTimeframe) =>
 const chartConfig = {
   revenue: {
     label: "Revenue",
-    color: "hsl(var(--chart-1))", // Green for revenue
+    color: "hsl(var(--chart-1))",
   },
   expenses: {
     label: "Expenses",
-    color: "hsl(var(--chart-2))", // Red for expenses
+    color: "hsl(var(--chart-2))",
   },
 } satisfies ChartConfig;
 
@@ -158,7 +216,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   // OAuth flows (remain tied to real user account)
   // ===============================
 
-  // Complete QBO connection if we stashed realmId before user.id was ready
   useEffect(() => {
     if (!user?.id) return;
 
@@ -290,10 +347,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   useEffect(() => {
     let isCancelled = false;
     const run = async () => {
-      if (!effUserId) return; // wait until effective identity known
+      const period = toApiPeriod(timeframe);
+
+      // === DEMO PATH: no connected realm -> show demo tiles ===
+      if (!effRealmId) {
+        const demo = demoTiles(period);
+        if (!isCancelled) {
+          setRevCurr(demo.revenue.current as number);
+          setRevPrev(demo.revenue.previous as number);
+          setExpCurr(demo.expenses.current as number);
+          setExpPrev(demo.expenses.previous as number);
+          setNetCurr(demo.netProfit.current as number);
+          setNetPrev(demo.netProfit.previous as number);
+          setCompanyName((prev) => prev ?? 'Demo Company');
+          setLastSync(null); // not synced yet
+        }
+        return;
+      }
+
+      if (!effUserId) return; // wait for effective identity when connected
+
       setLoading(true);
       try {
-        const period = toApiPeriod(timeframe);
         const { data, error } = await invokeWithAuth('qbo-dashboard', {
           body: { period, userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
@@ -332,7 +407,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   useEffect(() => {
     let isCancelled = false;
     const loadYtd = async () => {
+      // === DEMO PATH: no connected realm -> show demo YTD series ===
+      if (!effRealmId) {
+        if (!isCancelled) {
+          setYtdChartData(DEMO_MONTH_SERIES);
+          setYtdLoading(false);
+          setCompanyName((prev) => prev ?? 'Demo Company');
+          setLastSync(null);
+        }
+        return;
+      }
+
       if (!effUserId) return;
+
       setYtdLoading(true);
       try {
         const { data, error } = await invokeWithAuth('qbo-dashboard', {
@@ -344,8 +431,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         if (!isCancelled) {
           const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
           setYtdChartData(
-            (series.length ? series : fallbackChartData).map((row) => ({
-              date: `2024-${String(row.name).padStart(2, '0')}-01`,
+            (series.length ? series : DEMO_MONTH_SERIES).map((row) => ({
+              date: series.length ? `${thisYear}-${String(row.name).padStart(2, '0')}-01` : row.date,
               revenue: toNumber((row as any).revenue, 0),
               expenses: toNumber((row as any).expenses, 0),
             }))
@@ -355,7 +442,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         }
       } catch (e) {
         console.error('qbo-dashboard (ytd) fetch failed:', e);
-        if (!isCancelled) setYtdChartData(fallbackChartData);
+        if (!isCancelled) setYtdChartData(DEMO_MONTH_SERIES);
       } finally {
         if (!isCancelled) setYtdLoading(false);
       }
@@ -363,7 +450,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
     loadYtd();
     return () => { isCancelled = true; };
-  }, [effUserId, effRealmId]);
+  }, [effUserId, effRealmId, companyName]);
 
   // Load realm ID from profiles (only to support real-user OAuth UI; data fetches use effRealmId)
   useEffect(() => {
@@ -430,7 +517,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           <p className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
             Last synced: {lastSync
               ? new Date(lastSync).toLocaleDateString() + ' at ' + new Date(lastSync).toLocaleTimeString()
-              : 'Never'}
+              : '—'}
             <span className={`inline-block w-2 h-2 rounded-full ${lastSync ? 'bg-green-500' : 'bg-gray-400'}`}></span>
           </p>
         </div>
@@ -584,28 +671,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             <AreaChart data={ytdChartData}>
               <defs>
                 <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor="var(--color-revenue)"
-                    stopOpacity={1.0}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-revenue)"
-                    stopOpacity={0.1}
-                  />
+                  <stop offset="5%"  stopColor="var(--color-revenue)"  stopOpacity={1.0} />
+                  <stop offset="95%" stopColor="var(--color-revenue)"  stopOpacity={0.1} />
                 </linearGradient>
                 <linearGradient id="fillExpenses" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor="var(--color-expenses)"
-                    stopOpacity={0.8}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-expenses)"
-                    stopOpacity={0.1}
-                  />
+                  <stop offset="5%"  stopColor="var(--color-expenses)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-expenses)" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} />
@@ -617,9 +688,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
                 minTickGap={32}
                 tickFormatter={(value) => {
                   const date = new Date(value)
-                  return date.toLocaleDateString("en-US", {
-                    month: "short"
-                  })
+                  return date.toLocaleDateString("en-US", { month: "short" })
                 }}
               />
               <ChartTooltip
@@ -659,7 +728,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       {/* Expense Categories */}
       <ExpenseCategories
         timeframe={toApiPeriod(timeframe)}
-        {...({ userId: effUserId, realmId: effRealmId } as any)} // passed for impersonation-aware fetches (ignored if component doesn't use them)
+        {...({ userId: effUserId, realmId: effRealmId } as any)}
       />
     </div>
   );
