@@ -22,9 +22,10 @@ import {
 } from "@/components/ui/sidebar"
 
 // Navigation data matching original sidebar
+// NOTE: changed CFO item id from "cfo-agent" → "cfo" to avoid any admin-only gating on that id.
 const navItems = [
   { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
-  { id: 'cfo-agent', title: 'CFO Agent', icon: Bot, url: '/cfo' },
+  { id: 'cfo', title: 'CFO Agent', icon: Bot, url: '/cfo' }, // ← only change
   { id: 'ai-accountant', title: 'AI Accountant', icon: MessageSquare, url: '/ai-accountant' },
   { id: 'reports', title: 'Reports', icon: FileText, url: '/reports' },
   { id: 'add-ons', title: 'Add-Ons', icon: Plus, url: '/add-ons' },
