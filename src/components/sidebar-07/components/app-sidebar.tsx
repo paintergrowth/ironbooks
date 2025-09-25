@@ -1,120 +1,70 @@
-// src/components/sidebar-07/components/app-sidebar.tsx
-import * as React from "react";
-import { NavLink, useLocation } from "react-router-dom";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarFooter,
-  SidebarHeader,
-} from "../../ui/sidebar";
+"use client"
 
+import * as React from "react"
 import {
   LayoutDashboard,
   Bot,
-  Brain,
-  FileBarChart2,
-  Puzzle,
-  Settings as SettingsIcon,
-  Shield,
-} from "lucide-react";
+  MessageSquare,
+  FileText,
+  Plus,
+  Settings,
+} from "lucide-react"
+import { useAppContext } from '@/contexts/AppContext'
 
-/**
- * NOTE:
- * - This sidebar ALWAYS shows "CFO Agent" for all users (moved out of any admin-only gating).
- * - Admin panel remains optionally gated by a lightweight check so we don't change your current behavior.
- *   If you want to hard-hide Admin, just set `const isAdmin = false`.
- */
+import { NavMain } from "@/components/sidebar-07/components/nav-main"
+import { NavUser } from "@/components/sidebar-07/components/nav-user"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarRail,
+} from "@/components/ui/sidebar"
 
-export function AppSidebar() {
-  const location = useLocation();
+// Navigation data matching original sidebar
+const navItems = [
+  { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
+  { id: 'cfo-agent', title: 'CFO Agent', icon: Bot, url: '/cfo' },
+  { id: 'ai-accountant', title: 'AI Accountant', icon: MessageSquare, url: '/ai-accountant' },
+  { id: 'reports', title: 'Reports', icon: FileText, url: '/reports' },
+  { id: 'add-ons', title: 'Add-Ons', icon: Plus, url: '/add-ons' },
+  { id: 'settings', title: 'Settings', icon: Settings, url: '/settings' },
+]
 
-  // If you already centralize admin in context/store, replace this with your real check.
-  // Keeping a soft gate so we don't break existing expectations.
-  const isAdmin =
-    typeof window !== "undefined" &&
-    (window.localStorage.getItem("adminMode") === "true" ||
-      window.localStorage.getItem("isAdmin") === "1");
-
-  const workspaceItems = [
-    { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-    // ✅ CFO Agent is visible to EVERYONE
-    { title: "CFO Agent", url: "/cfo", icon: Bot },
-    { title: "AI Accountant", url: "/ai-accountant", icon: Brain },
-    { title: "Reports", url: "/reports", icon: FileBarChart2 },
-    { title: "Add-Ons", url: "/add-ons", icon: Puzzle },
-    { title: "Settings", url: "/settings", icon: SettingsIcon },
-  ];
-
-  const adminItems = [
-    { title: "Admin Panel", url: "/admin-panel", icon: Shield },
-  ];
-
-  const isActive = (url: string) =>
-    location.pathname === url ||
-    (url !== "/dashboard" && location.pathname.startsWith(url));
+export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { user } = useAppContext()
 
   return (
-    <Sidebar>
-      <SidebarHeader className="px-3 py-2">
-        <div className="text-sm font-semibold tracking-wide">IronBooks</div>
-        <div className="text-xs text-muted-foreground">Workspace</div>
+    <Sidebar collapsible="icon" {...props}>
+      <SidebarHeader>
+        <div className="flex items-center px-4 py-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
+          {/* Light mode logo when expanded */}
+          <img
+            src="https://quaeeqgobujsukemkrze.supabase.co/storage/v1/object/public/assets/img/logo-dark-text.png"
+            alt="IronBooks"
+            className="h-8 w-auto dark:hidden group-data-[collapsible=icon]:hidden"
+          />
+          {/* Dark mode logo when expanded */}
+          <img
+            src="https://quaeeqgobujsukemkrze.supabase.co/storage/v1/object/public/assets/img/LOGO-2.png"
+            alt="IronBooks"
+            className="h-8 w-auto hidden dark:block group-data-[collapsible=icon]:hidden"
+          />
+          {/* Favicon when collapsed - preserve aspect ratio */}
+          <img
+            src="https://quaeeqgobujsukemkrze.supabase.co/storage/v1/object/public/assets/img/faviconV2%20(1).png"
+            alt="IronBooks"
+            className="h-7 w-auto max-w-7 shrink-0 object-contain hidden group-data-[collapsible=icon]:block"
+          />
+        </div>
       </SidebarHeader>
-
       <SidebarContent>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-          <SidebarMenu>
-            {workspaceItems.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.url);
-              return (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={active}>
-                    <NavLink to={item.url}>
-                      <Icon className="mr-2 h-4 w-4" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
-        </SidebarGroup>
-
-        {isAdmin && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
-            <SidebarMenu>
-              {adminItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.url);
-                return (
-                  <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton asChild isActive={active}>
-                      <NavLink to={item.url}>
-                        <Icon className="mr-2 h-4 w-4" />
-                        <span>{item.title}</span>
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
+        <NavMain items={navItems} />
       </SidebarContent>
-
-      <SidebarFooter className="px-3 py-2 text-xs text-muted-foreground">
-        © {new Date().getFullYear()} IronBooks
+      <SidebarFooter className="p-4">
+        <NavUser />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
-  );
+  )
 }
-
-export default AppSidebar;
