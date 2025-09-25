@@ -34,21 +34,20 @@ import {
   PromptInputTools,
   type PromptInputMessage
 } from '@/components/ai-elements/prompt-input';
-import { 
-  Suggestions, 
-  Suggestion 
+import {
+  Suggestions,
+  Suggestion
 } from '@/components/ai-elements/suggestion';
-import { 
-  Reasoning, 
-  useDummyReasoning 
+import {
+  Reasoning,
+  useDummyReasoning
 } from '@/components/ai-elements/reasoning';
-import { 
-  Sources, 
-  useDummySources 
+import {
+  Sources,
+  useDummySources
 } from '@/components/ai-elements/sources';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-
 interface ChatMessage {
   id: string;
   text: string;
@@ -59,7 +58,6 @@ interface ChatMessage {
   reasoningSteps?: Array<{id: string; title: string; content: string; type?: string}>;
   sources?: Array<{id: string; title: string; type: string; description?: string}>;
 }
-
 interface PremiumChatInterfaceProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
@@ -68,7 +66,6 @@ interface PremiumChatInterfaceProps {
   placeholder?: string;
   suggestedQuestions?: string[];
 }
-
 const PremiumChatInterface = ({
   messages,
   onSendMessage,
@@ -77,7 +74,7 @@ const PremiumChatInterface = ({
   placeholder = "Ask me about cash flow, profits, expenses, or KPIs...",
   suggestedQuestions = [
     "Show me my top expenses this month",
-    "How's my profit margin trending?", 
+    "How's my profit margin trending?",
     "What's my cash flow forecast?",
     "Analyze my revenue growth"
   ]
@@ -86,7 +83,6 @@ const PremiumChatInterface = ({
   const [model, setModel] = useState<string>('gpt-4o');
   const [useMicrophone, setUseMicrophone] = useState<boolean>(false);
   const [useWebSearch, setUseWebSearch] = useState<boolean>(false);
-
   // Dummy model data
   const models = [
     { id: 'gpt-4o', name: 'GPT-4' },
@@ -95,19 +91,18 @@ const PremiumChatInterface = ({
     { id: 'claude-instant', name: 'Claude Instant' },
     { id: 'palm-2', name: 'PaLM 2' },
   ];
-
   // Dynamic suggestions that change based on conversation context
   const getDynamicSuggestions = () => {
     if (messages.length === 0 || isTyping) return [];
-    
+   
     const lastMessage = messages[messages.length - 1];
     const lastUserMessage = messages.filter(m => m.sender === 'user').slice(-1)[0];
-    
+   
     // Context-aware suggestions based on the last interaction
     if (lastUserMessage?.text.toLowerCase().includes('expense')) {
       return [
         "Compare to last month",
-        "Show top 5 categories", 
+        "Show top 5 categories",
         "Which expenses can we reduce?",
         "Export expense report"
       ];
@@ -126,29 +121,25 @@ const PremiumChatInterface = ({
         "Monthly cash trends"
       ];
     }
-    
+   
     // Default follow-up suggestions
     return [
       "Compare to last month",
-      "Show me a breakdown", 
+      "Show me a breakdown",
       "What's driving these numbers?",
       "Create a summary report",
       "Show trends over time"
     ];
   };
-
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
-
     if (!(hasText || hasAttachments)) {
       return;
     }
-
     onSendMessage(message.text || 'Sent with attachments');
     setInputValue('');
   };
-
   return (
     <div className="h-full flex flex-col">
       {/* Chat Messages Container */}
@@ -162,7 +153,7 @@ const PremiumChatInterface = ({
                 description="Ask me anything about your finances, reports, or business insights"
                 icon={<Bot className="w-12 h-12" />}
               />
-              
+             
               {/* Suggested Questions */}
               <div className="w-full max-w-2xl space-y-4">
                 <div className="flex items-center justify-center gap-2 mb-6">
@@ -194,14 +185,14 @@ const PremiumChatInterface = ({
                 const isLast = index === messages.length - 1;
                 const showReasoning = msg.sender === 'agent' && msg.reasoningSteps && msg.reasoningSteps.length > 0;
                 const showSources = msg.sender === 'agent' && msg.sources && msg.sources.length > 0;
-                
+               
                 return (
                   <div key={msg.id} className="space-y-3">
                     {/* Show reasoning outside message bubble for agent responses */}
                     {showReasoning && (
                       <div className="flex justify-start">
                         <div className="max-w-[85%]">
-                          <Reasoning 
+                          <Reasoning
                             steps={msg.reasoningSteps.map(step => ({
                               ...step,
                               timestamp: new Date(),
@@ -213,7 +204,7 @@ const PremiumChatInterface = ({
                         </div>
                       </div>
                     )}
-                    
+                   
                     <Message from={msg.sender === 'user' ? 'user' : 'assistant'}>
                       {msg.sender === 'user' ? (
                         <Avatar className="size-8 ring-1 ring-border">
@@ -223,10 +214,10 @@ const PremiumChatInterface = ({
                         </Avatar>
                       ) : (
                         <Avatar className="size-8 ring-1 ring-border">
-                          <AvatarImage 
-                            src="https://quaeeqgobujsukemkrze.supabase.co/storage/v1/object/public/assets/img/faviconV2%20(1).png" 
-                            alt="IronBooks" 
-                            className="mt-0 mb-0 object-contain p-1" 
+                          <AvatarImage
+                            src="https://quaeeqgobujsukemkrze.supabase.co/storage/v1/object/object/public/assets/img/faviconV2%20(1).png"
+                            alt="IronBooks"
+                            className="mt-0 mb-0 object-contain p-1"
                           />
                           <AvatarFallback className="bg-blue-600 text-white">
                             <Bot className="w-4 h-4" />
@@ -236,28 +227,26 @@ const PremiumChatInterface = ({
                       <MessageContent variant="contained">
                         <div className="space-y-3">
                           <div className="whitespace-pre-wrap">
-                            {msg.isStreaming ? (
-                              <div className="flex items-center space-x-2">
+                            {msg.text}
+                            {msg.isStreaming && (
+                              <span className="inline-flex items-center space-x-2 ml-2">
                                 <div className="flex space-x-1">
                                   <div className="w-2 h-2 bg-current rounded-full animate-bounce" />
                                   <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
                                   <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                                 </div>
-                                <span className="text-sm opacity-70">Generating response...</span>
-                              </div>
-                            ) : (
-                              msg.text
+                              </span>
                             )}
                           </div>
-                          
+                         
                           {/* Show sources inside message for completed responses */}
                           {showSources && !msg.isStreaming && (
-                            <Sources 
+                            <Sources
                               sources={msg.sources}
                               className="text-sm"
                             />
                           )}
-                          
+                         
                           <div className="text-xs opacity-70 mt-2">
                             {msg.timestamp.toLocaleTimeString()}
                           </div>
@@ -267,12 +256,12 @@ const PremiumChatInterface = ({
                   </div>
                 );
               })}
-              
+             
               {/* Show current reasoning while thinking */}
               {(isTyping || currentReasoning) && currentReasoning && currentReasoning.length > 0 && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%]">
-                    <Reasoning 
+                    <Reasoning
                       steps={currentReasoning.map(step => ({
                         ...step,
                         timestamp: new Date(),
@@ -284,14 +273,14 @@ const PremiumChatInterface = ({
                   </div>
                 </div>
               )}
-              
+             
               {isTyping && !currentReasoning && (
                 <Message from="assistant">
                   <Avatar className="size-8 ring-1 ring-border">
-                    <AvatarImage 
-                      src="https://quaeeqgobujsukemkrze.supabase.co/storage/v1/object/public/assets/img/LOGO-2.png" 
-                      alt="IronBooks" 
-                      className="mt-0 mb-0 object-contain p-1" 
+                    <AvatarImage
+                      src="https://quaeeqgobujsukemkrze.supabase.co/storage/v1/object/object/public/assets/img/LOGO-2.png"
+                      alt="IronBooks"
+                      className="mt-0 mb-0 object-contain p-1"
                     />
                     <AvatarFallback className="bg-blue-600 text-white">
                       <Bot className="w-4 h-4" />
@@ -315,7 +304,6 @@ const PremiumChatInterface = ({
           <ConversationScrollButton />
         </Conversation>
       </div>
-
       {/* Input Area */}
       <div className="border-t bg-muted/30 rounded-b-lg shadow-lg border border-t-0">
         <div className="p-4 space-y-4">
@@ -337,7 +325,7 @@ const PremiumChatInterface = ({
               </Suggestions>
             </div>
           )}
-          
+         
           <PromptInput onSubmit={handleSubmit} globalDrop multiple>
             <PromptInputBody>
               <PromptInputAttachments>
@@ -387,9 +375,9 @@ const PremiumChatInterface = ({
                   </PromptInputModelSelectContent>
                 </PromptInputModelSelect>
               </PromptInputTools>
-              <PromptInputSubmit 
-                disabled={!inputValue.trim()} 
-                status={isTyping ? 'streaming' : 'ready'} 
+              <PromptInputSubmit
+                disabled={!inputValue.trim()}
+                status={isTyping ? 'streaming' : 'ready'}
               />
             </PromptInputToolbar>
           </PromptInput>
@@ -398,5 +386,4 @@ const PremiumChatInterface = ({
     </div>
   );
 };
-
 export default PremiumChatInterface;
