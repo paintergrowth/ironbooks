@@ -8,7 +8,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -20,10 +19,6 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
 import { supabase, invokeWithAuth } from '@/lib/supabase';
 import { useAppContext } from '@/contexts/AppContext';
@@ -154,6 +149,49 @@ interface DashboardProps {
   onNavigateToReports?: (filter: string, timeframe: string) => void;
 }
 
+/** Demo-only categories card (avoids Supabase calls in demo mode) */
+const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }) => {
+  const monthIdx = currentMonthIndex;
+  const rows = DEMO_MONTH_SERIES;
+  const thisMonth = rows[monthIdx - 1]?.expenses ?? 0;
+  const lastMonth = rows[monthIdx - 2]?.expenses ?? 0;
+  const ytd = rows.reduce((a, r) => a + r.expenses, 0);
+
+  const base =
+    timeframe === 'this_month' ? thisMonth :
+    timeframe === 'last_month' ? lastMonth : ytd;
+
+  // Simple demo split — must sum to 100%
+  const split = [
+    { name: 'Materials',      pct: 0.40 },
+    { name: 'Labor',          pct: 0.30 },
+    { name: 'Equipment',      pct: 0.15 },
+    { name: 'Subcontractors', pct: 0.10 },
+    { name: 'Misc',           pct: 0.05 },
+  ];
+
+  const data = split.map(s => ({ name: s.name, amount: Math.round(base * s.pct) }));
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg font-bold">Expense Categories (Demo)</CardTitle>
+        <CardDescription>
+          Showing {timeframe === 'this_month' ? 'This Month' : timeframe === 'last_month' ? 'Last Month' : 'Year-to-Date'} demo split
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {data.map((row) => (
+          <div key={row.name} className="flex items-center justify-between rounded-md border p-3">
+            <span className="text-sm font-medium">{row.name}</span>
+            <span className="text-sm">{formatCurrency(row.amount)}</span>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const { user, loading: userLoading } = useAppContext();
   const { toast } = useToast();
@@ -162,6 +200,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   // 🔑 Effective identity (honors impersonation)
   const { userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
   console.log('[Dashboard] effective identity', { effUserId, effRealmId, isImpersonating });
+  const isDemo = !effRealmId; // ← no realm means demo account
 
   const [timeframe, setTimeframe] = useState<UiTimeframe>('thisMonth');
   const [chartTimeRange, setChartTimeRange] = useState("30d");
@@ -350,7 +389,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       const period = toApiPeriod(timeframe);
 
       // === DEMO PATH: no connected realm -> show demo tiles ===
-      if (!effRealmId) {
+      if (isDemo) {
         const demo = demoTiles(period);
         if (!isCancelled) {
           setRevCurr(demo.revenue.current as number);
@@ -401,14 +440,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     };
     run();
     return () => { isCancelled = true; };
-  }, [timeframe, effUserId, effRealmId]);
+  }, [timeframe, effUserId, effRealmId, isDemo]);
 
   // Fetch YTD chart data
   useEffect(() => {
     let isCancelled = false;
     const loadYtd = async () => {
       // === DEMO PATH: no connected realm -> show demo YTD series ===
-      if (!effRealmId) {
+      if (isDemo) {
         if (!isCancelled) {
           setYtdChartData(DEMO_MONTH_SERIES);
           setYtdLoading(false);
@@ -450,7 +489,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
     loadYtd();
     return () => { isCancelled = true; };
-  }, [effUserId, effRealmId, companyName]);
+  }, [effUserId, effRealmId, companyName, isDemo]);
 
   // Load realm ID from profiles (only to support real-user OAuth UI; data fetches use effRealmId)
   useEffect(() => {
@@ -508,7 +547,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
   return (
     <div className="space-y-6 p-6">
-      {/* Clean header with company name and key actions */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex flex-col">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -560,7 +599,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         </CardContent>
       </Card>
 
-      {/* 3 Main Metric Cards - Revenue, Expenses, Net Profit */}
+      {/* 3 Main Metric Cards */}
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="cursor-pointer transition-colors hover:shadow-lg" onClick={() => handleCardClick('revenue')}>
           <CardHeader className="pb-3">
@@ -726,10 +765,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       </Card>
 
       {/* Expense Categories */}
-      <ExpenseCategories
-        timeframe={toApiPeriod(timeframe)}
-        {...({ userId: effUserId, realmId: effRealmId } as any)}
-      />
+      {isDemo ? (
+        <DemoExpenseCategories timeframe={toApiPeriod(timeframe)} />
+      ) : (
+        <ExpenseCategories
+          timeframe={toApiPeriod(timeframe)}
+          {...({ userId: effUserId, realmId: effRealmId } as any)}
+        />
+      )}
     </div>
   );
 };
