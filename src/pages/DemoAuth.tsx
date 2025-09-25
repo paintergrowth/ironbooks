@@ -19,8 +19,6 @@ export const DemoAuth: React.FC = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isFormValid = formData.name && formData.email && (!formData.phone || isValidPhone(formData.phone));
-
   const formatPhoneNumber = (value: string) => {
     // Remove all non-numeric characters
     const cleaned = value.replace(/\D/g, '');
@@ -43,6 +41,8 @@ export const DemoAuth: React.FC = () => {
     const cleaned = phone.replace(/\D/g, '');
     return cleaned.length === 10;
   };
+
+  const isFormValid = formData.name && formData.email && (!formData.phone || isValidPhone(formData.phone));
 
   const handleInputChange = (field: string, value: string) => {
     if (field === 'phone') {
