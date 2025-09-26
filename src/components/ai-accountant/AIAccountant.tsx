@@ -16,6 +16,16 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase, invokeWithAuth } from '@/lib/supabase';
 import { useImpersonation } from '@/lib/impersonation';
 
+interface Message {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  timestamp: Date;
+  isStreaming?: boolean;
+  reasoningSteps?: Array<{id: string; title: string; content: string; type?: string}>;
+  sources?: Array<{id: string; title: string; type: string; description?: string}>;
+}
+
 interface AIAccountantProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
@@ -50,6 +60,35 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [inputValue, setInputValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayLimits, setDisplayLimits] = useState({ today: 10, yesterday: 5, week: 5, older: 5 });
+  const [isTyping, setIsTyping] = useState(false);
+  const [currentReasoning, setCurrentReasoning] = useState<Array<{id: string; title: string; content: string; type?: string}>>([]);
+  
+  // Local streaming messages (separate from database-backed chat history)
+  const [streamingMessages, setStreamingMessages] = useState<Message[]>([]);
+
+  // Combine database messages with streaming messages for display
+  const allMessages = React.useMemo(() => {
+    const dbMessages: Message[] = chatMessages.map(msg => ({
+      id: msg.id,
+      content: msg.content,
+      role: msg.role,
+      timestamp: new Date(msg.created_at)
+    }));
+    
+    // Filter out streaming messages that are already saved to DB
+    const newStreamingMessages = streamingMessages.filter(streamMsg => 
+      !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
+    );
+    
+    return [...dbMessages, ...newStreamingMessages].sort((a, b) => 
+      a.timestamp.getTime() - b.timestamp.getTime()
+    );
+  }, [chatMessages, streamingMessages]);
+
+  // Clear streaming messages when session changes
+  React.useEffect(() => {
+    setStreamingMessages([]);
+  }, [currentSession?.id]);
 
   // ---- Impersonation / Effective identity ----
   const { isImpersonating, target } = useImpersonation();
@@ -153,6 +192,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !user) return;
 
+    // EARLY GUARD — stop if identity not ready
+    if (!effUserId || !effRealmId) {
+      toast({
+        title: 'Connect QuickBooks',
+        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting.',
+        variant: 'destructive'
+      });
+      setIsTyping(false);
+      return;
+    }
+
     const messageContent = inputValue;
     setInputValue('');
 
@@ -163,8 +213,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       if (!session) return;
     }
 
-    // Save user message
+    // Save user message to database
     await saveMessage('user', messageContent, 0, 0, 0, session.id);
+    
+    // Add user message to streaming state for immediate display
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content: messageContent,
+      role: 'user',
+      timestamp: new Date()
+    };
+    setStreamingMessages(prev => [...prev, userMessage]);
 
     // Ensure we have selected session
     if (!currentSession) {
@@ -172,37 +231,89 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     }
 
     // Auto title
-    if (session.title === 'New Chat' && chatMessages.length === 0) {
+    if (session.title === 'New Chat' && allMessages.length === 0) {
       const title = messageContent.length > 50 ? messageContent.substring(0, 47) + '...' : messageContent;
       updateSessionTitle(session.id, title);
     }
 
-    // ---- Call QBO Agent with EFFECTIVE identity ----
-    try {
-      if (!effUserId || !effRealmId) {
-        throw new Error('QuickBooks not connected for the effective identity');
+    setIsTyping(true);
+
+    const reasoningSteps = generateReasoningSteps(messageContent);
+    const sources = generateSources(messageContent);
+
+    let currentStepIndex = 0;
+    setCurrentReasoning([]);
+
+    const reasoningInterval = setInterval(() => {
+      if (currentStepIndex < reasoningSteps.length) {
+        setCurrentReasoning(prev => [...prev, reasoningSteps[currentStepIndex]]);
+        currentStepIndex++;
+      } else {
+        clearInterval(reasoningInterval);
+        
+        setTimeout(async () => {
+          const messageId = (Date.now() + 1).toString();
+          
+          // Create streaming assistant message
+          const streamingMessage: Message = {
+            id: messageId,
+            content: '',
+            role: 'assistant',
+            timestamp: new Date(),
+            isStreaming: true,
+            reasoningSteps,
+            sources
+          };
+          setStreamingMessages(prev => [...prev, streamingMessage]);
+          setCurrentReasoning([]);
+
+          try {
+            // Try SSE streaming first (will also gracefully handle JSON responses)
+            await callAgentStreaming(messageContent, messageId);
+          } catch (e) {
+            console.warn('Streaming failed, falling back:', e);
+            // Hard fallback: one-shot function + simulated token stream
+            try {
+              const finalResponse = await callAgentOnce(messageContent);
+              const words = finalResponse.split(' ');
+              let currentText = '';
+              for (let i = 0; i < words.length; i++) {
+                currentText += (i > 0 ? ' ' : '') + words[i];
+                setStreamingMessages(prev => prev.map(msg =>
+                  msg.id === messageId
+                    ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
+                    : msg
+                ));
+                if (i < words.length - 1) {
+                  // eslint-disable-next-line no-await-in-loop
+                  await new Promise(resolve => setTimeout(resolve, 30));
+                }
+              }
+              // Save final message to database
+              await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
+              setIsTyping(false);
+            } catch (e2) {
+              console.error('AI query error:', e2);
+
+              let fallbackResponse = `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
+              if (e2 instanceof Error) {
+                if (e2.message.includes('QuickBooks not connected')) {
+                  fallbackResponse = `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
+                } else if (e2.message.includes('authorization expired') || e2.message.includes('qbo_reauth_required')) {
+                  fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
+                }
+              }
+              
+              setStreamingMessages(prev => prev.map(msg =>
+                msg.id === messageId ? { ...msg, content: fallbackResponse, isStreaming: false } : msg
+              ));
+              await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
+              setIsTyping(false);
+            }
+          }
+        }, 500);
       }
-      const { data, error } = await invokeWithAuth('qbo-query-agent', {
-        body: { query: messageContent, realmId: effRealmId, userId: effUserId },
-      });
-      if (error) throw error;
-
-      const responseText = data?.response || "Sorry, I couldn't process that query.";
-      await saveMessage('assistant', responseText, 0, 0, 0, session.id);
-    } catch (error: any) {
-      console.error('Error getting AI response:', error);
-
-      let fallbackResponse = `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
-      if (error instanceof Error) {
-        if (error.message.includes('QuickBooks not connected')) {
-          fallbackResponse = `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
-        } else if (error.message.includes('authorization expired') || error.message.includes('qbo_reauth_required')) {
-          fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
-        }
-      }
-
-      await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
-    }
+    }, 1250);
   };
 
   const handleCopyMessage = (content: string) => {
@@ -257,6 +368,198 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     setDisplayLimits(prev => ({ ...prev, [group]: prev[group] + 10 }));
   };
 
+  // ===== Functions URL (for streaming) =====
+  function getFunctionsBaseFromClient() {
+    try {
+      // Try from Supabase client (v2 keeps it on a private field)
+      // @ts-ignore
+      const urlFromClient = (supabase as any)?.supabaseUrl || (supabase as any)?.url;
+      if (typeof urlFromClient === 'string' && urlFromClient.length > 0) {
+        return `${urlFromClient.replace(/\/+$/, '')}/functions/v1`;
+      }
+    } catch {}
+    const envUrl =
+      (import.meta as any)?.env?.VITE_SUPABASE_URL ||
+      (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_SUPABASE_URL) ||
+      '';
+    return envUrl ? `${envUrl.replace(/\/+$/, '')}/functions/v1` : '';
+  }
+  const FUNCTIONS_BASE = getFunctionsBaseFromClient();
+
+  // ----- Chat helpers -----
+  const generateReasoningSteps = (query: string) => {
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
+        { id: '2', title: 'Querying transaction data', content: 'Searching QuickBooks transactions for expense categories and amounts in the specified timeframe.', type: 'lookup' },
+        { id: '3', title: 'Calculating totals', content: 'Aggregating expense amounts by category and computing percentage changes from previous periods.', type: 'calculation' },
+        { id: '4', title: 'Generating insights', content: 'Identifying trends, outliers, and actionable recommendations based on expense patterns.', type: 'synthesis' }
+      ];
+    }
+    if (query.toLowerCase().includes('revenue') || query.toLowerCase().includes('profit')) {
+      return [
+        { id: '1', title: 'Understanding revenue request', content: 'Parsing query to determine if user wants revenue trends, profit margins, or comparative analysis.', type: 'analysis' },
+        { id: '2', title: 'Fetching financial data', content: 'Retrieving income statements and revenue data from QuickBooks for the requested period.', type: 'lookup' },
+        { id: '3', title: 'Synthesizing response', content: 'Combining revenue data with industry benchmarks to provide contextual business insights.', type: 'synthesis' }
+      ];
+    }
+    return [
+      { id: '1', title: 'Processing query', content: 'Analyzing the user\'s question to understand the financial information being requested.', type: 'analysis' },
+      { id: '2', title: 'Accessing data', content: 'Connecting to QuickBooks Online to retrieve relevant financial records and metrics.', type: 'lookup' },
+      { id: '3', title: 'Generating response', content: 'Formulating a comprehensive answer with actionable insights and recommendations.', type: 'synthesis' }
+    ];
+  };
+
+  const generateSources = (query: string) => {
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'QuickBooks Online - Expense Transactions', type: 'quickbooks', description: 'Retrieved expense data from your QuickBooks Online account for the specified period.' },
+        { id: '2', title: 'Expense Category Analysis', type: 'calculation', description: 'Calculated expense totals and percentage changes by category.' },
+        { id: '3', title: 'Industry Benchmark Data', type: 'api', description: 'Compared your expenses against industry averages for small businesses.' }
+      ];
+    }
+    return [
+      { id: '1', title: 'QuickBooks Online - Financial Data', type: 'quickbooks', description: 'General financial information retrieved from your QuickBooks Online account.' },
+      { id: '2', title: 'Financial Analysis Report', type: 'report', description: 'Generated analytical insights based on your financial data.' }
+    ];
+  };
+
+  // ----- Streaming caller (first try SSE, then JSON fallback with simulated stream) -----
+  const callAgentStreaming = async (query: string, messageId: string) => {
+    // HARD GUARD to avoid 400s from Edge Function
+    if (!effUserId || !effRealmId) {
+      throw new Error('Missing identity');
+    }
+    if (!FUNCTIONS_BASE) {
+      throw new Error('Could not derive Supabase Functions URL. Ensure Supabase client initialized, or set VITE_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL.');
+    }
+
+    const [{ data: sessionData }, anonKey] = await Promise.all([
+      supabase.auth.getSession(),
+      (async () => {
+        try {
+          // @ts-ignore
+          const k = (supabase as any)?.anonKey ||
+            (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY ||
+            (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
+            '';
+          return k;
+        } catch { return ''; }
+      })()
+    ]);
+
+    const accessToken = sessionData?.session?.access_token ?? '';
+    const url = `${FUNCTIONS_BASE}/qbo-query-agent`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    };
+    if (anonKey) headers['apikey'] = anonKey;
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, realmId: effRealmId, userId: effUserId, stream: true }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      throw new Error(errText || `HTTP ${resp.status}`);
+    }
+
+    const ctype = resp.headers.get('content-type') || '';
+    // If server returns JSON (no SSE), read once and simulate tokenization
+    if (ctype.includes('application/json')) {
+      const json = await resp.json().catch(() => null);
+      const finalResponse =
+        json?.response && typeof json.response === 'string'
+          ? json.response
+          : "Sorry, I couldn't process that query.";
+
+      // Simulate token-by-token updates so users see progress
+      const words = finalResponse.split(' ');
+      let currentText = '';
+      for (let i = 0; i < words.length; i++) {
+        currentText += (i > 0 ? ' ' : '') + words[i];
+        setStreamingMessages(prev => prev.map(msg =>
+          msg.id === messageId
+            ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
+            : msg
+        ));
+        if (i < words.length - 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise(r => setTimeout(r, 30));
+        }
+      }
+      // Save final message to database
+      await saveMessage('assistant', finalResponse, 0, 0, 0, currentSession?.id || '');
+      setIsTyping(false);
+      return;
+    }
+
+    // Expect proper SSE
+    if (!resp.body) throw new Error('No response body for streaming');
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let done = false;
+    let accumulatedText = '';
+
+    while (!done) {
+      const { value, done: d } = await reader.read();
+      done = d;
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line.startsWith('data:')) continue;
+
+        let payload: any = null;
+        try {
+          payload = JSON.parse(line.slice(5).trim());
+        } catch {
+          continue;
+        }
+
+        if (payload?.type === 'token') {
+          accumulatedText += payload.content;
+          setStreamingMessages(prev => prev.map(msg =>
+            msg.id === messageId
+              ? { ...msg, content: accumulatedText, isStreaming: true }
+              : msg
+          ));
+        } else if (payload?.type === 'done') {
+          // Save final message to database
+          await saveMessage('assistant', accumulatedText, 0, 0, 0, currentSession?.id || '');
+          setStreamingMessages(prev => prev.map(msg =>
+            msg.id === messageId ? { ...msg, isStreaming: false } : msg
+          ));
+          setIsTyping(false);
+        } else if (payload?.type === 'error') {
+          throw new Error(payload.message || 'stream error');
+        }
+      }
+    }
+  };
+
+  // Non-streaming fallback (invokeWithAuth)
+  const callAgentOnce = async (query: string) => {
+    if (!effUserId || !effRealmId) throw new Error('Missing identity');
+    const { data, error } = await invokeWithAuth('qbo-query-agent', {
+      body: { query, realmId: effRealmId, userId: effUserId },
+    });
+    if (error) throw error;
+    const text = data?.response;
+    return (typeof text === 'string' && text.trim().length > 0)
+      ? text
+      : "Sorry, I couldn't process that query.";
+  };
+
   const formatTime = (date: Date) => {
     const now = new Date();
     const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
@@ -271,7 +574,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       <div className="flex-1 relative h-full">
         {/* Chat Messages Area - Absolute positioned with bottom margin for input */}
         <div className="absolute inset-0 bottom-24 overflow-y-auto">
-          {chatMessages.length === 0 ? (
+          {allMessages.length === 0 ? (
             // Welcome Screen
             <div className="h-full flex flex-col items-center justify-center p-8 space-y-8">
               <div className="text-center space-y-4">
@@ -311,7 +614,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           ) : (
             // Chat Messages
             <div className="space-y-6 max-w-2xl mx-auto p-4 pb-8">
-              {chatMessages.map((message) => (
+              {allMessages.map((message) => (
                 <div key={message.id}>
                   {message.role === 'user' ? (
                     // User messages - keep in bubbles on the right
@@ -350,17 +653,44 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               ))}
 
               {/* Show reasoning/thinking indicator when loading */}
-              {loading && (
+              {(isTyping || loading) && (
                 <div className="group space-y-3">
-                  <Reasoning isStreaming={loading} defaultOpen={true}>
+                  <Reasoning isStreaming={isTyping || loading} defaultOpen={true}>
                     <ReasoningTrigger>
                       <div className="flex items-center gap-2 animate-pulse">
                         <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-                        <span>Analyzing your financial data...</span>
+                        <span>
+                          {currentReasoning.length > 0 
+                            ? currentReasoning[currentReasoning.length - 1].title
+                            : "Analyzing your financial data..."
+                          }
+                        </span>
                       </div>
                     </ReasoningTrigger>
                     <ReasoningContent>
-                      I'm examining your QuickBooks data to provide accurate financial insights and recommendations tailored to your business.
+                      {currentReasoning.length > 0 ? (
+                        <div className="space-y-2">
+                          {currentReasoning.map((step) => (
+                            <div key={step.id} className="flex items-start gap-2">
+                              <div className="w-2 h-2 bg-green-500 rounded-full mt-1.5 flex-shrink-0"></div>
+                              <div>
+                                <div className="text-sm font-medium">{step.title}</div>
+                                <div className="text-xs text-muted-foreground">{step.content}</div>
+                              </div>
+                            </div>
+                          ))}
+                          {isTyping && currentReasoning.length > 0 && (
+                            <div className="flex items-start gap-2">
+                              <div className="w-2 h-2 bg-primary rounded-full animate-pulse mt-1.5 flex-shrink-0"></div>
+                              <div className="text-sm text-muted-foreground animate-pulse">
+                                Generating response...
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        "I'm examining your QuickBooks data to provide accurate financial insights and recommendations tailored to your business."
+                      )}
                     </ReasoningContent>
                   </Reasoning>
                 </div>

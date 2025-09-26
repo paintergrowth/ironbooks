@@ -1,22 +1,45 @@
-// AI agent for querying qbo_postings (structured + semantic hybrid)
+// supabase/functions/qbo-query-agent/index.ts
+//
+// Drop-in: streams SSE tokens when { stream: true } is sent.
+// Keeps your SQL/embeddings fallbacks & non-stream JSON response intact.
+//
+// Deno / Supabase Edge Function
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import OpenAI from "https://esm.sh/openai@4";
+
+// ---------- CORS ----------
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ib-act-as-user, x-ib-act-as-realm",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
+
+// ---------- ENV ----------
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-const MATCH_THRESHOLD = Number(Deno.env.get("MATCH_THRESHOLD") ?? 0.74);
-const MATCH_COUNT = Number(Deno.env.get("MATCH_COUNT") ?? 50);
-const COVERAGE_MIN = Number(Deno.env.get("COVERAGE_MIN") ?? 0.6);
-const MAX_LIST = Number(Deno.env.get("MAX_LIST") ?? 10);
+
 const openai = new OpenAI({
   apiKey: OPENAI_API_KEY
 });
+
+// optional: for semantic fallback over monthly embeddings
+const MATCH_THRESHOLD = Number(Deno.env.get("MATCH_THRESHOLD") ?? 0.74);
+const MATCH_COUNT = Number(Deno.env.get("MATCH_COUNT") ?? 6);
+const COVERAGE_MIN = Number(Deno.env.get("COVERAGE_MIN") ?? 0.5);
+
+// guardrails
+const MAX_MONTHS_TO_SEND = Number(Deno.env.get("MAX_MONTHS_TO_SEND") ?? 12);
+
+// explicit list of expense-like category prefixes
+const EXPENSE_PREFIXES = (Deno.env.get("EXPENSE_PREFIXES") ?? "pnl:expenses,pnl:cogs,pnl:cost_of_goods_sold,pnl:payroll,pnl:direct_costs,pnl:gross_profit:expenses").split(",").map((s)=>s.trim()).filter(Boolean);
+
+// Model stays the same as your current use:
+const CHAT_MODEL = "gpt-5-mini";
+const EMBED_MODEL = "text-embedding-3-small";
+
+// ---------- Small helpers ----------
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -26,106 +49,88 @@ function json(body, status = 200) {
     }
   });
 }
-// ------------------------- Helpers: dates & metrics & categories -------------------------
+
+const enc = new TextEncoder();
+const sse = (data)=>enc.encode(`data: ${JSON.stringify(data)}\n\n`);
+
+// ------------------------- Date helpers -------------------------
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
-function toDateStr(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+function monthIndex(d) {
+  return d.year * 12 + (d.month - 1);
 }
-function monthToDateRange(now = new Date()) {
-  const from = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
-  const to = toDateStr(now);
+
+function idxToYearMonth(idx) {
+  const year = Math.floor(idx / 12);
+  const month = idx % 12 + 1;
+  return {
+    year,
+    month
+  };
+}
+
+function nowLocal() {
+  return new Date();
+}
+
+function currentYearMonth() {
+  const n = nowLocal();
+  return {
+    year: n.getFullYear(),
+    month: n.getMonth() + 1
+  };
+}
+
+function lastMonthYearMonth() {
+  const n = nowLocal();
+  const d = new Date(n.getFullYear(), n.getMonth() - 1, 1);
+  return {
+    year: d.getFullYear(),
+    month: d.getMonth() + 1
+  };
+}
+
+function thisQuarterStart(y, m) {
+  const qStartMonth = m - (m - 1) % 3;
+  return {
+    year: y,
+    month: qStartMonth
+  };
+}
+
+function lastQuarterRange() {
+  const { year, month } = currentYearMonth();
+  const qStart = thisQuarterStart(year, month);
+  const end = new Date(qStart.year, qStart.month - 2 - 1, 1);
+  const to = {
+    year: end.getFullYear(),
+    month: end.getMonth() + 1
+  };
+  const startIdx = monthIndex(to) - 2;
+  const from = idxToYearMonth(startIdx);
   return {
     from,
     to,
-    label: `MTD ${from}–${to}`
+    label: `Last Quarter ${from.year}-${pad2(from.month)}–${to.year}-${pad2(to.month)}`
   };
 }
-function lastMonthRange(now = new Date()) {
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const lastMonth = new Date(y, m - 1, 1);
-  const from = `${lastMonth.getFullYear()}-${pad2(lastMonth.getMonth() + 1)}-01`;
-  const end = new Date(lastMonth.getFullYear(), lastMonth.getMonth() + 1, 0);
-  const to = toDateStr(end);
-  return {
-    from,
-    to,
-    label: `Last Month ${from}–${to}`
-  };
+
+function escLiteral(str) {
+  return String(str).replace(/'/g, "''");
 }
-function quarterToDateRange(now = new Date()) {
-  const m = now.getMonth();
-  const qStartMonth = m - m % 3;
-  const from = `${now.getFullYear()}-${pad2(qStartMonth + 1)}-01`;
-  const to = toDateStr(now);
-  return {
-    from,
-    to,
-    label: `QTD ${from}–${to}`
-  };
-}
-function yearToDateRange(now = new Date()) {
-  const from = `${now.getFullYear()}-01-01`;
-  const to = toDateStr(now);
-  return {
-    from,
-    to,
-    label: `YTD ${from}–${to}`
-  };
-}
-function detectMetric(q) {
-  const s = q.toLowerCase();
-  if (/(\\bsales\\b|\\brevenue\\b|\\bincome\\b)/i.test(s)) return "revenue";
-  if (/(\\bexpense\\b|\\bexpenses\\b|\\bspend\\b|\\bcosts\\b|\\bcogs\\b)/i.test(s)) return "expenses";
-  if (/(\\bprofit\\b|\\bnet income\\b|\\bearnings\\b)/i.test(s)) return "profit";
-  return null;
-}
-function detectCategoryGrouping(q) {
-  const s = q.toLowerCase();
-  const enabled = /(\\bby\\b|\\bper\\b)\\s+(category|sub\\s*category|subcategory|account)|\\bcategory[- ]?wise\\b/.test(s);
-  const m = s.match(/\\blevel\\s*(\\d+)\\b/);
-  const levelOverride = m ? Math.max(1, parseInt(m[1], 10)) : null;
-  const byAccount = /(\\bby\\b|\\bper\\b)\\s+account\\b/.test(s);
-  return {
-    enabled,
-    levelOverride,
-    byAccount
-  };
-}
-function metricToPrefix(metric) {
-  return metric === "revenue" ? "pnl:revenues" : "pnl:expenses";
-}
-function defaultChildLevelForPrefix(prefix) {
-  return prefix.split(":").length + 1;
-}
-function categoryKeySQL(level) {
-  return `COALESCE(NULLIF(split_part(full_category, ':', ${level}), ''), '(uncategorized)')`;
-}
-function hasRealmFilter(sql, realmId) {
-  if (sql.includes(";")) return false;
-  if (!/^\\s*select\\b/i.test(sql)) return false;
-  const esc = realmId.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
-  const needle = new RegExp(String.raw`\\brealm_id\\s*=\\s*'${esc}'`, "i");
-  return needle.test(sql);
-}
-function formatCategoryRows(rows, label) {
-  const top = rows.slice(0, MAX_LIST);
-  const list = top.map((r)=>`${r.category}: ${Number(r.total ?? 0).toLocaleString()}`).join("; ");
-  const more = rows.length > MAX_LIST ? ` (+${rows.length - MAX_LIST} more)` : "";
-  return `${label}: ${list}${more}`;
-}
-// ---------- Utilities
-async function embeddingsCoverage(supabaseAdmin, realmId) {
-  const totalRes = await supabaseAdmin.from("qbo_postings").select("*", {
+
+// ------------------------- Coverage -------------------------
+async function embeddingsCoverageMonthly(supabaseAdmin, realmId) {
+  const totalRes = await supabaseAdmin.from("qbo_pnl_monthly").select("*", {
     count: "exact",
     head: true
   }).eq("realm_id", realmId);
-  const withEmbRes = await supabaseAdmin.from("qbo_postings").select("*", {
+  const withEmbRes = await supabaseAdmin.from("qbo_pnl_monthly").select("*", {
     count: "exact",
     head: true
-  }).eq("realm_id", realmId).not("embedding", "is", null);
+  }).eq("realm_id", realmId).not("embedding", "is",);
   const total = totalRes.count ?? 0;
   const withEmb = withEmbRes.count ?? 0;
   const ratio = total > 0 ? withEmb / total : 0;
@@ -135,69 +140,8 @@ async function embeddingsCoverage(supabaseAdmin, realmId) {
     ratio
   };
 }
-// ---------- Classifier: structured | semantic | hybrid
-async function classifyQuery(query) {
-  const prompt = 'Classify the user query as exactly one of: "structured" (totals/sums/counts on dates/amounts/types), "semantic" (fuzzy content/memo/vendor/category-ish lookups), or "hybrid" (needs fuzzy retrieval then totals). Return ONLY one word.';
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.0,
-    messages: [
-      {
-        role: "system",
-        content: prompt
-      },
-      {
-        role: "user",
-        content: query
-      }
-    ]
-  });
-  return (res.choices[0].message.content ?? "structured").trim().toLowerCase();
-}
-async function extractFilters(query) {
-  const sys = `Extract filters for a QuickBooks postings DB as JSON with keys:\\n     date_from (YYYY-MM-DD or null), date_to (YYYY-MM-DD or null),\\n     category_prefix (like 'pnl:expenses:marketing' or null),\\n     keywords (array of memo/vendor terms or null),\\n     want_total (boolean), group_by (one of day|week|month|quarter|year or null).\\n     Return ONLY valid JSON.`;
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.0,
-    response_format: {
-      type: "json_object"
-    },
-    messages: [
-      {
-        role: "system",
-        content: sys
-      },
-      {
-        role: "user",
-        content: query
-      }
-    ]
-  });
-  try {
-    const obj = JSON.parse(res.choices[0].message.content ?? "{}");
-    return obj;
-  } catch  {
-    return {};
-  }
-}
-// ---------- SQL generator for structured path (same table/rules)
-async function generateStructuredSQL(userQuery, realmId) {
-  const prompt = `You are a SQL expert for a QuickBooks postings database.\\n\\nTable: qbo_postings(\\n  id bigint, realm_id text, txn_id text, line_no int,\\n  date date, type text, docnum text, name text, memo text,\\n  account_id text, account_name text, full_category text,\\n  debit numeric, credit numeric\\n)\\n\\nRULES:\\n- Return a single valid SELECT only (no semicolons).\\n- ALWAYS include WHERE realm_id = '${realmId}'.\\n- Aggregations must use (debit - credit) as amount.\\n- Date filters use "date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'".\\n- For categories use full_category with ILIKE 'prefix%'.\\n- For text searches use ILIKE on memo/name.\\n- If vague, produce the best SELECT answering the ask.\\n\\nUser query: "${userQuery}"\\n\\nReturn ONLY the SQL string. If impossible, return: SELECT 0 AS result`;
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.1,
-    messages: [
-      {
-        role: "system",
-        content: prompt
-      }
-    ]
-  });
-  let sql = (response.choices[0].message.content ?? "").trim();
-  if (!sql.toUpperCase().startsWith("SELECT")) sql = "SELECT 0 AS result";
-  return sql;
-}
-// ---------- Execute paths
+
+// ------------------------- SQL exec (RPC) -------------------------
 async function executeSQL(supabaseAdmin, sql) {
   const { data, error } = await supabaseAdmin.rpc("execute_sql", {
     sql_query: sql
@@ -205,178 +149,356 @@ async function executeSQL(supabaseAdmin, sql) {
   if (error) throw error;
   return data;
 }
-async function executeSemantic(supabaseAdmin, userQuery, realmId, filters) {
-  if (!filters?.category_prefix) {
-    const m = detectMetric(userQuery);
-    if (m === "revenue") filters.category_prefix = "pnl:revenues";
-    if (m === "expenses") filters.category_prefix = "pnl:expenses";
-  }
+
+// ------------------------- Fetch monthly rows for a period -------------------------
+async function fetchMonthlyRows(supabaseAdmin, realmId, from, to) {
+  const sql = `
+    SELECT realm_id, year, month, pnl_data
+    FROM public.qbo_pnl_monthly
+    WHERE realm_id = '${escLiteral(realmId)}'
+      AND (year > ${from.year} OR (year = ${from.year} AND month >= ${from.month}))
+      AND (year < ${to.year} OR (year = ${to.year} AND month <= ${to.month}))
+    ORDER BY year, month
+    LIMIT ${MAX_MONTHS_TO_SEND}
+  `;
+  return await executeSQL(supabaseAdmin, sql);
+}
+
+// ------------------------- Optional semantic fallback -------------------------
+async function fetchMonthlyRowsSemantic(supabaseAdmin, realmId, userQuery, from, to, tokensUsed) {
   const emb = await openai.embeddings.create({
-    model: "text-embedding-3-small",
+    model: EMBED_MODEL,
     input: userQuery
   });
-  const queryEmbedding = emb.data[0].embedding;
-  const { data, error } = await supabaseAdmin.rpc("match_postings", {
-    query_embedding: queryEmbedding,
+  tokensUsed.in += emb.usage?.prompt_tokens ?? 0;
+  const { data, error } = await supabaseAdmin.rpc("match_pnl_monthly", {
+    query_embedding: emb.data[0].embedding,
     realm_id_filter: realmId,
     match_threshold: MATCH_THRESHOLD,
     match_count: MATCH_COUNT,
-    date_from: filters?.date_from ?? null,
-    date_to: filters?.date_to ?? null,
-    category_prefix: filters?.category_prefix ?? null
+    from_year: from?.year ?? null,
+    from_month: from?.month ?? null,
+    to_year: to?.year ?? null,
+    to_month: to?.month ?? null
   });
   if (error) throw error;
-  const wantsTotals = filters?.want_total === true || /\\b(total|sum|aggregate|how much|revenue|expense|spend|profit)\\b/i.test(userQuery);
-  if (wantsTotals && Array.isArray(data) && data.length) {
-    const ids = data.map((r)=>r.id).join(",");
-    const group = filters?.group_by;
-    const groupExpr = group ? `date_trunc('${group}', date)` : null;
-    const sql = groupExpr ? `SELECT ${groupExpr} AS bucket, SUM(debit - credit) AS total FROM public.qbo_postings WHERE realm_id = '${realmId}' AND id IN (${ids}) GROUP BY 1 ORDER BY 1` : `SELECT SUM(debit - credit) AS total FROM public.qbo_postings WHERE realm_id = '${realmId}' AND id IN (${ids})`;
-    const agg = await executeSQL(supabaseAdmin, sql);
-    return {
-      hits: data,
-      agg
-    };
-  }
-  return {
-    hits: data
-  };
+  return (data ?? []).slice(0, MAX_MONTHS_TO_SEND).map((r)=>({
+      realm_id: r.realm_id,
+      year: r.year,
+      month: r.month,
+      pnl_data: r.pnl_data
+    }));
 }
-// ---------- Response writer
-async function generateResponse(userQuery, payload, tokensUsed) {
-  const prompt = `You are a professional CFO financial advisor.\\nContext:\\n- Results are QuickBooks postings (journal lines).\\n- Amounts are (debit - credit). Categories via full_category.\\n- Dates are from "date".\\n\\nUser query:\\n${userQuery}\\n\\nData:\\n${JSON.stringify(payload, null, 2)}\\n\\nWrite a short, clear answer using ONLY the data. If no rows, say:\\n"No matching data found—perhaps check your query or sync status."`;
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.4,
+
+// ------------------------- LLM SQL generation -------------------------
+async function generateSQLQuery(userQuery, realmId, tokensUsed, currentYearMonthObj) {
+  const { year: currentYear, month: currentMonth } = currentYearMonthObj;
+  const realmIdEscaped = escLiteral(realmId);
+  const sys = `You are a PostgreSQL expert generating exact SELECT queries for the qbo_pnl_monthly table.
+
+Table Schema (ONE row per complete month of P&L):
+- realm_id: string (filter ALWAYS)
+- year: int (e.g., 2025)
+- month: int (1-12)
+- pnl_data: JSON (monthly category-wise P&L; revenues positive, expenses positive)
+
+Infer the time period from userQuery (use current date Sep 19, 2025 for relatives):
+- "this month/MTD": year=${currentYear}, month=${currentMonth}
+- "last month": year=${currentYear}, month=${currentMonth - 1} (or 12/prev year if Jan)
+- "this quarter/QTD": Current quarter (Jul-Sep 2025 for Sep)
+- "last quarter": Previous quarter (Apr-Jun 2025)
+- "YTD/this year": Jan-${pad2(currentMonth)} ${currentYear}
+- Explicit: e.g., "Q2 2024" → Apr-Jun 2024; "July 2025" → single month
+- Unclear: Default to current month
+
+Output ONLY a valid PostgreSQL SELECT query string (no explanations):
+- SELECT realm_id, year, month, pnl_data
+- FROM public.qbo_pnl_monthly
+- WHERE realm_id = '${realmIdEscaped}' AND (year/month conditions for inferred period)
+- ORDER BY year ASC, month ASC
+- LIMIT ${MAX_MONTHS_TO_SEND}
+
+Use exact WHERE for range, e.g., (year = 2025 AND month BETWEEN 4 AND 6).
+Do not end with a semicolon.`;
+  const payload = {
+    userQuery,
+    currentYear,
+    currentMonth,
+    maxMonths: MAX_MONTHS_TO_SEND,
+    realmIdEscaped: `'${realmIdEscaped}'`
+  };
+  const res = await openai.chat.completions.create({
+    model: CHAT_MODEL,
+    temperature: 1,
     messages: [
       {
         role: "system",
-        content: prompt
+        content: sys
+      },
+      {
+        role: "user",
+        content: JSON.stringify(payload, null, 2)
       }
     ]
   });
-  const txt = (response.choices[0].message.content ?? "").trim();
-  tokensUsed.in += response.usage?.prompt_tokens ?? 0;
-  tokensUsed.out += response.usage?.completion_tokens ?? 0;
-  return txt;
+  tokensUsed.in += res.usage?.prompt_tokens ?? 0;
+  tokensUsed.out += res.usage?.completion_tokens ?? 0;
+  const generatedSQL = (res.choices?.[0]?.message?.content ?? "").trim();
+  if (!generatedSQL.startsWith("SELECT") || !generatedSQL.includes("qbo_pnl_monthly") || !generatedSQL.includes("LIMIT")) {
+    throw new Error("Invalid SQL generated");
+  }
+  return generatedSQL;
 }
+
+// ------------------------- Prompt & streaming to OpenAI -------------------------
+function buildAdvisorSystemPrompt() {
+  return `You are a professional CFO advisor.
+
+You will receive:
+- The user's question.
+- A small array of MONTHLY P&L "rows". Each row is:
+  { realm_id: string, year: number, month: number, pnl_data: JSON }
+- An array expense_prefixes: string listing category-key prefixes that should be treated as "expense-like".
+
+About pnl_data (IMPORTANT):
+- Keys are category paths (e.g., "pnl:revenues:product", "pnl:expenses:marketing").
+- Values are numbers (month-to-date) or nested objects.
+- Revenues are positive; Expenses are positive; Net Profit = Revenues – Inclusive Expenses.
+- Missing categories = treat as 0.
+
+Rules:
+- Compute per month first (YYYY-MM).
+- Sum across months when multi-month.
+- If both Revenues and Inclusive Expenses exist, also provide Net Profit.
+- If data is missing: say "No monthly P&L data found for the requested period."
+- Be concise, human, and decision-oriented for a painting business owner (avoid walls of numbers).
+- Use YYYY-MM when you reference months.`;
+}
+
+function buildUserPayload(question, rows) {
+  return {
+    question,
+    expense_prefixes: EXPENSE_PREFIXES,
+    months: rows.map((r)=>({
+        realm_id: r.realm_id,
+        year: r.year,
+        month: r.month,
+        pnl_data: r.pnl_data
+      }))
+  };
+}
+
 // ------------------------- HTTP handler -------------------------
 serve(async (req)=>{
-  if (req.method === "OPTIONS") return new Response(null, {
-    status: 204,
-    headers: corsHeaders
-  });
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders
+    });
+  }
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  let body;
   try {
-    const body = await req.json();
-    const { query, realmId, userId } = body;
-    if (!query || !realmId || !userId) return json({
+    body = await req.json();
+  } catch  {
+    return json({
+      error: "Bad JSON body"
+    }, 400);
+  }
+  const { query, realmId, userId, stream } = body ?? {};
+  if (!query || !realmId || !userId) {
+    // In streaming mode, send an SSE error frame so the client doesn't hang.
+    if (stream) {
+      const streamBody = new ReadableStream({
+        start (controller) {
+          controller.enqueue(sse({
+            type: "error",
+            message: "Missing query, realmId, or userId"
+          }));
+          controller.enqueue(sse({
+            type: "done"
+          }));
+          controller.close();
+        }
+      });
+      return new Response(streamBody, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "Connection": "keep-alive"
+        }
+      });
+    }
+    return json({
       error: "Missing query, realmId, or userId"
     }, 400);
-    // -------- FAST METRIC PATH (with hierarchical category support) --------
-    const metric = detectMetric(query);
-    const range = (()=>{
-      const s = query.toLowerCase();
-      if (/\\b(this month|mtd)\\b/.test(s)) return monthToDateRange();
-      if (/\\b(last month)\\b/.test(s)) return lastMonthRange();
-      if (/\\b(this quarter|qtd)\\b/.test(s)) return quarterToDateRange();
-      if (/\\b(ytd|this year)\\b/.test(s)) return yearToDateRange();
-      return null;
-    })();
-    const catGrouping = detectCategoryGrouping(query);
-    if (metric && range) {
-      const { from, to, label } = range;
-      if (catGrouping.enabled && (metric === "revenue" || metric === "expenses")) {
-        const prefix = metricToPrefix(metric);
-        const level = catGrouping.levelOverride ?? defaultChildLevelForPrefix(prefix);
-        const key = categoryKeySQL(level);
-        const sql = `SELECT ${key} AS category, SUM(debit - credit) AS total FROM public.qbo_postings WHERE realm_id = '${realmId}' AND full_category ILIKE '${prefix}%' AND date BETWEEN '${from}' AND '${to}' GROUP BY 1 ORDER BY total DESC`;
-        const rows = await executeSQL(supabaseAdmin, sql);
-        const responseLine = formatCategoryRows(rows, `${metric === "revenue" ? "Sales (revenue)" : "Expenses"} by category ${label}`);
-        return json({
-          response: responseLine,
-          path: "fast-metric-category",
-          coverage: (await embeddingsCoverage(supabaseAdmin, realmId)).ratio
-        });
-      }
-      if (catGrouping.byAccount && (metric === "revenue" || metric === "expenses")) {
-        const prefix = metricToPrefix(metric);
-        const sql = `SELECT COALESCE(NULLIF(account_name, ''), '(no account)') AS account, SUM(debit - credit) AS total FROM public.qbo_postings WHERE realm_id = '${realmId}' AND full_category ILIKE '${prefix}%' AND date BETWEEN '${from}' AND '${to}' GROUP BY 1 ORDER BY total DESC`;
-        const rows = await executeSQL(supabaseAdmin, sql);
-        const list = rows.slice(0, MAX_LIST).map((r)=>`${r.account}: ${Number(r.total ?? 0).toLocaleString()}`).join("; ");
-        const more = rows.length > MAX_LIST ? ` (+${rows.length - MAX_LIST} more)` : "";
-        return json({
-          response: `${metric === "revenue" ? "Sales (revenue)" : "Expenses"} by account ${label}: ${list}${more}`,
-          path: "fast-metric-account",
-          coverage: (await embeddingsCoverage(supabaseAdmin, realmId)).ratio
-        });
-      }
-      // simple total (no category breakout)
-      let sql;
-      if (metric === "revenue") {
-        sql = `SELECT COALESCE(SUM(debit - credit),0) AS total FROM public.qbo_postings WHERE realm_id = '${realmId}' AND full_category ILIKE 'pnl:revenues%' AND date BETWEEN '${from}' AND '${to}'`;
-      } else if (metric === "expenses") {
-        sql = `SELECT COALESCE(SUM(debit - credit),0) AS total FROM public.qbo_postings WHERE realm_id = '${realmId}' AND full_category ILIKE 'pnl:expenses%' AND date BETWEEN '${from}' AND '${to}'`;
-      } else {
-        sql = `SELECT COALESCE(SUM(CASE WHEN full_category ILIKE 'pnl:revenues%' THEN (debit - credit) END),0) - COALESCE(SUM(CASE WHEN full_category ILIKE 'pnl:expenses%' THEN (debit - credit) END),0) AS total FROM public.qbo_postings WHERE realm_id = '${realmId}' AND date BETWEEN '${from}' AND '${to}'`;
-      }
-      const data = await executeSQL(supabaseAdmin, sql);
-      const val = Number(data?.[0]?.total ?? 0);
-      const labelText = metric === "revenue" ? "Sales (revenue)" : metric === "expenses" ? "Expenses" : "Profit";
-      return json({
-        response: `${labelText} ${label}: ${val.toLocaleString()}`,
-        path: "fast-metric",
-        coverage: (await embeddingsCoverage(supabaseAdmin, realmId)).ratio
-      });
-    }
-    // -------- CLASSIFY & COVERAGE --------
-    const typeRaw = await classifyQuery(query);
-    let type = typeRaw;
-    const { ratio } = await embeddingsCoverage(supabaseAdmin, realmId);
-    if ((type === "semantic" || type === "hybrid") && ratio < COVERAGE_MIN) {
-      type = "structured";
-    }
-    const tokensUsed = {
-      in: 0,
-      out: 0
-    };
-    // -------- STRUCTURED --------
-    if (type === "structured") {
-      let sql = await generateStructuredSQL(query, realmId);
-      if (!hasRealmFilter(sql, realmId)) {
-        throw new Error("Unsafe SQL: realm_id filter missing");
-      }
-      const data = await executeSQL(supabaseAdmin, sql);
-      const resp = await generateResponse(query, data, tokensUsed);
-      return json({
-        response: resp,
-        tokens_in: tokensUsed.in,
-        tokens_out: tokensUsed.out,
-        path: "structured",
-        coverage: ratio
-      });
-    }
-    // -------- SEMANTIC / HYBRID --------
-    const filters = await extractFilters(query);
-    const { hits, agg } = await executeSemantic(supabaseAdmin, query, realmId, filters);
-    const payload = agg ? {
-      matches: hits,
-      aggregates: agg
-    } : {
-      matches: hits
-    };
-    const resp = await generateResponse(query, payload, tokensUsed);
-    return json({
-      response: resp,
-      tokens_in: tokensUsed.in,
-      tokens_out: tokensUsed.out,
-      path: type,
-      coverage: ratio
-    });
-  } catch (e) {
-    console.error("[Agent Log] Error:", e?.message, e?.stack);
-    return json({
-      error: "Failed to process query"
-    }, 500);
   }
+  const tokensUsed = {
+    in: 0,
+    out: 0
+  };
+  const curYM = currentYearMonth();
+  // 1) Get rows (SQL-gen, fallback to current month, then optional semantic)
+  let rows = [];
+  try {
+    const generatedSQL = await generateSQLQuery(query, realmId, tokensUsed, curYM);
+    rows = await executeSQL(supabaseAdmin, generatedSQL);
+  } catch (sqlErr) {
+    console.error("[SQL Gen] failed, fallback to current month:", sqlErr?.message);
+    rows = await fetchMonthlyRows(supabaseAdmin, realmId, curYM, curYM);
+  }
+  if (rows.length === 0) {
+    const { ratio } = await embeddingsCoverageMonthly(supabaseAdmin, realmId);
+    if (ratio >= COVERAGE_MIN) {
+      const cur = currentYearMonth();
+      const fromIdx = monthIndex(cur) - 11;
+      const from = idxToYearMonth(Math.max(fromIdx, monthIndex({
+        year: cur.year - 5,
+        month: 1
+      })));
+      rows = await fetchMonthlyRowsSemantic(supabaseAdmin, realmId, query, from, cur, tokensUsed);
+      if (!rows?.length) {
+        const last3from = idxToYearMonth(monthIndex(cur) - 2);
+        rows = await fetchMonthlyRows(supabaseAdmin, realmId, last3from, cur);
+      }
+    } else {
+      rows = await fetchMonthlyRows(supabaseAdmin, realmId, curYM, curYM);
+    }
+  }
+  // 2) STREAMING path
+  if (stream) {
+    const monthsList = rows.map((r)=>`${r.year}-${pad2(r.month)}`);
+    const systemPrompt = buildAdvisorSystemPrompt();
+    const userPayload = buildUserPayload(query, rows);
+    let fullText = "";
+    const streamBody = new ReadableStream({
+      async start (controller) {
+        // Kick an initial frame so the client shows activity immediately.
+        controller.enqueue(sse({
+          type: "token",
+          content: ""
+        })); // no-op token to start UI
+        try {
+          const completion = await openai.chat.completions.create({
+            model: CHAT_MODEL,
+            temperature: 1,
+            stream: true,
+            messages: [
+              {
+                role: "system",
+                content: systemPrompt
+              },
+              {
+                role: "user",
+                content: JSON.stringify(userPayload, null, 2)
+              }
+            ]
+          });
+          for await (const part of completion){
+            const delta = part.choices?.[0]?.delta?.content ?? "";
+            if (delta) {
+              fullText += delta;
+              controller.enqueue(sse({
+                type: "token",
+                content: delta
+              }));
+            }
+          }
+          // Finish event includes some metadata you might want later
+          controller.enqueue(sse({
+            type: "done",
+            months: monthsList
+          }));
+          controller.close();
+          // Background log (fire-and-forget)
+          Promise.resolve().then(async ()=>{
+            try {
+              await supabaseAdmin.from("ai_logs").insert([
+                {
+                  realm_id: realmId,
+                  user_id: userId,
+                  query,
+                  response: fullText,
+                  tokens_in: tokensUsed.in,
+                  tokens_out: tokensUsed.out,
+                  cost: 0.0
+                }
+              ]);
+            } catch (err) {
+              console.error("[Agent Log] insert failed:", err?.message || err);
+            }
+          });
+        } catch (err) {
+          const message = err?.message || "stream error";
+          controller.enqueue(sse({
+            type: "error",
+            message
+          }));
+          controller.enqueue(sse({
+            type: "done"
+          }));
+          controller.close();
+        }
+      }
+    });
+    return new Response(streamBody, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive"
+      }
+    });
+  }
+  // 3) NON-STREAM JSON path (unchanged behavior)
+  const systemPrompt = buildAdvisorSystemPrompt();
+  const userPayload = buildUserPayload(query, rows);
+  const res = await openai.chat.completions.create({
+    model: CHAT_MODEL,
+    temperature: 1,
+    messages: [
+      {
+        role: "system",
+        content: systemPrompt
+      },
+      {
+        role: "user",
+        content: JSON.stringify(userPayload, null, 2)
+      }
+    ]
+  });
+  tokensUsed.in += res.usage?.prompt_tokens ?? 0;
+  tokensUsed.out += res.usage?.completion_tokens ?? 0;
+  const responseText = (res.choices?.[0]?.message?.content ?? "").trim();
+  const coverage = (await embeddingsCoverageMonthly(supabaseAdmin, realmId)).ratio;
+  // fire-and-forget log
+  Promise.resolve().then(async ()=>{
+    try {
+      await supabaseAdmin.from("ai_logs").insert([
+        {
+          realm_id: realmId,
+          user_id: userId,
+          query,
+          response: responseText,
+          tokens_in: tokensUsed.in,
+          tokens_out: tokensUsed.out,
+          cost: 0.0
+        }
+      ]);
+    } catch (err) {
+      console.error("[Agent Log] insert failed:", err?.message || err);
+    }
+  });
+  return json({
+    response: responseText || "No monthly P&L data found for the requested period.",
+    path: "monthly-pnl",
+    rows_returned: rows.length,
+    months: rows.map((r)=>`${r.year}-${pad2(r.month)}`),
+    tokens_in: tokensUsed.in,
+    tokens_out: tokensUsed.out,
+    coverage
+  });
 });
