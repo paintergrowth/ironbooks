@@ -8,6 +8,25 @@ import { Label } from '../components/ui/label';
 import { ArrowLeft, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+function getUtmParams() {
+  const qs = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  return {
+    utm_source: qs.get('utm_source'),
+    utm_medium: qs.get('utm_medium'),
+    utm_campaign: qs.get('utm_campaign'),
+    utm_term: qs.get('utm_term'),
+    utm_content: qs.get('utm_content'),
+  };
+}
+
+function splitName(full: string): { first?: string; last?: string } {
+  const s = (full || '').trim().replace(/\s+/g, ' ');
+  if (!s) return {};
+  const parts = s.split(' ');
+  if (parts.length === 1) return { first: parts[0] };
+  return { first: parts[0], last: parts.slice(1).join(' ') };
+}
+
 export const DemoAuth: React.FC = () => {
   const navigate = useNavigate();
   const { setUser } = useAppContext();
@@ -22,10 +41,8 @@ export const DemoAuth: React.FC = () => {
   const formatPhoneNumber = (value: string) => {
     // Remove all non-numeric characters
     const cleaned = value.replace(/\D/g, '');
-    
     // Limit to 10 digits
     const limited = cleaned.slice(0, 10);
-    
     // Format as (XXX) XXX-XXXX
     if (limited.length >= 6) {
       return `(${limited.slice(0, 3)}) ${limited.slice(3, 6)}-${limited.slice(6)}`;
@@ -64,49 +81,49 @@ export const DemoAuth: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      // Save lead to database
-      const { error } = await supabase
-        .from('leads')
-        .insert([{
-          name: formData.name,
-          email: formData.email,
-          company: formData.company || null,
-          phone: formData.phone || null
-        }]);
+      // === New: Upsert lead + log via Postgres functions ===
+      const { first, last } = splitName(formData.name);
+      const utm = getUtmParams();
+      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
+      const emailNorm = (formData.email || '').trim().toLowerCase();
 
-      if (error) {
-        console.error('Error saving lead:', error);
-        // Continue to demo even if lead saving fails
+      // 1) Upsert into leads and log 'signup_submitted'
+      const { error: upsertErr } = await supabase.rpc('lead_upsert_and_log', {
+        p_email: emailNorm,
+        p_first_name: first ?? null,
+        p_last_name: last ?? null,
+        p_phone: formData.phone || null,
+        p_source: 'DemoAuth → Enter Demo Dashboard',
+        p_utm_source: utm.utm_source,
+        p_utm_medium: utm.utm_medium,
+        p_utm_campaign: utm.utm_campaign,
+        p_utm_term: utm.utm_term,
+        p_utm_content: utm.utm_content,
+        p_consent_marketing: false,
+        p_ip: null,
+        p_user_agent: userAgent,
+        p_metadata: {
+          company: formData.company || null,
+          path: typeof window !== 'undefined' ? window.location.pathname : '',
+          ts: new Date().toISOString(),
+        } as any,
+      });
+      if (upsertErr) {
+        console.warn('lead_upsert_and_log error:', upsertErr.message);
       }
-    // Create a demo user that matches the User type from Supabase
-    const demoUser = {
-      id: 'demo-user',
-      email: 'demo@ironbooks.com',
-      user_metadata: {
-        full_name: 'Demo User'
-      },
-      app_metadata: {},
-      aud: 'authenticated',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      email_confirmed_at: new Date().toISOString(),
-      phone_confirmed_at: null,
-      confirmation_sent_at: null,
-      recovery_sent_at: null,
-      email_change_sent_at: null,
-      new_email: null,
-      invited_at: null,
-      action_link: null,
-      phone: null,
-      role: 'authenticated',
-      last_sign_in_at: new Date().toISOString()
-    };
-    
-      setUser(demoUser as any);
-      navigate('/');
-    } catch (error) {
-      console.error('Error during demo login:', error);
-      // Still allow demo access even if lead saving fails
+
+      // 2) Log 'signin_success' for demo entry
+      const { error: signinErr } = await supabase.rpc('lead_log_signin', {
+        p_email: emailNorm,
+        p_ip: null,
+        p_user_agent: userAgent,
+        p_metadata: { via: 'demo_gate' } as any,
+      });
+      if (signinErr) {
+        console.warn('lead_log_signin error:', signinErr.message);
+      }
+
+      // === Existing behavior: proceed into demo with a demo user ===
       const demoUser = {
         id: 'demo-user',
         email: 'demo@ironbooks.com',
@@ -129,7 +146,36 @@ export const DemoAuth: React.FC = () => {
         role: 'authenticated',
         last_sign_in_at: new Date().toISOString()
       };
-      
+
+      setUser(demoUser as any);
+      navigate('/');
+    } catch (error) {
+      console.error('Error during demo login:', error);
+
+      // Fail-soft: still allow demo even if capture/log fails
+      const demoUser = {
+        id: 'demo-user',
+        email: 'demo@ironbooks.com',
+        user_metadata: {
+          full_name: 'Demo User'
+        },
+        app_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        email_confirmed_at: new Date().toISOString(),
+        phone_confirmed_at: null,
+        confirmation_sent_at: null,
+        recovery_sent_at: null,
+        email_change_sent_at: null,
+        new_email: null,
+        invited_at: null,
+        action_link: null,
+        phone: null,
+        role: 'authenticated',
+        last_sign_in_at: new Date().toISOString()
+      };
+
       setUser(demoUser as any);
       navigate('/');
     } finally {
@@ -142,7 +188,7 @@ export const DemoAuth: React.FC = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Demo Access</CardTitle>
-          <CardDescription>
+        <CardDescription>
             Experience IronBooks with read-only demo data
           </CardDescription>
         </CardHeader>
@@ -159,7 +205,7 @@ export const DemoAuth: React.FC = () => {
                 onChange={(e) => handleInputChange('name', e.target.value)}
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="email">Email *</Label>
               <Input
@@ -170,7 +216,7 @@ export const DemoAuth: React.FC = () => {
                 onChange={(e) => handleInputChange('email', e.target.value)}
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="company">Company</Label>
               <Input
@@ -181,7 +227,7 @@ export const DemoAuth: React.FC = () => {
                 onChange={(e) => handleInputChange('company', e.target.value)}
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
               <Input
@@ -213,7 +259,7 @@ export const DemoAuth: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            <Button 
+            <Button
               onClick={handleDemoLogin}
               className="w-full"
               size="lg"
@@ -221,9 +267,9 @@ export const DemoAuth: React.FC = () => {
             >
               {isSubmitting ? 'Loading...' : 'Enter Demo Dashboard'}
             </Button>
-            
-            <Button 
-              variant="outline" 
+
+            <Button
+              variant="outline"
               onClick={() => navigate('/login')}
               className="w-full"
             >
