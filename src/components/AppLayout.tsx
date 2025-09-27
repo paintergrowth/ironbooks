@@ -1,4 +1,3 @@
-// src/components/AppLayout.tsx
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AppSidebar } from './sidebar-07/components/app-sidebar';
@@ -12,10 +11,7 @@ import Reports from './Reports';
 import AddOns from './AddOns';
 import Settings from './Settings';
 import AdminPanelComplete from './AdminPanelComplete';
-
-// AFTER (force the exact files you edited)
-//import Settings from "../components/Settings";
-//import CFOAgent from "../components/CFOAgent";
+import { supabase } from '../lib/supabase'; // 👈 added for guard
 
 const AppLayout: React.FC = () => {
   console.log("src/components/AppLayout.tsx live: components/CFOAgent.tsx (QBO card build)");
@@ -27,7 +23,45 @@ const AppLayout: React.FC = () => {
   const [reportFilter, setReportFilter] = useState<string | undefined>();
   const [reportTimeframe, setReportTimeframe] = useState<string | undefined>();
 
-  // Get active section from URL path
+  // 🔒  Suspension guard
+  useEffect(() => {
+    const isOnLogin = location.pathname.startsWith('/login');
+
+    const checkActive = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session || isOnLogin) return;
+
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('is_active')
+          .eq('id', session.user.id)
+          .single();
+
+        if (!error && data && data.is_active === false) {
+          try { await supabase.auth.signOut(); } catch {}
+          navigate('/login?suspended=1', { replace: true });
+        }
+      } catch {
+        // fail-closed: ignore errors so layout never breaks
+      }
+    };
+
+    void checkActive();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
+      if (isOnLogin) return;
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        await checkActive();
+      }
+    });
+
+    return () => {
+      sub?.subscription?.unsubscribe?.();
+    };
+  }, [location.pathname, navigate]);
+  // 🔒  End suspension guard
+
   const getActiveSectionFromPath = (pathname: string) => {
     if (pathname === '/' || pathname === '/dashboard') return 'dashboard';
     if (pathname === '/cfo') return 'cfo-agent';
@@ -42,11 +76,7 @@ const AppLayout: React.FC = () => {
   const activeSection = getActiveSectionFromPath(location.pathname);
 
   useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-    };
-
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -54,11 +84,7 @@ const AppLayout: React.FC = () => {
 
   const handleToggleAdminMode = () => {
     setIsAdminMode(!isAdminMode);
-    if (!isAdminMode) {
-      navigate('/admin-panel');
-    } else {
-      navigate('/dashboard');
-    }
+    navigate(!isAdminMode ? '/admin-panel' : '/dashboard');
   };
 
   const handleNavigateToReports = (filter: string, timeframe: string) => {
@@ -69,22 +95,14 @@ const AppLayout: React.FC = () => {
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'dashboard':
-        return <Dashboard onNavigateToReports={handleNavigateToReports} />;
-      case 'cfo-agent':
-        return <CFOAgent />;
-      case 'ai-accountant':
-        return <AIAccountant sidebarOpen={aiAccountantSidebarOpen} setSidebarOpen={setAiAccountantSidebarOpen} />;
-      case 'reports':
-        return <Reports initialFilter={reportFilter} initialTimeframe={reportTimeframe} />;
-      case 'add-ons':
-        return <AddOns />;
-      case 'settings':
-        return <Settings />;
-      case 'admin-panel':
-        return <AdminPanelComplete />;
-      default:
-        return <Dashboard onNavigateToReports={handleNavigateToReports} />;
+      case 'dashboard':     return <Dashboard onNavigateToReports={handleNavigateToReports} />;
+      case 'cfo-agent':     return <CFOAgent />;
+      case 'ai-accountant': return <AIAccountant sidebarOpen={aiAccountantSidebarOpen} setSidebarOpen={setAiAccountantSidebarOpen} />;
+      case 'reports':       return <Reports initialFilter={reportFilter} initialTimeframe={reportTimeframe} />;
+      case 'add-ons':       return <AddOns />;
+      case 'settings':      return <Settings />;
+      case 'admin-panel':   return <AdminPanelComplete />;
+      default:              return <Dashboard onNavigateToReports={handleNavigateToReports} />;
     }
   };
 
@@ -116,13 +134,7 @@ const AppLayout: React.FC = () => {
 
         {/* Content Area */}
         <div className={`flex-1 min-h-0 ${activeSection === 'ai-accountant' ? '' : 'p-4 md:p-6'}`}>
-          {activeSection === 'ai-accountant' ? (
-            renderContent()
-          ) : (
-            <div className="h-full">
-              {renderContent()}
-            </div>
-          )}
+          {activeSection === 'ai-accountant' ? renderContent() : <div className="h-full">{renderContent()}</div>}
         </div>
       </SidebarInset>
     </SidebarProvider>
