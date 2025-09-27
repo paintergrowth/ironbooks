@@ -1,3 +1,4 @@
+// src/components/AdminPanelComplete.tsx
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -476,8 +477,12 @@ const AdminPanelComplete: React.FC = () => {
                       <Badge variant="outline">{user.role}</Badge>
                     </td>
                     <td className="p-2">
-                      <Badge variant={user.isActive && !user.suspended ? "default" : "secondary"}>
-                        {user.suspended ? 'Suspended' : user.isActive ? 'Active' : 'Inactive'}
+                      {/* 🔴 Make Suspended clearly red; keep others as-is */}
+                      <Badge
+                        variant={user.suspended ? "default" : (user.isActive ? "default" : "secondary")}
+                        className={user.suspended ? "bg-red-500 text-white hover:bg-red-600" : undefined}
+                      >
+                        {user.suspended ? 'Suspended' : (user.isActive ? 'Active' : 'Inactive')}
                       </Badge>
                     </td>
                     <td className="p-2 text-sm">
