@@ -196,7 +196,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     if (!effUserId || !effRealmId) {
       toast({
         title: 'Connect QuickBooks',
-        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting.',
+        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting. Or try login again!',
         variant: 'destructive'
       });
       setIsTyping(false);
