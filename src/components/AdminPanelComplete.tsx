@@ -148,12 +148,15 @@ const AdminPanelComplete: React.FC = () => {
         return;
       }
       console.log('[admin_list OK] rows:', (data ?? []).length, 'sample:', (data && data[0]) || null);
-      // Base mapping from RPC — only adding fields used by the three columns and realm tracking.
-      const mappedBaseUsers = (data ?? []).map((r: any, idx: number) => {
+
+      // Base mapping from RPC
+      let mappedBase = (data ?? []).map((r: any, idx: number) => {
         const lastLogin = r.last_login;
         const isActive = !!r.is_active;
+
         // IMPORTANT: if your RPC uses a different key for realm id, add it to this OR-chain.
         const realmId: string | null = r.qbo_realm_id || r.realm_id || r.qboRealmId || null;
+
         const mappedRow = {
           id: r.id,
           email: r.email,
@@ -173,19 +176,44 @@ const AdminPanelComplete: React.FC = () => {
           mrr: 0,
           createdAt: r.created_at,
           lastLogin,
-          // Keep realm for enrichment:
+          // Keep realm for enrichment (may be overridden):
           realmId,
         };
+
         console.log('[admin_list -> baseUser]', idx, {
           id: mappedRow.id,
           email: mappedRow.email,
           realmId: mappedRow.realmId,
           qboConnected: mappedRow.qboConnected,
         });
+
         return mappedRow;
       });
-      setBaseUsers(mappedBaseUsers);
-      console.log('[AdminPanelComplete] fetchAdmin DONE. Base users length:', mappedBaseUsers.length);
+
+      // Enrich realms from profiles (in case RPC lacks them)
+      const userIds = mappedBase.map(u => u.id);
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesErr } = await supabase
+          .from('profiles')
+          .select('id, qbo_realm_id')
+          .in('id', userIds);
+        if (profilesErr) {
+          console.error('[profiles realms fetch ERROR]', profilesErr);
+        } else {
+          const realmMap: Record<string, string | null> = (profilesData || []).reduce((acc: any, p: any) => {
+            acc[p.id] = p.qbo_realm_id || null;
+            return acc;
+          }, {});
+          mappedBase = mappedBase.map(u => ({
+            ...u,
+            realmId: realmMap[u.id] !== undefined ? realmMap[u.id] : u.realmId,
+          }));
+          console.log('[profiles realms merged]', { count: Object.keys(realmMap).length });
+        }
+      }
+
+      setBaseUsers(mappedBase);
+      console.log('[AdminPanelComplete] fetchAdmin DONE. Base users length:', mappedBase.length);
     } catch (e) {
       console.error('[AdminPanelComplete] admin_list fetch failed:', e);
       setBaseUsers([]);
@@ -258,7 +286,7 @@ const AdminPanelComplete: React.FC = () => {
       console.warn('[P&L] No realmIds found among users. The three columns will fall back to null/0.');
     }
 
-    // Merge: set MTD fields with view data (if available), and compute margin %
+    // Merge: set fields with view data (if available), and compute margin %
     const enriched = baseUsers.map((u, idx) => {
       let revenue: number | null = null;
       let profit: number | null = null;
