@@ -19,14 +19,6 @@ function getUtmParams() {
   };
 }
 
-function splitName(full: string): { first?: string; last?: string } {
-  const s = (full || '').trim().replace(/\s+/g, ' ');
-  if (!s) return {};
-  const parts = s.split(' ');
-  if (parts.length === 1) return { first: parts[0] };
-  return { first: parts[0], last: parts.slice(1).join(' ') };
-}
-
 export const DemoAuth: React.FC = () => {
   const navigate = useNavigate();
   const { setUser } = useAppContext();
@@ -39,18 +31,11 @@ export const DemoAuth: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formatPhoneNumber = (value: string) => {
-    // Remove all non-numeric characters
     const cleaned = value.replace(/\D/g, '');
-    // Limit to 10 digits
     const limited = cleaned.slice(0, 10);
-    // Format as (XXX) XXX-XXXX
-    if (limited.length >= 6) {
-      return `(${limited.slice(0, 3)}) ${limited.slice(3, 6)}-${limited.slice(6)}`;
-    } else if (limited.length >= 3) {
-      return `(${limited.slice(0, 3)}) ${limited.slice(3)}`;
-    } else if (limited.length > 0) {
-      return `(${limited}`;
-    }
+    if (limited.length >= 6) return `(${limited.slice(0, 3)}) ${limited.slice(3, 6)}-${limited.slice(6)}`;
+    if (limited.length >= 3) return `(${limited.slice(0, 3)}) ${limited.slice(3)}`;
+    if (limited.length > 0) return `(${limited}`;
     return limited;
   };
 
@@ -64,15 +49,9 @@ export const DemoAuth: React.FC = () => {
   const handleInputChange = (field: string, value: string) => {
     if (field === 'phone') {
       const formatted = formatPhoneNumber(value);
-      setFormData(prev => ({
-        ...prev,
-        [field]: formatted
-      }));
+      setFormData(prev => ({ ...prev, [field]: formatted }));
     } else {
-      setFormData(prev => ({
-        ...prev,
-        [field]: value
-      }));
+      setFormData(prev => ({ ...prev, [field]: value }));
     }
   };
 
@@ -81,17 +60,16 @@ export const DemoAuth: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      // === New: Upsert lead + log via Postgres functions ===
-      const { first, last } = splitName(formData.name);
+      // === Upsert lead + log using schema-aligned RPCs ===
       const utm = getUtmParams();
       const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
       const emailNorm = (formData.email || '').trim().toLowerCase();
 
       // 1) Upsert into leads and log 'signup_submitted'
-      const { error: upsertErr } = await supabase.rpc('lead_upsert_and_log', {
+      const { error: upsertErr } = await supabase.rpc('lead_upsert_and_log_simple', {
         p_email: emailNorm,
-        p_first_name: first ?? null,
-        p_last_name: last ?? null,
+        p_name: formData.name,
+        p_company: formData.company || null,
         p_phone: formData.phone || null,
         p_source: 'DemoAuth → Enter Demo Dashboard',
         p_utm_source: utm.utm_source,
@@ -103,33 +81,26 @@ export const DemoAuth: React.FC = () => {
         p_ip: null,
         p_user_agent: userAgent,
         p_metadata: {
-          company: formData.company || null,
           path: typeof window !== 'undefined' ? window.location.pathname : '',
           ts: new Date().toISOString(),
         } as any,
       });
-      if (upsertErr) {
-        console.warn('lead_upsert_and_log error:', upsertErr.message);
-      }
+      if (upsertErr) console.warn('lead_upsert_and_log_simple error:', upsertErr.message);
 
       // 2) Log 'signin_success' for demo entry
-      const { error: signinErr } = await supabase.rpc('lead_log_signin', {
+      const { error: signinErr } = await supabase.rpc('lead_log_signin_simple', {
         p_email: emailNorm,
         p_ip: null,
         p_user_agent: userAgent,
         p_metadata: { via: 'demo_gate' } as any,
       });
-      if (signinErr) {
-        console.warn('lead_log_signin error:', signinErr.message);
-      }
+      if (signinErr) console.warn('lead_log_signin_simple error:', signinErr.message);
 
       // === Existing behavior: proceed into demo with a demo user ===
       const demoUser = {
         id: 'demo-user',
         email: 'demo@ironbooks.com',
-        user_metadata: {
-          full_name: 'Demo User'
-        },
+        user_metadata: { full_name: 'Demo User' },
         app_metadata: {},
         aud: 'authenticated',
         created_at: new Date().toISOString(),
@@ -156,9 +127,7 @@ export const DemoAuth: React.FC = () => {
       const demoUser = {
         id: 'demo-user',
         email: 'demo@ironbooks.com',
-        user_metadata: {
-          full_name: 'Demo User'
-        },
+        user_metadata: { full_name: 'Demo User' },
         app_metadata: {},
         aud: 'authenticated',
         created_at: new Date().toISOString(),
@@ -175,7 +144,6 @@ export const DemoAuth: React.FC = () => {
         role: 'authenticated',
         last_sign_in_at: new Date().toISOString()
       };
-
       setUser(demoUser as any);
       navigate('/');
     } finally {
@@ -188,7 +156,7 @@ export const DemoAuth: React.FC = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Demo Access</CardTitle>
-        <CardDescription>
+          <CardDescription>
             Experience IronBooks with read-only demo data
           </CardDescription>
         </CardHeader>
