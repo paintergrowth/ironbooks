@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, AlertTriangle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -13,7 +13,6 @@ import { LoginFooter } from './LoginFooter';
 import { SecurityBar } from './SecurityBar';
 import { BenefitsPanel } from './BenefitsPanel';
 
-// Force auth redirects to production root (avoid preview hosts and nonexistent routes)
 const APP_ORIGIN = 'https://ironbooks.netlify.app';
 
 export const Login: React.FC = () => {
@@ -27,11 +26,18 @@ export const Login: React.FC = () => {
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
   const [isSignUp, setIsSignUp] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [suspended, setSuspended] = useState(false);          // 👈 new
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
 
-  // Keep this: if you ever come back to /login with tokens in the URL, we finalize the session.
+  // 👇 detect ?suspended=1
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    setSuspended(params.get('suspended') === '1');
+  }, [location.search]);
+
   useEffect(() => {
     const finalizeIfCallback = async () => {
       try {
@@ -41,7 +47,7 @@ export const Login: React.FC = () => {
         const hasAccessToken = window.location.hash.includes('access_token');
 
         if (isCb || hasCode || hasAccessToken) {
-          await supabase.auth.getSession(); // persist session from URL
+          await supabase.auth.getSession();
           const redirect = localStorage.getItem('postAuthRedirect') || '/';
           localStorage.removeItem('postAuthRedirect');
           setIsRedirecting(true);
@@ -61,25 +67,16 @@ export const Login: React.FC = () => {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     setCapsLockOn(e.getModifierState('CapsLock'));
-    if (e.key === 'Enter') {
-      handleSubmit(e as any);
-    } else if (e.key === 'Escape') {
-      setErrors({});
-    }
+    if (e.key === 'Enter') handleSubmit(e as any);
+    else if (e.key === 'Escape') setErrors({});
   };
 
   const validateForm = () => {
     const newErrors: typeof errors = {};
-    if (!email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Please enter a valid email address';
-    }
-    if (!password) {
-      newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
+    if (!email) newErrors.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Please enter a valid email address';
+    if (!password) newErrors.password = 'Password is required';
+    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -87,17 +84,14 @@ export const Login: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-
     setIsLoading(true);
     setErrors({});
     try {
       const { error } = isSignUp
         ? await supabase.auth.signUp({ email, password })
         : await supabase.auth.signInWithPassword({ email, password });
-
-      if (error) {
-        setErrors({ general: error.message });
-      } else {
+      if (error) setErrors({ general: error.message });
+      else {
         toast({
           title: isSignUp ? 'Account created!' : 'Welcome back!',
           description: isSignUp
@@ -116,15 +110,10 @@ export const Login: React.FC = () => {
   const handleGoogleAuth = async () => {
     setIsGoogleLoading(true);
     try {
-      // Save where the user was, in case you want to restore it after landing on /
       localStorage.setItem('postAuthRedirect', window.location.pathname + window.location.search);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: {
-          // Redirect to root so it never 404s
-          redirectTo: `${APP_ORIGIN}/?cb=1`,
-           //redirectTo: 'https://ironbooks.netlify.app'
-        },
+        options: { redirectTo: `${APP_ORIGIN}/?cb=1` },
       });
       if (error) throw error;
     } catch (error) {
@@ -139,14 +128,8 @@ export const Login: React.FC = () => {
   };
 
   const handleMagicLink = async () => {
-    if (!email) {
-      setErrors({ email: 'Please enter your email address first' });
-      return;
-    }
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      setErrors({ email: 'Please enter a valid email address' });
-      return;
-    }
+    if (!email) return setErrors({ email: 'Please enter your email address first' });
+    if (!/\S+@\S+\.\S+/.test(email)) return setErrors({ email: 'Please enter a valid email address' });
 
     setIsMagicLinkLoading(true);
     setErrors({});
@@ -154,9 +137,8 @@ export const Login: React.FC = () => {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          // Send them to the app root; Supabase JS will hydrate the session on load
           emailRedirectTo: `${APP_ORIGIN}/`,
-          shouldCreateUser: false, // only existing users
+          shouldCreateUser: false,
         },
       });
       if (error) throw error;
@@ -182,7 +164,6 @@ export const Login: React.FC = () => {
       <SecurityBar />
 
       <div className="flex-1 flex">
-        {/* Auth Card */}
         <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
           <Card className="w-full max-w-md rounded-2xl shadow-xl border-0">
             <CardHeader className="space-y-2 text-center pb-6">
@@ -195,17 +176,25 @@ export const Login: React.FC = () => {
             </CardHeader>
 
             <CardContent className="space-y-6">
+              {/* 🚩 suspended banner */}
+              {suspended && (
+                <div className="text-sm bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5" />
+                  <div>
+                    <div className="font-medium">Your account is temporarily suspended.</div>
+                    <div className="text-gray-700">
+                      Please contact <a className="underline" href="mailto:admin@ironbooks.com">admin@ironbooks.com</a> to resume access.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {errors.general && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3" aria-live="polite">
                   {errors.general}
                 </div>
               )}
-   
 
-                
-
-
-              {/* Single provider (Google) */}
               <Button
                 variant="outline"
                 onClick={handleGoogleAuth}
@@ -252,7 +241,6 @@ export const Login: React.FC = () => {
           </Card>
         </div>
 
-        {/* Benefits Panel */}
         <BenefitsPanel />
       </div>
 
