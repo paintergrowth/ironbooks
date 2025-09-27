@@ -1,7 +1,6 @@
-// src/components/login.tsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Eye, EyeOff, Mail, Lock, AlertTriangle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -20,25 +19,19 @@ const APP_ORIGIN = 'https://ironbooks.netlify.app';
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isMagicLinkLoading, setIsMagicLinkLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
   const [isSignUp, setIsSignUp] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
-  const [suspended, setSuspended] = useState(false);
 
   const navigate = useNavigate();
-  const location = useLocation();
   const { toast } = useToast();
 
-  // NEW: show banner when redirected with ?suspended=1
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    setSuspended(params.get('suspended') === '1');
-  }, [location.search]);
-
-  // Keep this: finalize session from OAuth/magic callbacks
+  // Keep this: if you ever come back to /login with tokens in the URL, we finalize the session.
   useEffect(() => {
     const finalizeIfCallback = async () => {
       try {
@@ -66,12 +59,27 @@ export const Login: React.FC = () => {
     void finalizeIfCallback();
   }, [navigate, toast]);
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    setCapsLockOn(e.getModifierState('CapsLock'));
+    if (e.key === 'Enter') {
+      handleSubmit(e as any);
+    } else if (e.key === 'Escape') {
+      setErrors({});
+    }
+  };
+
   const validateForm = () => {
     const newErrors: typeof errors = {};
-    if (!email) newErrors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Please enter a valid email address';
-    if (!password) newErrors.password = 'Password is required';
-    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+    if (!email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+    if (!password) {
+      newErrors.password = 'Password is required';
+    } else if (password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -108,11 +116,14 @@ export const Login: React.FC = () => {
   const handleGoogleAuth = async () => {
     setIsGoogleLoading(true);
     try {
+      // Save where the user was, in case you want to restore it after landing on /
       localStorage.setItem('postAuthRedirect', window.location.pathname + window.location.search);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
+          // Redirect to root so it never 404s
           redirectTo: `${APP_ORIGIN}/?cb=1`,
+           //redirectTo: 'https://ironbooks.netlify.app'
         },
       });
       if (error) throw error;
@@ -143,8 +154,9 @@ export const Login: React.FC = () => {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
+          // Send them to the app root; Supabase JS will hydrate the session on load
           emailRedirectTo: `${APP_ORIGIN}/`,
-          shouldCreateUser: false,
+          shouldCreateUser: false, // only existing users
         },
       });
       if (error) throw error;
@@ -183,26 +195,17 @@ export const Login: React.FC = () => {
             </CardHeader>
 
             <CardContent className="space-y-6">
-              {/* NEW: Suspended banner */}
-              {suspended && (
-                <div className="text-sm bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 mt-0.5" />
-                  <div>
-                    <div className="font-medium">Your account is temporarily suspended.</div>
-                    <div className="text-gray-700">
-                      Please contact <a className="underline" href="mailto:admin@ironbooks.com">admin@ironbooks.com</a> to resume access.
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {errors.general && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3" aria-live="polite">
                   {errors.general}
                 </div>
               )}
+   
 
-              {/* Providers */}
+                
+
+
+              {/* Single provider (Google) */}
               <Button
                 variant="outline"
                 onClick={handleGoogleAuth}
