@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +12,7 @@ import BulkActionsToolbar from './BulkActionsToolbar';
 import FilterChips from './FilterChips';
 import UserDetailDrawer from './UserDetailDrawer';
 import AdminKPICards from './AdminKPICards';
-import { 
+import {
   Users, Plus, Search, Eye, Key, CheckCircle, XCircle, Activity, ArrowUpDown
 } from 'lucide-react';
 
@@ -28,7 +27,7 @@ const AdminPanelComplete: React.FC = () => {
   const [timeframe, setTimeframe] = useState('This Month');
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' as 'asc' | 'desc' });
   const [users, setUsers] = useState<any[]>([]);
-
+  const [baseUsers, setBaseUsers] = useState<any[]>([]);
   // NEW: track my user id so we can refresh after save
   const [myUid, setMyUid] = useState<string | null>(null);
 
@@ -81,8 +80,8 @@ const AdminPanelComplete: React.FC = () => {
   };
 
   const handleFilterToggle = (filter: string) => {
-    setActiveFilters(prev => 
-      prev.includes(filter) 
+    setActiveFilters(prev =>
+      prev.includes(filter)
         ? prev.filter(f => f !== filter)
         : [...prev, filter]
     );
@@ -92,11 +91,11 @@ const AdminPanelComplete: React.FC = () => {
     .filter(user => {
       const matchesSearch = user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            user.fullName.toLowerCase().includes(searchTerm.toLowerCase());
-      
+     
       if (!matchesSearch) return false;
-      
+     
       if (activeFilters.length === 0) return true;
-      
+     
       return activeFilters.some(filter => {
         switch (filter) {
           case 'active': return user.isActive && !user.suspended;
@@ -145,19 +144,16 @@ const AdminPanelComplete: React.FC = () => {
       const { data, error } = await supabase.rpc('admin_list', { p_caller: uid });
       if (error) {
         console.error('[admin_list error]', error.message, error.details, error.hint, error.code);
-        setUsers([]);
+        setBaseUsers([]);
         return;
       }
       console.log('[admin_list OK] rows:', (data ?? []).length, 'sample:', (data && data[0]) || null);
-
       // Base mapping from RPC — only adding fields used by the three columns and realm tracking.
-      const baseUsers = (data ?? []).map((r: any, idx: number) => {
+      const mappedBaseUsers = (data ?? []).map((r: any, idx: number) => {
         const lastLogin = r.last_login;
         const isActive = !!r.is_active;
-
         // IMPORTANT: if your RPC uses a different key for realm id, add it to this OR-chain.
         const realmId: string | null = r.qbo_realm_id || r.realm_id || r.qboRealmId || null;
-
         const mappedRow = {
           id: r.id,
           email: r.email,
@@ -177,120 +173,134 @@ const AdminPanelComplete: React.FC = () => {
           mrr: 0,
           createdAt: r.created_at,
           lastLogin,
-
-          // These will be overridden by the view if available:
-          revenueMTD: Number(r.revenue_mtd) || 0,
-          netProfitMTD: Number(r.net_profit_mtd) || 0,
-          netMargin: Number(r.net_margin_pct) || 0,
-
           // Keep realm for enrichment:
           realmId,
         };
-
         console.log('[admin_list -> baseUser]', idx, {
           id: mappedRow.id,
           email: mappedRow.email,
           realmId: mappedRow.realmId,
           qboConnected: mappedRow.qboConnected,
         });
-
         return mappedRow;
       });
-
-      // Enrich with this month's P&L from qbo_pnl_monthly_from_postings
-      const today = new Date();
-      const currentYear = today.getFullYear();
-      const currentMonth = today.getMonth() + 1; // JS months are 0-based
-      console.log('[P&L params]', { currentYear, currentMonth });
-
-      const realmIds = Array.from(
-        new Set(
-          baseUsers
-            .map(u => u.realmId)
-            .filter((x: string | null): x is string => !!x)
-        )
-      );
-      console.log('[P&L realmIds unique]', realmIds);
-
-      let pnlByRealm: Record<string, { revenues: number; netIncome: number }> = {};
-
-      if (realmIds.length > 0) {
-        console.log('[P&L query] selecting from view qbo_pnl_monthly_from_postings', {
-          realmIdsCount: realmIds.length, realmIdsPreview: realmIds.slice(0, 5)
-        });
-
-        const { data: pnlRows, error: pnlErr } = await supabase
-          .from('qbo_pnl_monthly_from_postings')
-          .select('realm_id, year, month, revenues, net_income')
-          .in('realm_id', realmIds)
-          .eq('year', currentYear)
-          .eq('month', currentMonth);
-
-        if (pnlErr) {
-          console.error('[P&L view fetch ERROR]', pnlErr);
-        } else {
-          console.log('[P&L view fetch OK] rows:', (pnlRows ?? []).length, 'sample:', (pnlRows && pnlRows[0]) || null);
-          pnlByRealm = (pnlRows || []).reduce((acc: any, row: any, idx: number) => {
-            const rec = {
-              revenues: Number(row.revenues) || 0,
-              netIncome: Number(row.net_income) || 0,
-            };
-            acc[row.realm_id] = rec;
-            console.log('[P&L row mapped]', idx, row.realm_id, rec);
-            return acc;
-          }, {});
-        }
-      } else {
-        console.warn('[P&L] No realmIds found among users. The three columns will fall back to RPC values (if any).');
-      }
-
-      // Merge: override MTD fields with view data (if available), and compute margin %
-      const mapped = baseUsers.map((u, idx) => {
-        const pnl = u.realmId ? pnlByRealm[u.realmId] : undefined;
-        const revenue = pnl ? pnl.revenues : u.revenueMTD || 0;
-        const profit = pnl ? pnl.netIncome : u.netProfitMTD || 0;
-        const marginPct = revenue === 0 ? 0 : (profit / revenue) * 100;
-
-        const merged = {
-          ...u,
-          revenueMTD: revenue,
-          netProfitMTD: profit,
-          netMargin: marginPct,
-        };
-
-        console.log('[User P&L merged]', idx, {
-          id: merged.id,
-          email: merged.email,
-          realmId: merged.realmId,
-          revenueMTD: merged.revenueMTD,
-          netProfitMTD: merged.netProfitMTD,
-          netMarginPct: merged.netMargin,
-          source: pnl ? 'VIEW' : 'RPC/FALLBACK'
-        });
-
-        return merged;
-      });
-
-      setUsers(mapped);
-      console.log('[AdminPanelComplete] fetchAdmin DONE. Users length:', mapped.length);
+      setBaseUsers(mappedBaseUsers);
+      console.log('[AdminPanelComplete] fetchAdmin DONE. Base users length:', mappedBaseUsers.length);
     } catch (e) {
       console.error('[AdminPanelComplete] admin_list fetch failed:', e);
-      setUsers([]);
+      setBaseUsers([]);
     }
+  };
+
+  const enrichWithPnL = async () => {
+    if (baseUsers.length === 0) return;
+
+    const today = new Date();
+    let currentYear = today.getFullYear();
+    let currentMonth = today.getMonth() + 1; // JS months are 0-based
+    console.log('[P&L params]', { currentYear, currentMonth, timeframe });
+
+    const realmIds = Array.from(
+      new Set(
+        baseUsers
+          .map(u => u.realmId)
+          .filter((x: string | null): x is string => !!x)
+      )
+    );
+    console.log('[P&L realmIds unique]', realmIds);
+
+    let pnlByRealm: Record<string, { revenues: number; netIncome: number }> = {};
+
+    if (realmIds.length > 0) {
+      console.log('[P&L query] selecting from view qbo_pnl_monthly_from_postings', {
+        realmIdsCount: realmIds.length, realmIdsPreview: realmIds.slice(0, 5)
+      });
+
+      let query = supabase
+        .from('qbo_pnl_monthly_from_postings')
+        .select('realm_id, year, month, revenues, net_income')
+        .in('realm_id', realmIds);
+
+      let isYTD = false;
+
+      if (timeframe === 'This Month') {
+        query = query.eq('year', currentYear).eq('month', currentMonth);
+      } else if (timeframe === 'Last Month') {
+        let lastMonth = currentMonth - 1;
+        let lastYear = currentYear;
+        if (lastMonth === 0) {
+          lastMonth = 12;
+          lastYear--;
+        }
+        query = query.eq('year', lastYear).eq('month', lastMonth);
+      } else if (timeframe === 'YTD') {
+        query = query.eq('year', currentYear).gte('month', 1).lte('month', currentMonth);
+        isYTD = true;
+      }
+
+      const { data: pnlRows, error: pnlErr } = await query;
+
+      if (pnlErr) {
+        console.error('[P&L view fetch ERROR]', pnlErr);
+      } else {
+        console.log('[P&L view fetch OK] rows:', (pnlRows ?? []).length, 'sample:', (pnlRows && pnlRows[0]) || null);
+        pnlByRealm = (pnlRows || []).reduce((acc: any, row: any, idx: number) => {
+          if (!acc[row.realm_id]) {
+            acc[row.realm_id] = { revenues: 0, netIncome: 0 };
+          }
+          acc[row.realm_id].revenues += Number(row.revenues) || 0;
+          acc[row.realm_id].netIncome += Number(row.net_income) || 0;
+          console.log('[P&L row mapped]', idx, row.realm_id, acc[row.realm_id]);
+          return acc;
+        }, {});
+      }
+    } else {
+      console.warn('[P&L] No realmIds found among users. The three columns will fall back to null/0.');
+    }
+
+    // Merge: set MTD fields with view data (if available), and compute margin %
+    const enriched = baseUsers.map((u, idx) => {
+      let revenue: number | null = null;
+      let profit: number | null = null;
+      let marginPct: number | null = null;
+
+      if (u.realmId) {
+        const pnl = pnlByRealm[u.realmId] || { revenues: 0, netIncome: 0 };
+        revenue = pnl.revenues;
+        profit = pnl.netIncome;
+        marginPct = revenue === 0 ? 0 : (profit / revenue) * 100;
+      }
+
+      const merged = {
+        ...u,
+        revenueMTD: revenue,
+        netProfitMTD: profit,
+        netMargin: marginPct,
+      };
+      console.log('[User P&L merged]', idx, {
+        id: merged.id,
+        email: merged.email,
+        realmId: merged.realmId,
+        revenueMTD: merged.revenueMTD,
+        netProfitMTD: merged.netProfitMTD,
+        netMarginPct: merged.netMargin,
+        source: revenue !== null ? 'VIEW' : 'FALLBACK'
+      });
+      return merged;
+    });
+
+    setUsers(enriched);
   };
 
   useEffect(() => {
     let cancelled = false;
-
     const run = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-
       if (user && !cancelled) {
-        setMyUid(user.id);           // ← NEW: remember my uid
+        setMyUid(user.id); // ← NEW: remember my uid
         await fetchAdmin(user.id);
         return;
       }
-
       // If user not ready yet, wait for auth
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!cancelled && session?.user) {
@@ -298,18 +308,21 @@ const AdminPanelComplete: React.FC = () => {
           fetchAdmin(session.user.id);
         }
       });
-
       // cleanup
       return () => subscription.unsubscribe();
     };
-
     const cleanupPromise = run();
-
     return () => {
       cancelled = true;
       Promise.resolve(cleanupPromise).then((fn: any) => typeof fn === 'function' && fn());
     };
   }, []);
+
+  useEffect(() => {
+    enrichWithPnL();
+  }, [timeframe, baseUsers]);
+
+  const pnlLabel = timeframe === 'YTD' ? 'YTD' : timeframe === 'This Month' ? 'MTD' : 'Last Month';
 
   return (
     <div
@@ -321,9 +334,8 @@ const AdminPanelComplete: React.FC = () => {
           <h1 className="text-3xl font-bold">Admin Panel</h1>
           <p className="text-gray-600">Manage users and system settings</p>
         </div>
-        
+       
       </div>
-
       <AdminKPICards stats={stats} onCardClick={handleFilterToggle} />
       <div className="space-y-4">
         {/* Timeframe Selector */}
@@ -342,7 +354,6 @@ const AdminPanelComplete: React.FC = () => {
             </Select>
           </div>
         </div>
-
         <div className="flex space-x-4">
           <div className="flex-1">
             <div className="relative">
@@ -356,14 +367,12 @@ const AdminPanelComplete: React.FC = () => {
             </div>
           </div>
         </div>
-
-        <FilterChips 
+        <FilterChips
           activeFilters={activeFilters}
           onFilterToggle={handleFilterToggle}
           onClearAll={() => setActiveFilters([])}
           counts={counts}
         />
-
         <BulkActionsToolbar
           selectedCount={selectedUsers.length}
           onResendInvite={() => console.log('Resend invite')}
@@ -374,7 +383,6 @@ const AdminPanelComplete: React.FC = () => {
           onClear={() => setSelectedUsers([])}
         />
       </div>
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
@@ -397,16 +405,16 @@ const AdminPanelComplete: React.FC = () => {
                   <th className="text-left p-2">Last Login</th>
                   <th className="text-left p-2">QBO</th>
                   <th className="text-left p-2">CFO Uses</th>
-                  <th className="text-left p-2">AI Tokens</th>  
+                  <th className="text-left p-2">AI Tokens</th>
                   <th className="text-left p-2">Plan</th>
                   <th className="text-right p-2 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('revenueMTD')}>
                     <div className="flex items-center justify-end">
-                      Revenue (MTD) <ArrowUpDown className="ml-1 h-3 w-3" />
+                      Revenue ({pnlLabel}) <ArrowUpDown className="ml-1 h-3 w-3" />
                     </div>
                   </th>
                   <th className="text-right p-2 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('netProfitMTD')}>
                     <div className="flex items-center justify-end">
-                      Net Profit (MTD) <ArrowUpDown className="ml-1 h-3 w-3" />
+                      Net Profit ({pnlLabel}) <ArrowUpDown className="ml-1 h-3 w-3" />
                     </div>
                   </th>
                   <th className="text-center p-2 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('netMargin')}>
@@ -419,8 +427,8 @@ const AdminPanelComplete: React.FC = () => {
               </thead>
               <tbody>
                 {sortedAndFilteredUsers.map((user) => (
-                  <tr 
-                    key={user.id} 
+                  <tr
+                    key={user.id}
                     className="border-b hover:bg-gray-50 cursor-pointer"
                     onClick={() => handleViewUser(user)}
                   >
@@ -444,7 +452,9 @@ const AdminPanelComplete: React.FC = () => {
                         {user.suspended ? 'Suspended' : user.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                     </td>
-                    <td className="p-2 text-sm">{new Date(user.lastLogin).toLocaleDateString()}</td>
+                    <td className="p-2 text-sm">
+                      {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : <span className="text-muted-foreground">Never</span>}
+                    </td>
                     <td className="p-2">
                       <Badge variant={user.qboConnected ? "default" : "outline"}>
                         {user.qboConnected ? 'Connected' : 'Not Connected'}
@@ -460,7 +470,7 @@ const AdminPanelComplete: React.FC = () => {
                         ? formatCurrency(user.revenueMTD)
                         : <span className="text-muted-foreground">—</span>}
                     </td>
-                    
+                   
                     <td className="p-2 text-right font-bold">
                       {user.netProfitMTD !== null && user.netProfitMTD !== undefined ? (
                         <span className={user.netProfitMTD < 0 ? 'text-red-500' : ''}>
@@ -470,9 +480,8 @@ const AdminPanelComplete: React.FC = () => {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
-
                     <td className="p-2 text-center">
-                      {user.netMargin !== undefined ? getMarginBadge(user.netMargin) : <span className="text-muted-foreground">—</span>}
+                      {user.netMargin !== null && user.netMargin !== undefined ? getMarginBadge(user.netMargin) : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="p-2" onClick={(e) => e.stopPropagation()}>
                       <div className="flex space-x-2">
@@ -488,7 +497,6 @@ const AdminPanelComplete: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-
       <UserDetailsModal
         user={selectedUser}
         isOpen={showUserDetails}
@@ -497,7 +505,6 @@ const AdminPanelComplete: React.FC = () => {
           setSelectedUser(null);
         }}
       />
-
       {/* Drawer: now with onSaved to refresh + close */}
       <UserDetailDrawer
         user={selectedUser}
@@ -510,7 +517,6 @@ const AdminPanelComplete: React.FC = () => {
           if (myUid) await fetchAdmin(myUid);
         }}
       />
-
       <AddUserModal
         isOpen={showAddUser}
         onClose={() => setShowAddUser(false)}
