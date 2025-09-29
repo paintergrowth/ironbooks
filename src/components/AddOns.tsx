@@ -47,8 +47,8 @@ const AddOns: React.FC = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header Section */}
       <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">Add-On Services</h1>
-        <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+        <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Add-On Services</h1>
+        <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
           Expand your financial operations with our premium add-on services designed to scale with your business
         </p>
       </div>
@@ -66,24 +66,24 @@ const AddOns: React.FC = () => {
               )}
               <CardHeader className="pb-4">
                 <div className="flex items-center mb-3">
-                  <div className="p-2 bg-primary/10 rounded-lg mr-3">
+                  <div className="p-2 bg-primary/10 dark:bg-primary/20 rounded-lg mr-3">
                     <Icon className="h-6 w-6 text-primary" />
                   </div>
-                  <CardTitle className="text-xl font-bold text-gray-900">
+                  <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
                     {addOn.title}
                   </CardTitle>
                 </div>
-                <p className="text-lg font-semibold text-gray-800 leading-tight">
+                <p className="text-lg font-semibold text-gray-800 dark:text-white leading-tight">
                   {addOn.headline}
                 </p>
               </CardHeader>
               <CardContent className="pt-0">
                 <div className="space-y-6">
-                  <p className="text-gray-600 leading-relaxed text-base">
+                  <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-base">
                     {addOn.description}
                   </p>
                   
-                  <div className="border-t pt-4">
+                  <div className="border-t dark:border-gray-700 pt-4">
                     <p className="text-sm font-bold text-primary mb-4">
                       {addOn.price}
                     </p>
@@ -102,16 +102,16 @@ const AddOns: React.FC = () => {
       </div>
 
       {/* Custom Solutions Section */}
-      <div className="bg-gray-50 rounded-2xl p-8 text-center">
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl p-8 text-center">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Custom Solutions</h2>
-          <p className="text-lg text-gray-600 mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Custom Solutions</h2>
+          <p className="text-lg text-gray-600 dark:text-gray-300 mb-6">
             Your business is unique — we'll tailor a financial solution that fits your specific needs and goals.
           </p>
           <Button 
             variant="outline" 
             size="lg"
-            className="bg-white border-2 border-gray-300 text-gray-900 hover:bg-gray-50 hover:border-gray-400 font-semibold px-8 py-3 text-base"
+            className="bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 font-semibold px-8 py-3 text-base"
           >
             👉 Book a Free Consultation
           </Button>
