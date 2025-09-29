@@ -24,7 +24,7 @@ import {
   Bell,
   Database,
   Users,
-  Globe,
+  //Globe,
   Smartphone,
   Save,
   ExternalLink
@@ -633,7 +633,7 @@ const Settings: React.FC = () => {
               </Button>
             </div>
 
-            {/* Xero (unchanged) */}
+            {/* Xero (unchanged) Temporarily Disabled
             <div className="flex items-center justify-between p-4 border rounded-lg">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -646,6 +646,8 @@ const Settings: React.FC = () => {
               </div>
               <Button variant="outline" size="sm">Connect</Button>
             </div>
+
+             */}
           </CardContent>
         </Card>
 
