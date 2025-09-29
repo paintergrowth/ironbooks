@@ -181,10 +181,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   };
 
   const samplePrompts = [
-    'How does AI work?',
-    'Analyze my cash flow patterns',
-    'What are the key financial metrics I should track?',
-    'Help me categorize these expenses',
+    'How are my financials trending?',
+    'What was my revenue last month?',
+    'What is my projected revenue for current year?',
+    'What are my key expenses?',
   ];
 
   const actionButtons = [
