@@ -636,8 +636,9 @@ const Settings: React.FC = () => {
                 <ExternalLink className="h-4 w-4" />
                 {qboConnected ? 'Reconnect' : 'Connect QuickBooks'}
               </Button>
+              
             </div>
-
+              <BillingCard />
             {/* Xero (unchanged) Temporarily Disabled
             <div className="flex items-center justify-between p-4 border rounded-lg">
               <div className="flex items-center space-x-3">
