@@ -52,7 +52,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     saveMessage,
     updateSessionTitle,
     deleteSession,
-    // callQBOAgent  // (kept in hook but we won't use it so impersonation works)
   } = useChatHistory();
 
   const qboStatus = useQBOStatus();
@@ -62,11 +61,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [displayLimits, setDisplayLimits] = useState({ today: 10, yesterday: 5, week: 5, older: 5 });
   const [isTyping, setIsTyping] = useState(false);
   const [currentReasoning, setCurrentReasoning] = useState<Array<{id: string; title: string; content: string; type?: string}>>([]);
-  
-  // Local streaming messages (separate from database-backed chat history)
   const [streamingMessages, setStreamingMessages] = useState<Message[]>([]);
 
-  // Combine database messages with streaming messages for display
   const allMessages = React.useMemo(() => {
     const dbMessages: Message[] = chatMessages.map(msg => ({
       id: msg.id,
@@ -74,18 +70,14 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       role: msg.role,
       timestamp: new Date(msg.created_at)
     }));
-    
-    // Filter out streaming messages that are already saved to DB
-    const newStreamingMessages = streamingMessages.filter(streamMsg => 
+    const newStreamingMessages = streamingMessages.filter(streamMsg =>
       !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
     );
-    
-    return [...dbMessages, ...newStreamingMessages].sort((a, b) => 
+    return [...dbMessages, ...newStreamingMessages].sort((a, b) =>
       a.timestamp.getTime() - b.timestamp.getTime()
     );
   }, [chatMessages, streamingMessages]);
 
-  // Clear streaming messages when session changes
   React.useEffect(() => {
     setStreamingMessages([]);
   }, [currentSession?.id]);
@@ -93,20 +85,24 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // ---- Impersonation / Effective identity ----
   const { isImpersonating, target } = useImpersonation();
   const [realRealmId, setRealRealmId] = useState<string | null>(null);
+  const [fullName, setFullName] = useState<string | null>(null); // <-- NEW: store profiles.full_name
   const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
   const effRealmId = isImpersonating ? (target?.realmId ?? null) : realRealmId;
   const [companyName, setCompanyName] = useState<string | null>(null);
 
-  // Load REAL user's realm (used when not impersonating)
+  // Load REAL user's realm and full_name (used when not impersonating)
   useEffect(() => {
     (async () => {
       if (!user?.id) return;
       const { data, error } = await supabase
         .from('profiles')
-        .select('qbo_realm_id')
+        .select('qbo_realm_id, full_name') // <-- UPDATED: also fetch full_name
         .eq('id', user.id)
         .single();
-      if (!error) setRealRealmId(data?.qbo_realm_id ?? null);
+      if (!error) {
+        setRealRealmId(data?.qbo_realm_id ?? null);
+        setFullName((data?.full_name ?? null) && String(data.full_name).trim().length > 0 ? String(data.full_name) : null);
+      }
     })();
   }, [user?.id]);
 
@@ -154,7 +150,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   };
 
   const handleSyncTransactions = async () => {
-    // keep existing behavior (uses qboStatus + real user)
     if (!qboStatus.connected || !qboStatus.realm_id || !user?.id) {
       toast({ title: 'Sync Error', description: 'QuickBooks not connected or missing info.', variant: 'destructive' });
       return;
@@ -215,7 +210,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
     // Save user message to database
     await saveMessage('user', messageContent, 0, 0, 0, session.id);
-    
+
     // Add user message to streaming state for immediate display
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -250,10 +245,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         currentStepIndex++;
       } else {
         clearInterval(reasoningInterval);
-        
+
         setTimeout(async () => {
           const messageId = (Date.now() + 1).toString();
-          
+
           // Create streaming assistant message
           const streamingMessage: Message = {
             id: messageId,
@@ -268,11 +263,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           setCurrentReasoning([]);
 
           try {
-            // Try SSE streaming first (will also gracefully handle JSON responses)
             await callAgentStreaming(messageContent, messageId);
           } catch (e) {
             console.warn('Streaming failed, falling back:', e);
-            // Hard fallback: one-shot function + simulated token stream
             try {
               const finalResponse = await callAgentOnce(messageContent);
               const words = finalResponse.split(' ');
@@ -285,11 +278,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     : msg
                 ));
                 if (i < words.length - 1) {
-                  // eslint-disable-next-line no-await-in-loop
                   await new Promise(resolve => setTimeout(resolve, 30));
                 }
               }
-              // Save final message to database
               await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
               setIsTyping(false);
             } catch (e2) {
@@ -303,7 +294,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
                 }
               }
-              
+
               setStreamingMessages(prev => prev.map(msg =>
                 msg.id === messageId ? { ...msg, content: fallbackResponse, isStreaming: false } : msg
               ));
@@ -371,7 +362,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // ===== Functions URL (for streaming) =====
   function getFunctionsBaseFromClient() {
     try {
-      // Try from Supabase client (v2 keeps it on a private field)
       // @ts-ignore
       const urlFromClient = (supabase as any)?.supabaseUrl || (supabase as any)?.url;
       if (typeof urlFromClient === 'string' && urlFromClient.length > 0) {
@@ -386,7 +376,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   }
   const FUNCTIONS_BASE = getFunctionsBaseFromClient();
 
-  // ----- Chat helpers -----
   const generateReasoningSteps = (query: string) => {
     if (query.toLowerCase().includes('expense')) {
       return [
@@ -424,9 +413,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     ];
   };
 
-  // ----- Streaming caller (first try SSE, then JSON fallback with simulated stream) -----
   const callAgentStreaming = async (query: string, messageId: string) => {
-    // HARD GUARD to avoid 400s from Edge Function
     if (!effUserId || !effRealmId) {
       throw new Error('Missing identity');
     }
@@ -470,7 +457,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     }
 
     const ctype = resp.headers.get('content-type') || '';
-    // If server returns JSON (no SSE), read once and simulate tokenization
     if (ctype.includes('application/json')) {
       const json = await resp.json().catch(() => null);
       const finalResponse =
@@ -478,7 +464,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           ? json.response
           : "Sorry, I couldn't process that query.";
 
-      // Simulate token-by-token updates so users see progress
       const words = finalResponse.split(' ');
       let currentText = '';
       for (let i = 0; i < words.length; i++) {
@@ -489,17 +474,14 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             : msg
         ));
         if (i < words.length - 1) {
-          // eslint-disable-next-line no-await-in-loop
           await new Promise(r => setTimeout(r, 30));
         }
       }
-      // Save final message to database
       await saveMessage('assistant', finalResponse, 0, 0, 0, currentSession?.id || '');
       setIsTyping(false);
       return;
     }
 
-    // Expect proper SSE
     if (!resp.body) throw new Error('No response body for streaming');
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -534,7 +516,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               : msg
           ));
         } else if (payload?.type === 'done') {
-          // Save final message to database
           await saveMessage('assistant', accumulatedText, 0, 0, 0, currentSession?.id || '');
           setStreamingMessages(prev => prev.map(msg =>
             msg.id === messageId ? { ...msg, isStreaming: false } : msg
@@ -547,7 +528,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     }
   };
 
-  // Non-streaming fallback (invokeWithAuth)
   const callAgentOnce = async (query: string) => {
     if (!effUserId || !effRealmId) throw new Error('Missing identity');
     const { data, error } = await invokeWithAuth('qbo-query-agent', {
@@ -579,7 +559,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             <div className="h-full flex flex-col items-center justify-center p-8 space-y-8">
               <div className="text-center space-y-4">
                 <h1 className="text-4xl font-semibold text-foreground">
-                  How can I help you today?
+                  {/* REQUIREMENT:
+                     - If profiles.full_name exists -> "How can i help you today?"
+                     - If blank -> "How can I help you today?"
+                  */}
+                  {fullName ? 'How can i help you today?' : 'How can I help you today?'}
                 </h1>
               </div>
 
@@ -617,22 +601,18 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               {allMessages.map((message) => (
                 <div key={message.id}>
                   {message.role === 'user' ? (
-                    // User messages - keep in bubbles on the right
                     <div className="flex justify-end">
                       <div className="max-w-[70%] rounded-lg px-3 py-2 bg-primary text-primary-foreground">
                         <p className="text-sm">{message.content}</p>
                       </div>
                     </div>
                   ) : (
-                    // AI messages - unbubbled with Response component
                     <div className="group space-y-3">
                       <div className="prose prose-sm max-w-none dark:prose-invert">
                         <Response>
                           {message.content}
                         </Response>
                       </div>
-
-                      {/* Action buttons for AI responses */}
                       <Actions className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         <Action tooltip="Regenerate response" onClick={() => handleRegenerateResponse(message.id)}>
                           <RotateCcw size={16} />
@@ -652,7 +632,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 </div>
               ))}
 
-              {/* Show reasoning/thinking indicator when loading */}
               {(isTyping || loading) && (
                 <div className="group space-y-3">
                   <Reasoning isStreaming={isTyping || loading} defaultOpen={true}>
@@ -660,7 +639,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                       <div className="flex items-center gap-2 animate-pulse">
                         <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
                         <span>
-                          {currentReasoning.length > 0 
+                          {currentReasoning.length > 0
                             ? currentReasoning[currentReasoning.length - 1].title
                             : "Analyzing your financial data..."
                           }
@@ -729,7 +708,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       <div className="w-96 border-l bg-muted/20 flex flex-col flex-shrink-0 overflow-hidden hidden md:flex">
         {/* Sidebar Header */}
         <div className="p-4 border-b">
-          {/* QuickBooks Connection Status & Actions */}
           {!qboStatus.connected ? (
             <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
               <div className="flex items-start gap-2 mb-2">
@@ -796,7 +774,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               {loading && <div className="text-sm text-muted-foreground px-2">Loading...</div>}
 
               {(() => {
-                const groups = sessionGroups;
+                const groups = groupSessionsByDate(filteredSessions);
                 return (
                   <>
                     {groups.today.length > 0 && (
@@ -1007,7 +985,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 </Button>
               </div>
 
-              {/* QuickBooks Connection Status & Actions */}
               {!qboStatus.connected ? (
                 <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                   <div className="flex items-start gap-2 mb-2">
@@ -1070,7 +1047,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 <div className="space-y-1">
                   {loading && <div className="text-sm text-muted-foreground px-2">Loading...</div>}
 
-                  {/* Today */}
                   {sessionGroups.today.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1">Today</div>
@@ -1106,7 +1082,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     </>
                   )}
 
-                  {/* Yesterday */}
                   {sessionGroups.yesterday.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1">Yesterday</div>
@@ -1142,7 +1117,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     </>
                   )}
 
-                  {/* This Week */}
                   {sessionGroups.week.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1">This Week</div>
@@ -1178,7 +1152,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     </>
                   )}
 
-                  {/* Older */}
                   {sessionGroups.older.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1">Older</div>
