@@ -274,7 +274,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
           try {
             // Try SSE streaming first (will also gracefully handle JSON responses)
-            await callAgentStreaming(messageContent, messageId);
+            await callAgentStreaming(messageContent, messageId, session.id);
           } catch (e) {
             console.warn('Streaming failed, falling back:', e);
             // Hard fallback: one-shot function + simulated token stream
@@ -430,7 +430,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   };
 
   // ----- Streaming caller (first try SSE, then JSON fallback with simulated stream) -----
-  const callAgentStreaming = async (query: string, messageId: string) => {
+  const callAgentStreaming = async (query: string, messageId: string, sessionId: string) => {
     // HARD GUARD to avoid 400s from Edge Function
     if (!effUserId || !effRealmId) {
       throw new Error('Missing identity');
@@ -499,7 +499,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         }
       }
       // Save final message to database
-      await saveMessage('assistant', finalResponse, 0, 0, 0, currentSession?.id || '');
+      await saveMessage('assistant', finalResponse, 0, 0, 0, sessionId);
       setIsTyping(false);
       return;
     }
@@ -540,7 +540,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           ));
         } else if (payload?.type === 'done') {
           // Save final message to database
-          await saveMessage('assistant', accumulatedText, 0, 0, 0, currentSession?.id || '');
+          await saveMessage('assistant', accumulatedText, 0, 0, 0, sessionId);
           setStreamingMessages(prev => prev.map(msg =>
             msg.id === messageId ? { ...msg, isStreaming: false } : msg
           ));
