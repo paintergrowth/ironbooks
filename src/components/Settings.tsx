@@ -582,14 +582,17 @@ const Settings: React.FC = () => {
                 Enabled
               </Badge>
             </div>
+            {/* Temporarily Disabled because there is no password here.
             <Button variant="outline" className="w-full sm:w-auto">
               <Key className="mr-2 h-4 w-4" />
               Change Password
             </Button>
+            
             <Button variant="outline" className="w-full sm:w-auto">
               <Smartphone className="mr-2 h-4 w-4" />
               Manage Devices
             </Button>
+            */}
           </CardContent>
         </Card>
 
