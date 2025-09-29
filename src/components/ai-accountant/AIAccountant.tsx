@@ -579,7 +579,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             <div className="h-full flex flex-col items-center justify-center p-8 space-y-8">
               <div className="text-center space-y-4">
                 <h1 className="text-4xl font-semibold text-foreground">
-                  How can I help you, Adam?
+                  How can I help you today?
                 </h1>
               </div>
 
