@@ -761,16 +761,18 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     {companyName || qboStatus.company_name || 'QuickBooks'}
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSyncTransactions}
-                  className="h-7 px-2 text-xs"
-                  disabled={qboStatus.loading}
-                >
-                  {qboStatus.loading && <Loader2 size={12} className="mr-1 animate-spin" />}
-                  Sync Data
-                </Button>
+                {/*
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSyncTransactions}
+                    className="h-7 px-2 text-xs"
+                    disabled={qboStatus.loading}
+                  >
+                    {qboStatus.loading && <Loader2 size={12} className="mr-1 animate-spin" />}
+                    Sync Data
+                  </Button>
+                */}
               </div>
             </div>
           )}
