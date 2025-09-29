@@ -14,6 +14,8 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/components/theme-provider';
 import { useToast } from '@/hooks/use-toast';
+import BillingCard from "@/components/BillingCard";
+
 import { 
   LogOut, 
   Key, 
