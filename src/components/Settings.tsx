@@ -658,14 +658,17 @@ const Settings: React.FC = () => {
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-4">
+          {/* Temprorarily removing the buttons 
           <Button variant="outline">
             <HelpCircle className="mr-2 h-4 w-4" />
             Contact Support
           </Button>
+          
           <Button variant="destructive" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
           </Button>
+            */}
         </div>
       </div>
     </div>
