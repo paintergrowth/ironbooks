@@ -93,6 +93,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // ---- Impersonation / Effective identity ----
   const { isImpersonating, target } = useImpersonation();
   const [realRealmId, setRealRealmId] = useState<string | null>(null);
+  const [fullName, setFullName] = useState<string | null>(null); // <-- ADD THIS
   const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
   const effRealmId = isImpersonating ? (target?.realmId ?? null) : realRealmId;
   const [companyName, setCompanyName] = useState<string | null>(null);
@@ -101,12 +102,16 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   useEffect(() => {
     (async () => {
       if (!user?.id) return;
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('qbo_realm_id')
-        .eq('id', user.id)
-        .single();
-      if (!error) setRealRealmId(data?.qbo_realm_id ?? null);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('qbo_realm_id, full_name') // <-- ADD full_name
+          .eq('id', user.id)
+          .single();
+        if (!error) {
+          setRealRealmId(data?.qbo_realm_id ?? null);
+          const name = (data?.full_name ?? '').trim();
+          setFullName(name.length ? name : null); // <-- STORE sanitized full_name (only)
+        }
     })();
   }, [user?.id]);
 
@@ -579,7 +584,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             <div className="h-full flex flex-col items-center justify-center p-8 space-y-8">
               <div className="text-center space-y-4">
                 <h1 className="text-4xl font-semibold text-foreground">
-                  How can I help you today?
+                  {fullName ? `${fullName}, How may I help you today?` : 'How may I help you today?'}
                 </h1>
               </div>
 
