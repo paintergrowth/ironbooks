@@ -26,8 +26,8 @@ import { useEffectiveIdentity } from '@/lib/impersonation';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
 
-type UiTimeframe = 'thisMonth' | 'lastMonth' | 'ytd';
-type ApiPeriod = 'this_month' | 'last_month' | 'ytd';
+type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd';
+type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'ytd';
 
 interface ApiNumberPair {
   current?: number | string | null;
@@ -61,44 +61,81 @@ const DEMO_MONTH_SERIES: { date: string; revenue: number; expenses: number }[] =
   { date: `${thisYear}-09-01`, revenue: 180_000, expenses: 130_000 },
 ].slice(0, currentMonthIndex);
 
+// ===== Helpers for demo math =====
+const monthRow = (i: number) => DEMO_MONTH_SERIES[i - 1] ?? { revenue: 0, expenses: 0 };
+const sumSlice = (startIdx: number, endIdx: number) => {
+  const slice = DEMO_MONTH_SERIES.slice(Math.max(0, startIdx - 1), Math.max(0, endIdx));
+  const revenue = slice.reduce((a, r) => a + r.revenue, 0);
+  const expenses = slice.reduce((a, r) => a + r.expenses, 0);
+  return { revenue, expenses, net: revenue - expenses };
+};
+const quarterOfMonth = (m: number) => Math.ceil(m / 3); // 1..4
+const quarterBounds = (q: number) => {
+  const start = (q - 1) * 3 + 1; // 1,4,7,10
+  const end = q * 3;             // 3,6,9,12
+  return { start, end };
+};
+
 // Helper to compute demo tiles based on timeframe
 function demoTiles(period: ApiPeriod) {
-  const monthIdx = currentMonthIndex; // 1..9
-  const month = (i: number) => DEMO_MONTH_SERIES[i - 1] ?? { revenue: 0, expenses: 0 };
-  const sumTo = (idx: number) => {
-    const slice = DEMO_MONTH_SERIES.slice(0, Math.max(0, idx));
-    const revenue = slice.reduce((a, r) => a + r.revenue, 0);
-    const expenses = slice.reduce((a, r) => a + r.expenses, 0);
-    return { revenue, expenses, net: revenue - expenses };
-  };
+  const mIdx = currentMonthIndex; // 1..9 in our demo cap
 
   if (period === 'this_month') {
-    const cur = month(monthIdx);
-    const prev = month(Math.max(1, monthIdx - 1));
+    const cur = monthRow(mIdx);
+    const prev = monthRow(Math.max(1, mIdx - 1));
     return {
-      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
-      expenses:{ current: cur.expenses, previous: prev.expenses || 1 },
+      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      expenses: { current: cur.expenses, previous: prev.expenses || 1 },
       netProfit:{ current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
     };
   }
 
   if (period === 'last_month') {
-    const cur = month(Math.max(1, monthIdx - 1));
-    const prev = month(Math.max(1, monthIdx - 2));
+    const cur = monthRow(Math.max(1, mIdx - 1));
+    const prev = monthRow(Math.max(1, mIdx - 2));
     return {
-      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
-      expenses:{ current: cur.expenses, previous: prev.expenses || 1 },
+      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      expenses: { current: cur.expenses, previous: prev.expenses || 1 },
       netProfit:{ current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
     };
   }
 
+  if (period === 'this_quarter') {
+    const thisQ = quarterOfMonth(mIdx);
+    const { start, end } = quarterBounds(thisQ);
+    const prevQ = Math.max(1, thisQ - 1);
+    const { start: pStart, end: pEnd } = quarterBounds(prevQ);
+    const cur = sumSlice(start, Math.min(end, mIdx)); // up to current month in quarter
+    const prev = sumSlice(pStart, pEnd);
+    return {
+      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      expenses: { current: cur.expenses, previous: prev.expenses || 1 },
+      netProfit:{ current: cur.net,     previous: prev.net || 1 },
+    };
+  }
+
+  if (period === 'last_quarter') {
+    const thisQ = quarterOfMonth(mIdx);
+    const lastQ = Math.max(1, thisQ - 1);
+    const prevQ = Math.max(1, lastQ - 1);
+    const { start: lStart, end: lEnd } = quarterBounds(lastQ);
+    const { start: pStart, end: pEnd } = quarterBounds(prevQ);
+    const cur = sumSlice(lStart, Math.min(lEnd, mIdx));
+    const prev = sumSlice(pStart, pEnd);
+    return {
+      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      expenses: { current: cur.expenses, previous: prev.expenses || 1 },
+      netProfit:{ current: cur.net,     previous: prev.net || 1 },
+    };
+  }
+
   // ytd
-  const curAgg = sumTo(monthIdx);
+  const curAgg = sumSlice(1, mIdx);
   // fabricate prior YTD as 90% of current (so % changes render nicely)
   const prevAgg = { revenue: Math.round(curAgg.revenue * 0.9), expenses: Math.round(curAgg.expenses * 0.9) };
   return {
-    revenue: { current: curAgg.revenue, previous: prevAgg.revenue || 1 },
-    expenses:{ current: curAgg.expenses, previous: prevAgg.expenses || 1 },
+    revenue:  { current: curAgg.revenue, previous: prevAgg.revenue || 1 },
+    expenses: { current: curAgg.expenses, previous: prevAgg.expenses || 1 },
     netProfit:{ current: curAgg.net,     previous: (prevAgg.revenue - prevAgg.expenses) || 1 },
   };
 }
@@ -130,20 +167,20 @@ const pctChange = (curr: number, prev: number): number | null => {
 };
 
 const toApiPeriod = (ui: UiTimeframe): ApiPeriod =>
-  ui === 'thisMonth' ? 'this_month' : ui === 'lastMonth' ? 'last_month' : 'ytd';
+  ui === 'thisMonth'   ? 'this_month'   :
+  ui === 'lastMonth'   ? 'last_month'   :
+  ui === 'thisQuarter' ? 'this_quarter' :
+  ui === 'lastQuarter' ? 'last_quarter' :
+  'ytd';
 
 const changeLabel = (period: UiTimeframe) =>
-  period === 'ytd' ? 'from last year' : 'from last month';
+  period === 'ytd'         ? 'from last year'
+  : period === 'thisQuarter' || period === 'lastQuarter' ? 'from last quarter'
+  : 'from last month';
 
 const chartConfig = {
-  revenue: {
-    label: "Revenue",
-    color: "hsl(var(--chart-1))",
-  },
-  expenses: {
-    label: "Expenses",
-    color: "hsl(var(--chart-2))",
-  },
+  revenue: { label: "Revenue",  color: "hsl(var(--chart-1))" },
+  expenses:{ label: "Expenses", color: "hsl(var(--chart-2))" },
 } satisfies ChartConfig;
 
 interface DashboardProps {
@@ -154,13 +191,25 @@ interface DashboardProps {
 const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }) => {
   const monthIdx = currentMonthIndex;
   const rows = DEMO_MONTH_SERIES;
+
   const thisMonth = rows[monthIdx - 1]?.expenses ?? 0;
   const lastMonth = rows[monthIdx - 2]?.expenses ?? 0;
+
+  const thisQ = quarterOfMonth(monthIdx);
+  const { start: qStart, end: qEnd } = quarterBounds(thisQ);
+  const lastQ = Math.max(1, thisQ - 1);
+  const { start: lqStart, end: lqEnd } = quarterBounds(lastQ);
+
+  const thisQuarter = sumSlice(qStart, Math.min(qEnd, monthIdx)).expenses;
+  const prevQuarter = sumSlice(lqStart, lqEnd).expenses;
+
   const ytd = rows.reduce((a, r) => a + r.expenses, 0);
 
   const base =
-    timeframe === 'this_month' ? thisMonth :
-    timeframe === 'last_month' ? lastMonth : ytd;
+    timeframe === 'this_month'   ? thisMonth   :
+    timeframe === 'last_month'   ? lastMonth   :
+    timeframe === 'this_quarter' ? thisQuarter :
+    timeframe === 'last_quarter' ? prevQuarter : ytd;
 
   // Simple demo split — must sum to 100%
   const split = [
@@ -173,13 +222,17 @@ const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }
 
   const data = split.map(s => ({ name: s.name, amount: Math.round(base * s.pct) }));
 
+  const tfLabel =
+    timeframe === 'this_month'   ? 'This Month'   :
+    timeframe === 'last_month'   ? 'Last Month'   :
+    timeframe === 'this_quarter' ? 'This Quarter' :
+    timeframe === 'last_quarter' ? 'Last Quarter' : 'Year-to-Date';
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-lg font-bold">Expense Categories (Demo)</CardTitle>
-        <CardDescription>
-          Showing {timeframe === 'this_month' ? 'This Month' : timeframe === 'last_month' ? 'Last Month' : 'Year-to-Date'} demo split
-        </CardDescription>
+        <CardDescription>Showing {tfLabel} demo split</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {data.map((row) => (
@@ -206,7 +259,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   console.log('[Dashboard] effective identity', { effUserId, effRealmId, isImpersonating });
   const isDemo = !effRealmId; // ← no realm means demo account
 
-  const [timeframe, setTimeframe] = useState<UiTimeframe>('thisMonth');
+  // ✅ Default timeframe = Last Month
+  const [timeframe, setTimeframe] = useState<UiTimeframe>('lastMonth');
+
   const [chartTimeRange, setChartTimeRange] = useState("30d");
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
@@ -564,16 +619,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             <span className={`inline-block w-2 h-2 rounded-full ${lastSync ? 'bg-green-500' : 'bg-gray-400'}`}></span>
           </p>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <Select value={timeframe} onValueChange={(v: UiTimeframe) => setTimeframe(v)}>
-            <SelectTrigger className="w-36" disabled={loading}>
+            <SelectTrigger className="w-44" disabled={loading}>
               <Calendar className="w-4 h-4 mr-2" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="thisMonth">This Month</SelectItem>
               <SelectItem value="lastMonth">Last Month</SelectItem>
+              <SelectItem value="thisQuarter">This Quarter</SelectItem>
+              <SelectItem value="lastQuarter">Last Quarter</SelectItem>
               <SelectItem value="ytd">YTD</SelectItem>
             </SelectContent>
           </Select>
@@ -660,7 +717,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
               Margin: {profitMargin.toFixed(1)}%
             </p>
             <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {netPct === null ? `— vs ${timeframe === 'ytd' ? 'last year' : 'last month'}` : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd' ? 'last year' : 'last month'}`}
+              {netPct === null
+                ? `— vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`
+                : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`}
             </p>
           </CardHeader>
         </Card>
