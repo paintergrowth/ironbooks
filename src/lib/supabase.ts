@@ -2,33 +2,37 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * IMPORTANT
- * You had hard-coded URL/key; I’m keeping them so your env keeps working exactly the same.
- * If you later move to env vars, you can swap these two constants without changing the rest.
+ * Keeps your current inline config so nothing else changes.
+ * (You can move these to envs later without touching the rest.)
  */
 const supabaseUrl = 'https://quaeeqgobujsukemkrze.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1YWVlcWdvYnVqc3VrZW1rcnplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAzNjY1NDMsImV4cCI6MjA2NTk0MjU0M30.XIrLwtESbBwqXy-jlvflHY2-LN0Dun-Auo6EUshEc0g';
+const supabaseAnonKey =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1YWVlcWdvYnVqc3VrZW1rcnplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAzNjY1NDMsImV4cCI6MjA2NTk0MjU0M30.XIrLwtESbBwqXy-jlvflHY2-LN0Dun-Auo6EUshEc0g';
 
-// (optional) logs you already had
 console.log('[lib/supabase] url present?', typeof supabaseUrl, !!supabaseUrl);
 console.log('[lib/supabase] key length:', (supabaseAnonKey || '').length);
 
-// --- Client with autoRefreshToken enabled (keeps session fresh) ---
+/**
+ * Create client with robust auth behavior.
+ * - persistSession + autoRefreshToken: keeps JWTs fresh
+ * - detectSessionInUrl: handles OAuth redirects
+ */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    flowType: 'pkce',
   },
 });
 
-// -------------------- LOW-LEVEL HELPERS --------------------
+// -------------------- Helpers --------------------
 
 /** Base URL for Edge Functions */
 export const getFunctionsBaseFromClient = () =>
   `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
 
-/** Always build fresh headers (apikey + Bearer) */
+/** Build fresh headers (apikey + Bearer if we have it) */
 export const getAuthHeaders = async () => {
   const { data } = await supabase.auth.getSession();
   const accessToken = data?.session?.access_token ?? '';
@@ -40,23 +44,78 @@ export const getAuthHeaders = async () => {
   return headers;
 };
 
-/** Best-effort refresh */
+/** Best-effort forced refresh */
 export const refreshAuth = async () => {
   try {
     const { data, error } = await supabase.auth.refreshSession();
     if (error) throw error;
     return data?.session ?? null;
-  } catch {
+  } catch (e) {
+    console.warn('[auth] refresh failed:', e);
     return null;
   }
 };
 
-// -------------------- SAFE INVOKERS (RECOMMENDED) --------------------
+// ---------- Tab focus/visibility: ensure fresh session ASAP ----------
+
+let repairing = false;
+let lastRepairAt = 0;
+
+/** Proactively ensure session is fresh (debounced) */
+export async function ensureFreshSession(reason: string = 'manual'): Promise<void> {
+  const now = Date.now();
+  if (repairing || now - lastRepairAt < 800) return; // debounce common double-fires
+  repairing = true;
+
+  try {
+    const { data: ses } = await supabase.auth.getSession();
+
+    if (!ses?.session) {
+      // If memory has no session, try refresh (no-op if no refresh token)
+      await supabase.auth.refreshSession();
+      return;
+    }
+
+    // If token will expire in < 60s, refresh now
+    const expMs = (ses.session.expires_at ? ses.session.expires_at * 1000 : 0) - now;
+    if (expMs < 60_000) {
+      await supabase.auth.refreshSession();
+    }
+  } catch (e) {
+    console.warn('[auth-repair]', reason, 'failed:', e);
+  } finally {
+    lastRepairAt = Date.now();
+    repairing = false;
+  }
+}
+
+(function attachGuards() {
+  if (typeof window === 'undefined') return;
+  if ((window as any).__sb_auth_guards_attached__) return;
+  (window as any).__sb_auth_guards_attached__ = true;
+
+  const onVisible = () => { if (!document.hidden) ensureFreshSession('visibility'); };
+  const onFocus = () => ensureFreshSession('focus');
+
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', onFocus);
+
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      ensureFreshSession(event.toLowerCase());
+    }
+  });
+
+  // Initial nudge shortly after app loads
+  setTimeout(() => ensureFreshSession('initial'), 300);
+})();
+
+// -------------------- Safe invokers (recommended) --------------------
 
 /**
- * New: invokeWithAuthSafe
+ * Safe invoke for Edge Functions:
  * - Adds apikey + Authorization
- * - Retries once after refresh on 401/403
+ * - Retries once after a refresh on 401/403/expired-ish messages
  */
 export const invokeWithAuthSafe = async <T = any>(
   fnName: string,
@@ -80,19 +139,22 @@ export const invokeWithAuthSafe = async <T = any>(
       : await res.text();
 
     if (!res.ok) {
-      const errPayload = body || { message: `HTTP ${res.status}` };
-      return { data: null, error: errPayload };
+      const payload = body || { message: `HTTP ${res.status}` };
+      return { data: null, error: payload };
     }
-
     return { data: body as T, error: null };
   };
 
-  // first try
+  // First try
   let out = await doCall();
 
-  // retry once on auth errors
+  // Retry once if it smells like auth
   const msg = String(out.error?.message || out.error || '');
-  if (out.error && (msg.includes('401') || msg.includes('403'))) {
+  if (
+    out.error &&
+    (/401|403/i.test(msg) ||
+      /unauthorized|authorization|expired|jwt|invalid token|qbo_reauth_required/i.test(msg))
+  ) {
     await refreshAuth();
     out = await doCall();
   }
@@ -101,10 +163,8 @@ export const invokeWithAuthSafe = async <T = any>(
 };
 
 /**
- * New: fetchSSEWithAuth (for streaming responses)
- * - Handles apikey + Authorization
- * - Retries once after refresh on 401/403
- * - Calls onToken for each token chunk, onDone when finished, onError on failure
+ * Streaming (SSE) invoker with the same retry semantics.
+ * Calls onToken for each chunk, onDone when finished, onError on failure.
  */
 export const fetchSSEWithAuth = async (
   fnNameOrUrl: string,
@@ -131,7 +191,7 @@ export const fetchSSEWithAuth = async (
       throw new Error(txt || `HTTP ${resp.status}`);
     }
 
-    // Non-SSE JSON fallback handling
+    // Fallback: non-SSE JSON
     const ctype = resp.headers.get('content-type') || '';
     if (ctype.includes('application/json')) {
       const json = await resp.json().catch(() => null);
@@ -166,7 +226,7 @@ export const fetchSSEWithAuth = async (
           else if (payload?.type === 'done') onDone();
           else if (payload?.type === 'error') throw new Error(payload.message || 'stream error');
         } catch {
-          // ignore malformed event lines silently
+          // ignore malformed event lines
         }
       }
     }
@@ -176,7 +236,7 @@ export const fetchSSEWithAuth = async (
     await doSSE();
   } catch (err: any) {
     const m = String(err?.message || err);
-    if (m.includes('401') || m.includes('403')) {
+    if (/401|403/i.test(m) || /unauthorized|authorization|expired|jwt/i.test(m)) {
       await refreshAuth();
       try {
         await doSSE();
@@ -190,10 +250,11 @@ export const fetchSSEWithAuth = async (
   }
 };
 
-// -------------------- LEGACY EXPORT (back-compat) --------------------
+// -------------------- Legacy export (kept for back-compat) --------------------
 /**
- * You already called this across the app. Keeping it exported so nothing breaks.
- * Recommend migrating your calls to invokeWithAuthSafe for auto-retry.
+ * You already import/use this in multiple places.
+ * We keep it working, but now it also adds `apikey` automatically.
+ * Prefer moving to `invokeWithAuthSafe` so you get refresh+retry.
  */
 export async function invokeWithAuth<T>(
   name: string,
@@ -207,7 +268,7 @@ export async function invokeWithAuth<T>(
   const headers = {
     ...(opts?.headers ?? {}),
     ...(access ? { Authorization: `Bearer ${access}` } : {}),
-    apikey: supabaseAnonKey, // << add apikey even for legacy path
+    apikey: supabaseAnonKey,
   };
 
   try {
