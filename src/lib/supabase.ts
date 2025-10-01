@@ -2,8 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Keeps your current inline config so nothing else changes.
- * (You can move these to envs later without touching the rest.)
+ * Keep your inline config so nothing else breaks.
  */
 const supabaseUrl = 'https://quaeeqgobujsukemkrze.supabase.co';
 const supabaseAnonKey =
@@ -13,9 +12,7 @@ console.log('[lib/supabase] url present?', typeof supabaseUrl, !!supabaseUrl);
 console.log('[lib/supabase] key length:', (supabaseAnonKey || '').length);
 
 /**
- * Create client with robust auth behavior.
- * - persistSession + autoRefreshToken: keeps JWTs fresh
- * - detectSessionInUrl: handles OAuth redirects
+ * Client with robust auth.
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -28,11 +25,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // -------------------- Helpers --------------------
 
-/** Base URL for Edge Functions */
+/** Functions base URL */
 export const getFunctionsBaseFromClient = () =>
   `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
 
-/** Build fresh headers (apikey + Bearer if we have it) */
+/** Fresh headers (apikey + Bearer if available) */
 export const getAuthHeaders = async () => {
   const { data } = await supabase.auth.getSession();
   const accessToken = data?.session?.access_token ?? '';
@@ -44,7 +41,7 @@ export const getAuthHeaders = async () => {
   return headers;
 };
 
-/** Best-effort forced refresh */
+/** Forced refresh (best-effort) */
 export const refreshAuth = async () => {
   try {
     const { data, error } = await supabase.auth.refreshSession();
@@ -56,29 +53,34 @@ export const refreshAuth = async () => {
   }
 };
 
-// ---------- Tab focus/visibility: ensure fresh session ASAP ----------
+// ---------- Proactive repair on tab focus/visibility ----------
 
 let repairing = false;
 let lastRepairAt = 0;
 
-/** Proactively ensure session is fresh (debounced) */
+/**
+ * Ensure session is fresh (debounced).
+ * More aggressive: refresh if exp < 2m.
+ */
 export async function ensureFreshSession(reason: string = 'manual'): Promise<void> {
   const now = Date.now();
-  if (repairing || now - lastRepairAt < 800) return; // debounce common double-fires
+  if (repairing || now - lastRepairAt < 600) return; // tighter debounce
   repairing = true;
 
   try {
     const { data: ses } = await supabase.auth.getSession();
 
+    // If we don't have a session in memory, try to refresh once.
     if (!ses?.session) {
-      // If memory has no session, try refresh (no-op if no refresh token)
       await supabase.auth.refreshSession();
       return;
     }
 
-    // If token will expire in < 60s, refresh now
-    const expMs = (ses.session.expires_at ? ses.session.expires_at * 1000 : 0) - now;
-    if (expMs < 60_000) {
+    const expSec = ses.session.expires_at ?? 0;
+    const expMs = expSec * 1000 - now;
+    const nearExpiry = expMs < 120_000; // < 2 minutes
+
+    if (nearExpiry) {
       await supabase.auth.refreshSession();
     }
   } catch (e) {
@@ -101,21 +103,21 @@ export async function ensureFreshSession(reason: string = 'manual'): Promise<voi
   window.addEventListener('focus', onFocus);
 
   supabase.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
       ensureFreshSession(event.toLowerCase());
     }
   });
 
-  // Initial nudge shortly after app loads
-  setTimeout(() => ensureFreshSession('initial'), 300);
+  // Initial nudge right after load
+  setTimeout(() => ensureFreshSession('initial'), 250);
 })();
 
-// -------------------- Safe invokers (recommended) --------------------
+// -------------------- Safe invokers --------------------
 
 /**
  * Safe invoke for Edge Functions:
  * - Adds apikey + Authorization
- * - Retries once after a refresh on 401/403/expired-ish messages
+ * - Retries once after refresh on auth errors (401/403/expired)
  */
 export const invokeWithAuthSafe = async <T = any>(
   fnName: string,
@@ -145,10 +147,13 @@ export const invokeWithAuthSafe = async <T = any>(
     return { data: body as T, error: null };
   };
 
-  // First try
+  // Preflight: make sure session is fresh before we hit the function
+  await ensureFreshSession('invoke-pre');
+
+  // First attempt
   let out = await doCall();
 
-  // Retry once if it smells like auth
+  // Retry once on auth-ish failures
   const msg = String(out.error?.message || out.error || '');
   if (
     out.error &&
@@ -164,7 +169,6 @@ export const invokeWithAuthSafe = async <T = any>(
 
 /**
  * Streaming (SSE) invoker with the same retry semantics.
- * Calls onToken for each chunk, onDone when finished, onError on failure.
  */
 export const fetchSSEWithAuth = async (
   fnNameOrUrl: string,
@@ -191,7 +195,7 @@ export const fetchSSEWithAuth = async (
       throw new Error(txt || `HTTP ${resp.status}`);
     }
 
-    // Fallback: non-SSE JSON
+    // If server fell back to JSON (no SSE), still deliver the text
     const ctype = resp.headers.get('content-type') || '';
     if (ctype.includes('application/json')) {
       const json = await resp.json().catch(() => null);
@@ -233,6 +237,8 @@ export const fetchSSEWithAuth = async (
   };
 
   try {
+    // Preflight
+    await ensureFreshSession('sse-pre');
     await doSSE();
   } catch (err: any) {
     const m = String(err?.message || err);
@@ -250,33 +256,20 @@ export const fetchSSEWithAuth = async (
   }
 };
 
-// -------------------- Legacy export (kept for back-compat) --------------------
+// -------------------- Legacy export (now safe under the hood) --------------------
 /**
- * You already import/use this in multiple places.
- * We keep it working, but now it also adds `apikey` automatically.
- * Prefer moving to `invokeWithAuthSafe` so you get refresh+retry.
+ * IMPORTANT: Many places in your app import `invokeWithAuth`.
+ * We keep the same name/signature, but route it through the safe path:
+ *  - preflight ensureFreshSession
+ *  - add apikey + Authorization
+ *  - refresh+retry on auth errors
  */
 export async function invokeWithAuth<T>(
   name: string,
   opts?: { body?: any; headers?: Record<string, string> }
 ) {
-  const { data: s } = await supabase.auth.getSession();
-  const access = s?.session?.access_token;
-  console.log(`invokeWithAuth(${name}): session available:`, !!s?.session);
-  console.log(`invokeWithAuth(${name}): access token available:`, !!access);
-
-  const headers = {
-    ...(opts?.headers ?? {}),
-    ...(access ? { Authorization: `Bearer ${access}` } : {}),
-    apikey: supabaseAnonKey,
-  };
-
-  try {
-    const result = await supabase.functions.invoke<T>(name, { ...opts, headers });
-    console.log(`invokeWithAuth(${name}): result:`, result);
-    return result;
-  } catch (error) {
-    console.error(`invokeWithAuth(${name}): error:`, error);
-    throw error;
-  }
+  // Route through the safe invoker (headers you pass are ignored intentionally;
+  // safe invoker builds the correct header set every time).
+  const { data, error } = await invokeWithAuthSafe<T>(name, { body: opts?.body });
+  return { data, error } as { data: T | null; error: any | null };
 }
