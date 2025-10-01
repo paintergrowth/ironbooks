@@ -4,7 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Plus, Search, Settings2, Sparkles, BarChart3, FileText, Calculator, RotateCcw, ThumbsUp, ThumbsDown, Copy, Trash2, CheckCircle, XCircle, ExternalLink, AlertCircle, X, Loader2 } from 'lucide-react';
+import {
+  Send, Plus, Search, Settings2, Sparkles, BarChart3, FileText, Calculator,
+  RotateCcw, ThumbsUp, ThumbsDown, Copy, Trash2, CheckCircle, XCircle,
+  ExternalLink, AlertCircle, X, Loader2
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Response } from '@/components/ai-elements/response';
 import { Actions, Action } from '@/components/ai-elements/actions';
@@ -22,8 +26,8 @@ interface Message {
   role: 'user' | 'assistant';
   timestamp: Date;
   isStreaming?: boolean;
-  reasoningSteps?: Array<{id: string; title: string; content: string; type?: string}>;
-  sources?: Array<{id: string; title: string; type: string; description?: string}>;
+  reasoningSteps?: Array<{ id: string; title: string; content: string; type?: string }>;
+  sources?: Array<{ id: string; title: string; type: string; description?: string }>;
 }
 
 interface AIAccountantProps {
@@ -52,7 +56,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     saveMessage,
     updateSessionTitle,
     deleteSession,
-    // callQBOAgent  // (kept in hook but we won't use it so impersonation works)
   } = useChatHistory();
 
   const qboStatus = useQBOStatus();
@@ -61,8 +64,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [searchQuery, setSearchQuery] = useState('');
   const [displayLimits, setDisplayLimits] = useState({ today: 10, yesterday: 5, week: 5, older: 5 });
   const [isTyping, setIsTyping] = useState(false);
-  const [currentReasoning, setCurrentReasoning] = useState<Array<{id: string; title: string; content: string; type?: string}>>([]);
-  
+  const [currentReasoning, setCurrentReasoning] = useState<Array<{ id: string; title: string; content: string; type?: string }>>([]);
+
   // Local streaming messages (separate from database-backed chat history)
   const [streamingMessages, setStreamingMessages] = useState<Message[]>([]);
 
@@ -74,13 +77,12 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       role: msg.role,
       timestamp: new Date(msg.created_at)
     }));
-    
-    // Filter out streaming messages that are already saved to DB
-    const newStreamingMessages = streamingMessages.filter(streamMsg => 
+
+    const newStreamingMessages = streamingMessages.filter(streamMsg =>
       !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
     );
-    
-    return [...dbMessages, ...newStreamingMessages].sort((a, b) => 
+
+    return [...dbMessages, ...newStreamingMessages].sort((a, b) =>
       a.timestamp.getTime() - b.timestamp.getTime()
     );
   }, [chatMessages, streamingMessages]);
@@ -93,25 +95,28 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // ---- Impersonation / Effective identity ----
   const { isImpersonating, target } = useImpersonation();
   const [realRealmId, setRealRealmId] = useState<string | null>(null);
-  const [fullName, setFullName] = useState<string | null>(null); // <-- ADD THIS
+  const [fullName, setFullName] = useState<string | null>(null);
   const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
-  const effRealmId = isImpersonating ? (target?.realmId ?? null) : realRealmId;
+  // Prefer qboStatus.realm_id (stable source used by the Connected banner) to avoid brief nulls
+  const effRealmId = isImpersonating
+    ? (target?.realmId ?? null)
+    : (realRealmId ?? qboStatus?.realm_id ?? null);
   const [companyName, setCompanyName] = useState<string | null>(null);
 
   // Load REAL user's realm (used when not impersonating)
   useEffect(() => {
     (async () => {
       if (!user?.id) return;
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('qbo_realm_id, full_name') // <-- ADD full_name
-          .eq('id', user.id)
-          .single();
-        if (!error) {
-          setRealRealmId(data?.qbo_realm_id ?? null);
-          const name = (data?.full_name ?? '').trim();
-          setFullName(name.length ? name : null); // <-- STORE sanitized full_name (only)
-        }
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('qbo_realm_id, full_name')
+        .eq('id', user.id)
+        .single();
+      if (!error) {
+        setRealRealmId(data?.qbo_realm_id ?? null);
+        const name = (data?.full_name ?? '').trim();
+        setFullName(name.length ? name : null);
+      }
     })();
   }, [user?.id]);
 
@@ -145,7 +150,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     try {
       localStorage.setItem('qbo_oauth_state', state);
       localStorage.setItem('qbo_postAuthReturn', window.location.pathname + window.location.search + window.location.hash);
-    } catch {}
+    } catch { }
     return `${QBO_AUTHORIZE_URL}?client_id=${encodeURIComponent(QBO_CLIENT_ID)}&redirect_uri=${encodeURIComponent(QBO_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(QBO_SCOPES)}&state=${encodeURIComponent(state)}&prompt=consent`;
   };
 
@@ -197,11 +202,20 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !user) return;
 
-    // EARLY GUARD — stop if identity not ready
-    if (!effUserId || !effRealmId) {
+    // Resolve identity *fresh* at send-time to avoid momentary nulls
+    const { data: authUserData } = await supabase.auth.getUser();
+    const sendUserId = isImpersonating
+      ? (target?.userId ?? null)
+      : (authUserData?.user?.id ?? user?.id ?? null); // prefer live auth, then context
+    const sendRealmId = isImpersonating
+      ? (target?.realmId ?? null)
+      : (qboStatus?.realm_id ?? realRealmId ?? null); // prefer qboStatus, then profile
+
+    // Guard using the freshly resolved IDs
+    if (!sendUserId || !sendRealmId) {
       toast({
         title: 'Connect QuickBooks',
-        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting. Or try login again!',
+        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting.',
         variant: 'destructive'
       });
       setIsTyping(false);
@@ -220,7 +234,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
     // Save user message to database
     await saveMessage('user', messageContent, 0, 0, 0, session.id);
-    
+
     // Add user message to streaming state for immediate display
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -255,10 +269,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         currentStepIndex++;
       } else {
         clearInterval(reasoningInterval);
-        
+
         setTimeout(async () => {
           const messageId = (Date.now() + 1).toString();
-          
+
           // Create streaming assistant message
           const streamingMessage: Message = {
             id: messageId,
@@ -274,12 +288,12 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
           try {
             // Try SSE streaming first (will also gracefully handle JSON responses)
-            await callAgentStreaming(messageContent, messageId, session.id);
+            await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
           } catch (e) {
             console.warn('Streaming failed, falling back:', e);
             // Hard fallback: one-shot function + simulated token stream
             try {
-              const finalResponse = await callAgentOnce(messageContent);
+              const finalResponse = await callAgentOnce(messageContent, sendUserId, sendRealmId);
               const words = finalResponse.split(' ');
               let currentText = '';
               for (let i = 0; i < words.length; i++) {
@@ -308,7 +322,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
                 }
               }
-              
+
               setStreamingMessages(prev => prev.map(msg =>
                 msg.id === messageId ? { ...msg, content: fallbackResponse, isStreaming: false } : msg
               ));
@@ -382,7 +396,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       if (typeof urlFromClient === 'string' && urlFromClient.length > 0) {
         return `${urlFromClient.replace(/\/+$/, '')}/functions/v1`;
       }
-    } catch {}
+    } catch { }
     const envUrl =
       (import.meta as any)?.env?.VITE_SUPABASE_URL ||
       (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_SUPABASE_URL) ||
@@ -430,11 +444,13 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   };
 
   // ----- Streaming caller (first try SSE, then JSON fallback with simulated stream) -----
-  const callAgentStreaming = async (query: string, messageId: string, sessionId: string) => {
-    // HARD GUARD to avoid 400s from Edge Function
-    if (!effUserId || !effRealmId) {
-      throw new Error('Missing identity');
-    }
+  const callAgentStreaming = async (
+    query: string,
+    messageId: string,
+    sessionId: string,
+    userId: string,
+    realmId: string
+  ) => {
     if (!FUNCTIONS_BASE) {
       throw new Error('Could not derive Supabase Functions URL. Ensure Supabase client initialized, or set VITE_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL.');
     }
@@ -466,7 +482,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     const resp = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ query, realmId: effRealmId, userId: effUserId, stream: true }),
+      body: JSON.stringify({ query, realmId, userId, stream: true }),
     });
 
     if (!resp.ok) {
@@ -553,10 +569,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   };
 
   // Non-streaming fallback (invokeWithAuth)
-  const callAgentOnce = async (query: string) => {
-    if (!effUserId || !effRealmId) throw new Error('Missing identity');
+  const callAgentOnce = async (query: string, userId: string, realmId: string) => {
     const { data, error } = await invokeWithAuth('qbo-query-agent', {
-      body: { query, realmId: effRealmId, userId: effUserId },
+      body: { query, realmId, userId },
     });
     if (error) throw error;
     const text = data?.response;
@@ -665,7 +680,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                       <div className="flex items-center gap-2 animate-pulse">
                         <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
                         <span>
-                          {currentReasoning.length > 0 
+                          {currentReasoning.length > 0
                             ? currentReasoning[currentReasoning.length - 1].title
                             : "Analyzing your financial data..."
                           }
