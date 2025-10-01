@@ -20,9 +20,10 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
-import { supabase, invokeWithAuth } from '@/lib/supabase';
+import { supabase, invokeWithAuthSafe } from '@/lib/supabase';
 import { useAppContext } from '@/contexts/AppContext';
 import { useEffectiveIdentity } from '@/lib/impersonation';
+import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
 
 type UiTimeframe = 'thisMonth' | 'lastMonth' | 'ytd';
@@ -196,6 +197,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const { user, loading: userLoading } = useAppContext();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+
+  // Keep auth fresh in the background to prevent transient 401/403 during tiles/chart loads
+  useAuthRefresh();
 
   // 🔑 Effective identity (honors impersonation)
   const { userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
@@ -408,7 +412,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
       setLoading(true);
       try {
-        const { data, error } = await invokeWithAuth('qbo-dashboard', {
+        const { data, error } = await invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
           body: { period, userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
 
@@ -461,7 +465,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
       setYtdLoading(true);
       try {
-        const { data, error } = await invokeWithAuth('qbo-dashboard', {
+        const { data, error } = await invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
           body: { period: 'ytd', userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
         if (error) console.error('qbo-dashboard (ytd series) error:', error);
@@ -516,7 +520,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       if (!effUserId || !effRealmId || companyName) return;
 
       try {
-        const { data, error } = await invokeWithAuth('qbo-company', {
+        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
           body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
 
