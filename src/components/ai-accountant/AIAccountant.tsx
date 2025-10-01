@@ -17,8 +17,9 @@ import { useChatHistory } from '@/hooks/useChatHistory';
 import { useAppContext } from '@/contexts/AppContext';
 import { useQBOStatus } from '@/hooks/useQBOStatus';
 import { useToast } from '@/hooks/use-toast';
-import { supabase, invokeWithAuth } from '@/lib/supabase';
+import { supabase, invokeWithAuthSafe, fetchSSEWithAuth } from '@/lib/supabase';
 import { useImpersonation } from '@/lib/impersonation';
+import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 
 interface Message {
   id: string;
@@ -38,6 +39,9 @@ interface AIAccountantProps {
 const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const { user } = useAppContext();
   const { toast } = useToast();
+
+  // Keep auth fresh in background (prevents random 401s after tab idle)
+  useAuthRefresh();
 
   // Disable page scrolling when component mounts
   useEffect(() => {
@@ -120,13 +124,13 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     })();
   }, [user?.id]);
 
-  // Fetch company name for the EFFECTIVE identity
+  // Fetch company name for the EFFECTIVE identity (auth-safe)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!effUserId || !effRealmId) return;
       try {
-        const { data, error } = await invokeWithAuth('qbo-company', {
+        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
           body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
         if (!error && !cancelled && data?.companyName) {
@@ -287,11 +291,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           setCurrentReasoning([]);
 
           try {
-            // Try SSE streaming first (will also gracefully handle JSON responses)
+            // Auth-safe SSE (auto retries on 401/403)
             await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
           } catch (e) {
             console.warn('Streaming failed, falling back:', e);
-            // Hard fallback: one-shot function + simulated token stream
+            // Fallback: one-shot -> simulate tokens
             try {
               const finalResponse = await callAgentOnce(messageContent, sendUserId, sendRealmId);
               const words = finalResponse.split(' ');
@@ -387,24 +391,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     setDisplayLimits(prev => ({ ...prev, [group]: prev[group] + 10 }));
   };
 
-  // ===== Functions URL (for streaming) =====
-  function getFunctionsBaseFromClient() {
-    try {
-      // Try from Supabase client (v2 keeps it on a private field)
-      // @ts-ignore
-      const urlFromClient = (supabase as any)?.supabaseUrl || (supabase as any)?.url;
-      if (typeof urlFromClient === 'string' && urlFromClient.length > 0) {
-        return `${urlFromClient.replace(/\/+$/, '')}/functions/v1`;
-      }
-    } catch { }
-    const envUrl =
-      (import.meta as any)?.env?.VITE_SUPABASE_URL ||
-      (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_SUPABASE_URL) ||
-      '';
-    return envUrl ? `${envUrl.replace(/\/+$/, '')}/functions/v1` : '';
-  }
-  const FUNCTIONS_BASE = getFunctionsBaseFromClient();
-
   // ----- Chat helpers -----
   const generateReasoningSteps = (query: string) => {
     if (query.toLowerCase().includes('expense')) {
@@ -443,7 +429,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     ];
   };
 
-  // ----- Streaming caller (first try SSE, then JSON fallback with simulated stream) -----
+  // ----- Streaming caller (auth-safe SSE, then JSON fallback simulation) -----
   const callAgentStreaming = async (
     query: string,
     messageId: string,
@@ -451,129 +437,42 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     userId: string,
     realmId: string
   ) => {
-    if (!FUNCTIONS_BASE) {
-      throw new Error('Could not derive Supabase Functions URL. Ensure Supabase client initialized, or set VITE_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL.');
-    }
+    // Use the shared helper that auto-includes apikey + Authorization and retries after refresh
+    await new Promise<void>((resolve, reject) => {
+      let accumulatedText = '';
 
-    const [{ data: sessionData }, anonKey] = await Promise.all([
-      supabase.auth.getSession(),
-      (async () => {
-        try {
-          // @ts-ignore
-          const k = (supabase as any)?.anonKey ||
-            (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY ||
-            (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
-            '';
-          return k;
-        } catch { return ''; }
-      })()
-    ]);
-
-    const accessToken = sessionData?.session?.access_token ?? '';
-    const url = `${FUNCTIONS_BASE}/qbo-query-agent`;
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
-    };
-    if (anonKey) headers['apikey'] = anonKey;
-    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ query, realmId, userId, stream: true }),
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      throw new Error(errText || `HTTP ${resp.status}`);
-    }
-
-    const ctype = resp.headers.get('content-type') || '';
-    // If server returns JSON (no SSE), read once and simulate tokenization
-    if (ctype.includes('application/json')) {
-      const json = await resp.json().catch(() => null);
-      const finalResponse =
-        json?.response && typeof json.response === 'string'
-          ? json.response
-          : "Sorry, I couldn't process that query.";
-
-      // Simulate token-by-token updates so users see progress
-      const words = finalResponse.split(' ');
-      let currentText = '';
-      for (let i = 0; i < words.length; i++) {
-        currentText += (i > 0 ? ' ' : '') + words[i];
-        setStreamingMessages(prev => prev.map(msg =>
-          msg.id === messageId
-            ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
-            : msg
-        ));
-        if (i < words.length - 1) {
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise(r => setTimeout(r, 30));
-        }
-      }
-      // Save final message to database
-      await saveMessage('assistant', finalResponse, 0, 0, 0, sessionId);
-      setIsTyping(false);
-      return;
-    }
-
-    // Expect proper SSE
-    if (!resp.body) throw new Error('No response body for streaming');
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let done = false;
-    let accumulatedText = '';
-
-    while (!done) {
-      const { value, done: d } = await reader.read();
-      done = d;
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const raw of lines) {
-        const line = raw.trim();
-        if (!line.startsWith('data:')) continue;
-
-        let payload: any = null;
-        try {
-          payload = JSON.parse(line.slice(5).trim());
-        } catch {
-          continue;
-        }
-
-        if (payload?.type === 'token') {
-          accumulatedText += payload.content;
+      fetchSSEWithAuth(
+        'qbo-query-agent',
+        { query, realmId, userId, stream: true },
+        (chunk) => {
+          accumulatedText += chunk;
           setStreamingMessages(prev => prev.map(msg =>
             msg.id === messageId
               ? { ...msg, content: accumulatedText, isStreaming: true }
               : msg
           ));
-        } else if (payload?.type === 'done') {
-          // Save final message to database
+        },
+        async () => {
           await saveMessage('assistant', accumulatedText, 0, 0, 0, sessionId);
           setStreamingMessages(prev => prev.map(msg =>
             msg.id === messageId ? { ...msg, isStreaming: false } : msg
           ));
           setIsTyping(false);
-        } else if (payload?.type === 'error') {
-          throw new Error(payload.message || 'stream error');
+          resolve();
+        },
+        (err) => {
+          reject(err);
         }
-      }
-    }
+      );
+    });
   };
 
-  // Non-streaming fallback (invokeWithAuth)
+  // Non-streaming fallback (auth-safe)
   const callAgentOnce = async (query: string, userId: string, realmId: string) => {
-    const { data, error } = await invokeWithAuth('qbo-query-agent', {
+    const { data, error } = await invokeWithAuthSafe<{ response?: string }>('qbo-query-agent', {
       body: { query, realmId, userId },
     });
-    if (error) throw error;
+    if (error) throw (typeof error === 'object' ? new Error(error.message || 'Invoke error') : new Error(String(error)));
     const text = data?.response;
     return (typeof text === 'string' && text.trim().length > 0)
       ? text
@@ -1222,7 +1121,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                 <Trash2 size={12} />
                               </Button>
                             </div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-xs text-muted-foreground">
                               {formatTime(new Date(session.updated_at))}
                             </div>
                           </div>
