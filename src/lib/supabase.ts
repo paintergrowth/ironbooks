@@ -1,5 +1,5 @@
 // src/lib/supabase.ts
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type Session } from '@supabase/supabase-js';
 
 /**
  * Keep your inline config so nothing else breaks.
@@ -12,12 +12,12 @@ console.log('[lib/supabase] url present?', typeof supabaseUrl, !!supabaseUrl);
 console.log('[lib/supabase] key length:', (supabaseAnonKey || '').length);
 
 /**
- * Client with robust auth.
+ * Client with robust auth + PKCE
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    autoRefreshToken: true,
+    autoRefreshToken: true,     // enable built-in timer
     detectSessionInUrl: true,
     flowType: 'pkce',
   },
@@ -42,7 +42,7 @@ export const getAuthHeaders = async () => {
 };
 
 /** Forced refresh (best-effort) */
-export const refreshAuth = async () => {
+export const refreshAuth = async (): Promise<Session | null> => {
   try {
     const { data, error } = await supabase.auth.refreshSession();
     if (error) throw error;
@@ -53,34 +53,44 @@ export const refreshAuth = async () => {
   }
 };
 
-// ---------- Proactive repair on tab focus/visibility ----------
+// ---------- Proactive repair + AUTO-REFRESH TIMER CONTROL ----------
 
 let repairing = false;
 let lastRepairAt = 0;
 
+function secondsUntilExpiry(s: Session | null | undefined) {
+  if (!s?.expires_at) return Infinity;
+  return Math.floor(s.expires_at - Date.now() / 1000);
+}
+
 /**
  * Ensure session is fresh (debounced).
- * More aggressive: refresh if exp < 2m.
+ * Also (re)start auto-refresh timer when we’re visible.
  */
 export async function ensureFreshSession(reason: string = 'manual'): Promise<void> {
   const now = Date.now();
-  if (repairing || now - lastRepairAt < 600) return; // tighter debounce
+  if (repairing || now - lastRepairAt < 400) return; // tight debounce
   repairing = true;
 
   try {
+    // If we’re visible, explicitly start auto refresh to resume timers.
+    if (typeof document !== 'undefined' && !document.hidden) {
+      // Available in supabase-js v2
+      // @ts-ignore private but stable
+      supabase.auth.startAutoRefresh();
+    }
+
     const { data: ses } = await supabase.auth.getSession();
 
-    // If we don't have a session in memory, try to refresh once.
+    // If there’s no session in memory, try to refresh once.
     if (!ses?.session) {
       await supabase.auth.refreshSession();
       return;
     }
 
-    const expSec = ses.session.expires_at ?? 0;
-    const expMs = expSec * 1000 - now;
-    const nearExpiry = expMs < 120_000; // < 2 minutes
-
-    if (nearExpiry) {
+    // If close to expiry (<2 minutes), refresh proactively.
+    const secs = secondsUntilExpiry(ses.session);
+    if (secs < 120) {
       await supabase.auth.refreshSession();
     }
   } catch (e) {
@@ -91,25 +101,44 @@ export async function ensureFreshSession(reason: string = 'manual'): Promise<voi
   }
 }
 
+/**
+ * Attach once: manage auto-refresh when tab hides/shows.
+ */
 (function attachGuards() {
   if (typeof window === 'undefined') return;
   if ((window as any).__sb_auth_guards_attached__) return;
   (window as any).__sb_auth_guards_attached__ = true;
 
-  const onVisible = () => { if (!document.hidden) ensureFreshSession('visibility'); };
+  const onVisibility = () => {
+    // Stop timer while hidden (saves resources); start + repair on show.
+    if (document.hidden) {
+      // @ts-ignore private but stable
+      supabase.auth.stopAutoRefresh();
+    } else {
+      // @ts-ignore private but stable
+      supabase.auth.startAutoRefresh();
+      ensureFreshSession('visibility');
+    }
+  };
+
   const onFocus = () => ensureFreshSession('focus');
 
-  document.addEventListener('visibilitychange', onVisible);
+  document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('focus', onFocus);
 
+  // Keep session hot on any auth event
   supabase.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+    if (
+      event === 'SIGNED_IN' ||
+      event === 'TOKEN_REFRESHED' ||
+      event === 'USER_UPDATED'
+    ) {
       ensureFreshSession(event.toLowerCase());
     }
   });
 
-  // Initial nudge right after load
-  setTimeout(() => ensureFreshSession('initial'), 250);
+  // Initial nudge after load
+  setTimeout(() => ensureFreshSession('initial'), 200);
 })();
 
 // -------------------- Safe invokers --------------------
@@ -117,7 +146,8 @@ export async function ensureFreshSession(reason: string = 'manual'): Promise<voi
 /**
  * Safe invoke for Edge Functions:
  * - Adds apikey + Authorization
- * - Retries once after refresh on auth errors (401/403/expired)
+ * - Preflight ensureFreshSession
+ * - Retries once after refresh on auth errors (401/403/expired/jwt)
  */
 export const invokeWithAuthSafe = async <T = any>(
   fnName: string,
@@ -147,7 +177,7 @@ export const invokeWithAuthSafe = async <T = any>(
     return { data: body as T, error: null };
   };
 
-  // Preflight: make sure session is fresh before we hit the function
+  // Preflight: make sure session is fresh (and timers running) before we hit the function
   await ensureFreshSession('invoke-pre');
 
   // First attempt
@@ -256,11 +286,11 @@ export const fetchSSEWithAuth = async (
   }
 };
 
-// -------------------- Legacy export (now safe under the hood) --------------------
+// -------------------- Legacy export (kept, now safe under the hood) --------------------
 /**
  * IMPORTANT: Many places in your app import `invokeWithAuth`.
  * We keep the same name/signature, but route it through the safe path:
- *  - preflight ensureFreshSession
+ *  - preflight ensureFreshSession (also starts auto refresh)
  *  - add apikey + Authorization
  *  - refresh+retry on auth errors
  */
@@ -268,8 +298,6 @@ export async function invokeWithAuth<T>(
   name: string,
   opts?: { body?: any; headers?: Record<string, string> }
 ) {
-  // Route through the safe invoker (headers you pass are ignored intentionally;
-  // safe invoker builds the correct header set every time).
   const { data, error } = await invokeWithAuthSafe<T>(name, { body: opts?.body });
   return { data, error } as { data: T | null; error: any | null };
 }
