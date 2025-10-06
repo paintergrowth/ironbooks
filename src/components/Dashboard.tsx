@@ -1,3 +1,4 @@
+// src/components/DashboardNew.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -24,11 +25,8 @@ import { useAppContext } from '@/contexts/AppContext';
 import { useEffectiveIdentity } from '@/lib/impersonation';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
-import DateRangePopover from './DateRangePopover';
-import CategoryTransactionsDrawer from './CategoryTransactionsDrawer';
-import { addDays, toISODate } from '@/lib/date';
 
-type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd' | 'custom';
+type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd';
 type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'ytd';
 
 interface ApiNumberPair {
@@ -133,6 +131,7 @@ function demoTiles(period: ApiPeriod) {
 
   // ytd
   const curAgg = sumSlice(1, mIdx);
+  // fabricate prior YTD as 90% of current (so % changes render nicely)
   const prevAgg = { revenue: Math.round(curAgg.revenue * 0.9), expenses: Math.round(curAgg.expenses * 0.9) };
   return {
     revenue:  { current: curAgg.revenue, previous: prevAgg.revenue || 1 },
@@ -167,7 +166,7 @@ const pctChange = (curr: number, prev: number): number | null => {
   return ((curr - prev) / Math.abs(prev)) * 100;
 };
 
-const toApiPeriod = (ui: Exclude<UiTimeframe, 'custom'>): ApiPeriod =>
+const toApiPeriod = (ui: UiTimeframe): ApiPeriod =>
   ui === 'thisMonth'   ? 'this_month'   :
   ui === 'lastMonth'   ? 'last_month'   :
   ui === 'thisQuarter' ? 'this_quarter' :
@@ -177,7 +176,6 @@ const toApiPeriod = (ui: Exclude<UiTimeframe, 'custom'>): ApiPeriod =>
 const changeLabel = (period: UiTimeframe) =>
   period === 'ytd'         ? 'from last year'
   : period === 'thisQuarter' || period === 'lastQuarter' ? 'from last quarter'
-  : period === 'custom' ? 'from previous period'
   : 'from last month';
 
 const chartConfig = {
@@ -213,6 +211,7 @@ const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }
     timeframe === 'this_quarter' ? thisQuarter :
     timeframe === 'last_quarter' ? prevQuarter : ytd;
 
+  // Simple demo split — must sum to 100%
   const split = [
     { name: 'Materials',      pct: 0.40 },
     { name: 'Labor',          pct: 0.30 },
@@ -252,26 +251,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
+  // Keep auth fresh in the background to prevent transient 401/403 during tiles/chart loads
   useAuthRefresh();
 
+  // 🔑 Effective identity (honors impersonation)
   const { userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
-  const isDemo = !effRealmId;
+  console.log('[Dashboard] effective identity', { effUserId, effRealmId, isImpersonating });
+  const isDemo = !effRealmId; // ← no realm means demo account
 
+  // ✅ Default timeframe = Last Month
   const [timeframe, setTimeframe] = useState<UiTimeframe>('lastMonth');
-  const [customRange, setCustomRange] = useState<{ start: string | null; end: string | null }>(() => {
-    const s = localStorage.getItem('ib_custom_start');
-    const e = localStorage.getItem('ib_custom_end');
-    return { start: s || null, end: e || null };
-  });
-  const [showCustomPicker, setShowCustomPicker] = useState(false);
 
   const [chartTimeRange, setChartTimeRange] = useState("30d");
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
 
+  // Keep a local realmId only for OAuth flows (real user). Data fetches use effRealmId.
   const [realmId, setRealmId] = useState<string | null>(null);
 
+  // Metrics data
   const [revCurr, setRevCurr] = useState(0);
   const [revPrev, setRevPrev] = useState(0);
   const [expCurr, setExpCurr] = useState(0);
@@ -279,19 +278,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const [netCurr, setNetCurr] = useState(0);
   const [netPrev, setNetPrev] = useState(0);
 
+  // Chart data
   const [ytdChartData, setYtdChartData] = useState(fallbackChartData);
   const [ytdLoading, setYtdLoading] = useState(false);
 
-  // Drilldown drawer state
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerCategory, setDrawerCategory] = useState<{ key?: string|null; name?: string|null }>({});
+  // Computed values
+  const revPct = useMemo(() => pctChange(revCurr, revPrev), [revCurr, revPrev]);
+  const expPct = useMemo(() => pctChange(expCurr, expPrev), [expCurr, expPrev]);
+  const netPct = useMemo(() => pctChange(netCurr, netPrev), [netCurr, netPrev]);
+  const profitMargin = useMemo(() => revCurr > 0 ? (netCurr / revCurr) * 100 : 0, [revCurr, netCurr]);
 
-  // Mobile chart range
+  // Mobile responsive chart time range
   React.useEffect(() => {
-    if (isMobile) setChartTimeRange("7d");
+    if (isMobile) {
+      setChartTimeRange("7d")
+    }
   }, [isMobile]);
 
-  // Handle card clicks for navigation (unchanged)
+  // Handle card clicks for navigation
   const handleCardClick = (reportType: string) => {
     if (onNavigateToReports) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -306,21 +310,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     console.log('Export dashboard snapshot as PDF');
   };
 
-  // When timeframe changes to custom, show the picker (only once if dates missing)
-  useEffect(() => {
-    if (timeframe === 'custom') {
-      if (!customRange.start || !customRange.end) {
-        setShowCustomPicker(true);
-      }
-    } else {
-      setShowCustomPicker(false);
-    }
-  }, [timeframe]); // eslint-disable-line
-
-  // ===== OAuth flows (unchanged) =====
+  // ===============================
+  // OAuth flows (remain tied to real user account)
+  // ===============================
 
   useEffect(() => {
     if (!user?.id) return;
+
     const pendingRealm = sessionStorage.getItem('pending_qbo_realm');
     const pendingCode = sessionStorage.getItem('pending_qbo_code');
     const pendingRedirect = sessionStorage.getItem('pending_qbo_redirect') || QBO_REDIRECT_URI;
@@ -366,11 +362,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     })();
   }, [user?.id]);
 
+  // Handle Intuit OAuth redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('connected') !== 'qbo') return;
 
-    const { toast } = useToast();
     const code = params.get('code');
     const incomingRealm = params.get('realmId');
     const state = params.get('state');
@@ -439,34 +435,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         clean();
       }
     })();
-  }, [user?.id]); // eslint-disable-line
+  }, [user?.id, toast]);
 
   // ===============================
-  // Data fetches (effective identity)
+  // Data fetches (use effective identity)
   // ===============================
 
-  const buildTilesPayload = () => {
-    if (timeframe === 'custom' && customRange.start && customRange.end) {
-      return {
-        start_date: customRange.start,
-        end_date: customRange.end,
-        userId: effUserId,
-        realmId: effRealmId,
-        nonce: Date.now(),
-      };
-    }
-    const period = toApiPeriod((timeframe === 'custom' ? 'lastMonth' : timeframe) as Exclude<UiTimeframe, 'custom'>);
-    return { period, userId: effUserId, realmId: effRealmId, nonce: Date.now() };
-  };
-
-  // Fetch dashboard metrics (tiles)
+  // Fetch dashboard metrics
   useEffect(() => {
     let isCancelled = false;
     const run = async () => {
-      // DEMO PATH
+      const period = toApiPeriod(timeframe);
+
+      // === DEMO PATH: no connected realm -> show demo tiles ===
       if (isDemo) {
-        const period = timeframe === 'custom' ? 'this_month' : toApiPeriod(timeframe as Exclude<UiTimeframe, 'custom'>);
-        const demo = demoTiles(period as ApiPeriod);
+        const demo = demoTiles(period);
         if (!isCancelled) {
           setRevCurr(demo.revenue.current as number);
           setRevPrev(demo.revenue.previous as number);
@@ -475,36 +458,36 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           setNetCurr(demo.netProfit.current as number);
           setNetPrev(demo.netProfit.previous as number);
           setCompanyName((prev) => prev ?? 'Demo Company');
-          setLastSync(null);
+          setLastSync(null); // not synced yet
         }
         return;
       }
 
-      if (!effUserId || !effRealmId) return;
-
-      // block until custom dates selected
-      if (timeframe === 'custom' && (!customRange.start || !customRange.end)) return;
+      if (!effUserId) return; // wait for effective identity when connected
 
       setLoading(true);
       try {
         const { data, error } = await invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
-          body: buildTilesPayload(),
+          body: { period, userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
 
         if (error) console.error('qbo-dashboard error:', error);
         const payload: QboDashboardPayload = (data as any) ?? {};
 
-        const rc = toNumber(payload?.revenue?.current, 0);
-        const rp = toNumber(payload?.revenue?.previous, 0);
-        const ec = toNumber(payload?.expenses?.current, 0);
-        const ep = toNumber(payload?.expenses?.previous, 0);
+        const rc = toNumber(payload?.revenue?.current, revCurr);
+        const rp = toNumber(payload?.revenue?.previous, revPrev);
+        const ec = toNumber(payload?.expenses?.current, expCurr);
+        const ep = toNumber(payload?.expenses?.previous, expPrev);
         const nc = toNumber(payload?.netProfit?.current, rc - ec);
         const np = toNumber(payload?.netProfit?.previous, rp - ep);
 
         if (!isCancelled) {
-          setRevCurr(rc); setRevPrev(rp);
-          setExpCurr(ec); setExpPrev(ep);
-          setNetCurr(nc); setNetPrev(np);
+          setRevCurr(rc);
+          setRevPrev(rp);
+          setExpCurr(ec);
+          setExpPrev(ep);
+          setNetCurr(nc);
+          setNetPrev(np);
           setLastSync(payload?.lastSyncAt ?? new Date().toISOString());
           if (payload?.companyName) setCompanyName(payload.companyName);
         }
@@ -516,12 +499,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     };
     run();
     return () => { isCancelled = true; };
-  }, [timeframe, customRange.start, customRange.end, effUserId, effRealmId, isDemo]);
+  }, [timeframe, effUserId, effRealmId, isDemo]);
 
-  // Fetch YTD chart data (UNCHANGED – always YTD)
+  // Fetch YTD chart data
   useEffect(() => {
     let isCancelled = false;
     const loadYtd = async () => {
+      // === DEMO PATH: no connected realm -> show demo YTD series ===
       if (isDemo) {
         if (!isCancelled) {
           setYtdChartData(DEMO_MONTH_SERIES);
@@ -531,7 +515,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         }
         return;
       }
-      if (!effUserId || !effRealmId) return;
+
+      if (!effUserId) return;
 
       setYtdLoading(true);
       try {
@@ -545,7 +530,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
           setYtdChartData(
             (series.length ? series : DEMO_MONTH_SERIES).map((row) => ({
-              date: series.length ? `${thisYear}-${String(row.name).padStart(2, '0')}-01` : (row as any).date,
+              date: series.length ? `${thisYear}-${String(row.name).padStart(2, '0')}-01` : row.date,
               revenue: toNumber((row as any).revenue, 0),
               expenses: toNumber((row as any).expenses, 0),
             }))
@@ -565,11 +550,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     return () => { isCancelled = true; };
   }, [effUserId, effRealmId, companyName, isDemo]);
 
-  // Load realm for OAuth UI only
+  // Load realm ID from profiles (only to support real-user OAuth UI; data fetches use effRealmId)
   useEffect(() => {
     let cancelled = false;
     const loadRealm = async () => {
-      if (userLoading || !user?.id || effRealmId) return;
+      if (userLoading || !user?.id || effRealmId) return; // skip if impersonating already provides realm
       const { data, error } = await supabase
         .from('profiles')
         .select('qbo_realm_id')
@@ -583,56 +568,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     return () => { cancelled = true; };
   }, [userLoading, user?.id, effRealmId]);
 
-  // Company name (unchanged pattern)
+  // Fetch company name (from effective realm)
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       if (!effUserId || !effRealmId || companyName) return;
+
       try {
         const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
           body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
-        if (error) return;
-        if (!cancelled && data?.companyName) setCompanyName(data.companyName);
-      } catch {}
+
+        if (error) {
+          console.warn('qbo-company invoke error:', error);
+          return;
+        }
+
+        if (!cancelled && data?.companyName) {
+          setCompanyName(data.companyName);
+        }
+      } catch (e) {
+        console.warn('qbo-company invoke exception:', e);
+      }
     };
+
     run();
     return () => { cancelled = true; };
   }, [effUserId, effRealmId, companyName]);
 
-  // Insight text
-  const revPct = useMemo(() => pctChange(revCurr, revPrev), [revCurr, revPrev]);
-  const expPct = useMemo(() => pctChange(expCurr, expPrev), [expCurr, expPrev]);
-  const netPct = useMemo(() => pctChange(netCurr, netPrev), [netCurr, netPrev]);
-  const profitMargin = useMemo(() => revCurr > 0 ? (netCurr / revCurr) * 100 : 0, [revCurr, netCurr]);
-
+  // Insight text for the banner
   const insightText = useMemo(() => {
     const label = changeLabel(timeframe);
     const revStr = revPct === null ? '—' : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}%`;
     const expStr = expPct === null ? '—' : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}%`;
     return `Revenue ${revStr} ${label} while expenses ${expPct && expPct < 0 ? 'decreased' : 'changed'} ${expStr}`;
   }, [revPct, expPct, timeframe]);
-
-  // Category click -> open drawer
-  const handleCategoryClick = (payload: { categoryKey?: string|null; categoryName?: string|null }) => {
-    setDrawerCategory({ key: payload.categoryKey ?? null, name: payload.categoryName ?? payload.categoryKey ?? null });
-    setDrawerOpen(true);
-  };
-
-  // Apply custom range from popover
-  const handleApplyCustomRange = (start: string, end: string) => {
-    // normalize to date-only, inclusive end handling is done server-side with < end+1
-    const s = toISODate(new Date(start));
-    const e = toISODate(new Date(end));
-    setCustomRange({ start: s, end: e });
-    localStorage.setItem('ib_custom_start', s);
-    localStorage.setItem('ib_custom_end', e);
-    setShowCustomPicker(false);
-  };
-
-  const customLabel = customRange.start && customRange.end
-    ? `Custom (${customRange.start} → ${customRange.end})`
-    : 'Custom…';
 
   return (
     <div className="space-y-6 p-6">
@@ -651,32 +621,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Select value={timeframe} onValueChange={(v: UiTimeframe) => setTimeframe(v)}>
-              <SelectTrigger className="w-56" disabled={loading}>
-                <Calendar className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Select range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="thisMonth">This Month</SelectItem>
-                <SelectItem value="lastMonth">Last Month</SelectItem>
-                <SelectItem value="thisQuarter">This Quarter</SelectItem>
-                <SelectItem value="lastQuarter">Last Quarter</SelectItem>
-                <SelectItem value="ytd">YTD</SelectItem>
-                <SelectItem value="custom">{customLabel}</SelectItem>
-              </SelectContent>
-            </Select>
-            {timeframe === 'custom' && (
-              <DateRangePopover
-                open={showCustomPicker}
-                onOpenChange={setShowCustomPicker}
-                defaultStart={customRange.start ?? toISODate(addDays(new Date(), -29))}
-                defaultEnd={customRange.end ?? toISODate(new Date())}
-                onApply={handleApplyCustomRange}
-              />
-            )}
-          </div>
-
+          <Select value={timeframe} onValueChange={(v: UiTimeframe) => setTimeframe(v)}>
+            <SelectTrigger className="w-44" disabled={loading}>
+              <Calendar className="w-4 h-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+              <SelectItem value="lastMonth">Last Month</SelectItem>
+              <SelectItem value="thisQuarter">This Quarter</SelectItem>
+              <SelectItem value="lastQuarter">Last Quarter</SelectItem>
+              <SelectItem value="ytd">YTD</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={handleExportSnapshot} variant="outline" size="sm" disabled={loading || ytdLoading}>
             <Download className="w-4 h-4 mr-2" />
             Export
@@ -761,8 +718,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             </p>
             <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {netPct === null
-                ? `— vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : timeframe === 'custom' ? 'previous period' : 'last month'}`
-                : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : timeframe === 'custom' ? 'previous period' : 'last month'}`}
+                ? `— vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`
+                : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`}
             </p>
           </CardHeader>
         </Card>
@@ -795,7 +752,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         </CardContent>
       </Card>
 
-      {/* Chart with Revenue Trend Banner (YTD only — unchanged) */}
+      {/* Chart with Revenue Trend Banner */}
       <Card className="border-2 shadow-lg dark:border-gray-700">
         <CardHeader>
           <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg mb-4 border border-green-200 dark:border-green-800">
@@ -870,33 +827,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         </CardContent>
       </Card>
 
-      {/* Expense Categories (custom-aware) */}
+      {/* Expense Categories */}
       {isDemo ? (
-        <DemoExpenseCategories timeframe={(timeframe === 'custom' ? 'this_month' : toApiPeriod(timeframe as Exclude<UiTimeframe, 'custom'>))} />
+        <DemoExpenseCategories timeframe={toApiPeriod(timeframe)} />
       ) : (
         <ExpenseCategories
-          timeframe={timeframe === 'custom' ? undefined : toApiPeriod(timeframe as Exclude<UiTimeframe, 'custom'>)}
-          startDate={timeframe === 'custom' ? customRange.start ?? undefined : undefined}
-          endDate={timeframe === 'custom' ? customRange.end ?? undefined : undefined}
-          userId={effUserId as string}
-          realmId={effRealmId as string}
-          onCategoryClick={handleCategoryClick}
+          timeframe={toApiPeriod(timeframe)}
+          {...({ userId: effUserId, realmId: effRealmId } as any)}
         />
       )}
-
-      {/* Transactions drawer */}
-      <CategoryTransactionsDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        categoryKey={drawerCategory.key || undefined}
-        categoryName={drawerCategory.name || undefined}
-        userId={effUserId || undefined}
-        realmId={effRealmId || undefined}
-        // use same date inputs used by categories
-        startDate={timeframe === 'custom' ? (customRange.start ?? undefined) : undefined}
-        endDate={timeframe === 'custom' ? (customRange.end ?? undefined) : undefined}
-        period={timeframe === 'custom' ? undefined : toApiPeriod(timeframe as Exclude<UiTimeframe, 'custom'>)}
-      />
     </div>
   );
 };
