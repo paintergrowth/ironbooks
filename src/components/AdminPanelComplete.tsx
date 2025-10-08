@@ -29,7 +29,6 @@ const AdminPanelComplete: React.FC = () => {
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' as 'asc' | 'desc' });
   const [users, setUsers] = useState<any[]>([]);
   const [baseUsers, setBaseUsers] = useState<any[]>([]);
-  // NEW: track my user id so we can refresh after save
   const [myUid, setMyUid] = useState<string | null>(null);
 
   const formatCurrency = (amount: number) => {
@@ -43,11 +42,11 @@ const AdminPanelComplete: React.FC = () => {
 
   const getMarginBadge = (margin: number) => {
     if (margin >= 10) {
-      return <Badge className="bg-green-500 text-white">{margin.toFixed(1)}%</Badge>;
+      return <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">{margin.toFixed(1)}%</Badge>;
     } else if (margin >= 0) {
-      return <Badge className="bg-amber-500 text-white">{margin.toFixed(1)}%</Badge>;
+      return <Badge className="bg-amber-500 text-white hover:bg-amber-600">{margin.toFixed(1)}%</Badge>;
     } else {
-      return <Badge className="bg-red-500 text-white">{margin.toFixed(1)}%</Badge>;
+      return <Badge className="bg-red-500 text-white hover:bg-red-600">{margin.toFixed(1)}%</Badge>;
     }
   };
 
@@ -90,13 +89,14 @@ const AdminPanelComplete: React.FC = () => {
 
   const sortedAndFilteredUsers = [...users]
     .filter(user => {
-      const matchesSearch = user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           user.fullName.toLowerCase().includes(searchTerm.toLowerCase());
-     
+      const matchesSearch =
+        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.fullName.toLowerCase().includes(searchTerm.toLowerCase());
+
       if (!matchesSearch) return false;
-     
+
       if (activeFilters.length === 0) return true;
-     
+
       return activeFilters.some(filter => {
         switch (filter) {
           case 'active': return user.isActive && !user.suspended;
@@ -150,12 +150,10 @@ const AdminPanelComplete: React.FC = () => {
       }
       console.log('[admin_list OK] rows:', (data ?? []).length, 'sample:', (data && data[0]) || null);
 
-      // Base mapping from RPC
       let mappedBase = (data ?? []).map((r: any, idx: number) => {
         const lastLogin = r.last_login;
         const isActive = !!r.is_active;
 
-        // IMPORTANT: if your RPC uses a different key for realm id, add it to this OR-chain.
         const realmId: string | null = r.qbo_realm_id || r.realm_id || r.qboRealmId || null;
 
         const mappedRow = {
@@ -177,7 +175,6 @@ const AdminPanelComplete: React.FC = () => {
           mrr: 0,
           createdAt: r.created_at,
           lastLogin,
-          // Keep realm for enrichment (may be overridden):
           realmId,
         };
 
@@ -191,7 +188,6 @@ const AdminPanelComplete: React.FC = () => {
         return mappedRow;
       });
 
-      // Enrich realms from profiles (in case RPC lacks them)
       const userIds = mappedBase.map(u => u.id);
       if (userIds.length > 0) {
         const { data: profilesData, error: profilesErr } = await supabase
@@ -226,7 +222,7 @@ const AdminPanelComplete: React.FC = () => {
 
     const today = new Date();
     let currentYear = today.getFullYear();
-    let currentMonth = today.getMonth() + 1; // JS months are 0-based
+    let currentMonth = today.getMonth() + 1;
     console.log('[P&L params]', { currentYear, currentMonth, timeframe });
 
     const realmIds = Array.from(
@@ -287,7 +283,6 @@ const AdminPanelComplete: React.FC = () => {
       console.warn('[P&L] No realmIds found among users. The three columns will fall back to null/0.');
     }
 
-    // Merge: set fields with view data (if available), and compute margin %
     const enriched = baseUsers.map((u, idx) => {
       let revenue: number | null = null;
       let profit: number | null = null;
@@ -326,18 +321,16 @@ const AdminPanelComplete: React.FC = () => {
     const run = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user && !cancelled) {
-        setMyUid(user.id); // ← NEW: remember my uid
+        setMyUid(user.id);
         await fetchAdmin(user.id);
         return;
       }
-      // If user not ready yet, wait for auth
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!cancelled && session?.user) {
-          setMyUid(session.user.id); // ← NEW: remember my uid
+          setMyUid(session.user.id);
           fetchAdmin(session.user.id);
         }
       });
-      // cleanup
       return () => subscription.unsubscribe();
     };
     const cleanupPromise = run();
@@ -355,27 +348,29 @@ const AdminPanelComplete: React.FC = () => {
 
   return (
     <div
-      className="space-y-6 p-6 pb-28 h-[100dvh] overflow-y-auto"
+      className="space-y-6 p-6 pb-28 h-[100dvh] overflow-y-auto bg-background"
       style={{ WebkitOverflowScrolling: 'touch' }}
     >
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Admin Panel</h1>
-          <p className="text-gray-600">Manage users and system settings</p>
+          <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
+          <p className="text-muted-foreground">Manage users and system settings</p>
         </div>
-       
       </div>
+
+      {/* KPI cards (unchanged component) */}
       <AdminKPICards stats={stats} onCardClick={handleFilterToggle} />
+
       <div className="space-y-4">
         {/* Timeframe Selector */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium">Timeframe:</label>
+            <label className="text-sm font-medium text-foreground">Timeframe:</label>
             <Select value={timeframe} onValueChange={setTimeframe}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-40 dark:bg-slate-900/60 dark:border-slate-700">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="dark:bg-slate-900/90 dark:border-slate-700">
                 <SelectItem value="This Month">This Month</SelectItem>
                 <SelectItem value="Last Month">Last Month</SelectItem>
                 <SelectItem value="YTD">YTD</SelectItem>
@@ -383,19 +378,23 @@ const AdminPanelComplete: React.FC = () => {
             </Select>
           </div>
         </div>
+
+        {/* Search */}
         <div className="flex space-x-4">
           <div className="flex-1">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 placeholder="Search users..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 dark:bg-slate-900/60 dark:border-slate-700 placeholder:text-muted-foreground"
               />
             </div>
           </div>
         </div>
+
+        {/* Filters + Bulk actions (components keep their own styling) */}
         <FilterChips
           activeFilters={activeFilters}
           onFilterToggle={handleFilterToggle}
@@ -412,10 +411,12 @@ const AdminPanelComplete: React.FC = () => {
           onClear={() => setSelectedUsers([])}
         />
       </div>
-      <Card>
+
+      {/* Users Table */}
+      <Card className="dark:bg-slate-900/60 dark:border-slate-700">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Users ({sortedAndFilteredUsers.length})</span>
+            <span className="text-foreground">Users ({sortedAndFilteredUsers.length})</span>
             <Checkbox
               checked={selectedUsers.length === sortedAndFilteredUsers.length && sortedAndFilteredUsers.length > 0}
               onCheckedChange={handleSelectAll}
@@ -424,41 +425,50 @@ const AdminPanelComplete: React.FC = () => {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b">
+                <tr className="border-b bg-muted/30 dark:bg-slate-900/40 dark:border-slate-800">
                   <th className="text-left p-2 w-8"></th>
-                  <th className="text-left p-2">User</th>
-                  <th className="text-left p-2">Role</th>
-                  <th className="text-left p-2">Status</th>
-                  <th className="text-left p-2">Last Login</th>
-                  <th className="text-left p-2">QBO</th>
-                  <th className="text-left p-2">CFO Uses</th>
-                  <th className="text-left p-2">AI Tokens</th>
-                  <th className="text-left p-2">Plan</th>
-                  <th className="text-right p-2 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('revenueMTD')}>
-                    <div className="flex items-center justify-end">
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">User</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Role</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Status</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Last Login</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">QBO</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">CFO Uses</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">AI Tokens</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Plan</th>
+                  <th
+                    className="text-right p-2 cursor-pointer hover:bg-muted/50 dark:hover:bg-slate-900/60"
+                    onClick={() => handleSort('revenueMTD')}
+                  >
+                    <div className="flex items-center justify-end text-muted-foreground uppercase tracking-wide text-xs">
                       Revenue ({pnlLabel}) <ArrowUpDown className="ml-1 h-3 w-3" />
                     </div>
                   </th>
-                  <th className="text-right p-2 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('netProfitMTD')}>
-                    <div className="flex items-center justify-end">
+                  <th
+                    className="text-right p-2 cursor-pointer hover:bg-muted/50 dark:hover:bg-slate-900/60"
+                    onClick={() => handleSort('netProfitMTD')}
+                  >
+                    <div className="flex items-center justify-end text-muted-foreground uppercase tracking-wide text-xs">
                       Net Profit ({pnlLabel}) <ArrowUpDown className="ml-1 h-3 w-3" />
                     </div>
                   </th>
-                  <th className="text-center p-2 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('netMargin')}>
-                    <div className="flex items-center justify-center">
+                  <th
+                    className="text-center p-2 cursor-pointer hover:bg-muted/50 dark:hover:bg-slate-900/60"
+                    onClick={() => handleSort('netMargin')}
+                  >
+                    <div className="flex items-center justify-center text-muted-foreground uppercase tracking-wide text-xs">
                       Net Margin (%) <ArrowUpDown className="ml-1 h-3 w-3" />
                     </div>
                   </th>
-                  <th className="text-left p-2">Actions</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedAndFilteredUsers.map((user) => (
                   <tr
                     key={user.id}
-                    className="border-b hover:bg-gray-50 cursor-pointer"
+                    className="border-b dark:border-slate-800 hover:bg-muted/40 dark:hover:bg-slate-900/40 cursor-pointer"
                     onClick={() => handleViewUser(user)}
                   >
                     <td className="p-2" onClick={(e) => e.stopPropagation()}>
@@ -469,44 +479,61 @@ const AdminPanelComplete: React.FC = () => {
                     </td>
                     <td className="p-2">
                       <div>
-                        <p className="font-medium">{user.fullName}</p>
-                        <p className="text-sm text-gray-600">{user.email}</p>
+                        <p className="font-medium text-foreground">{user.fullName}</p>
+                        <p className="text-xs text-muted-foreground">{user.email}</p>
                       </div>
                     </td>
                     <td className="p-2">
-                      <Badge variant="outline">{user.role}</Badge>
+                      <Badge variant="outline" className="border-slate-300 text-foreground dark:border-slate-600">
+                        {user.role}
+                      </Badge>
                     </td>
                     <td className="p-2">
-                      {/* 🔴 Make Suspended clearly red; keep others as-is */}
                       <Badge
                         variant={user.suspended ? "default" : (user.isActive ? "default" : "secondary")}
-                        className={user.suspended ? "bg-red-500 text-white hover:bg-red-600" : undefined}
+                        className={
+                          user.suspended
+                            ? "bg-red-600 text-white hover:bg-red-700"
+                            : user.isActive
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                            : "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                        }
                       >
                         {user.suspended ? 'Suspended' : (user.isActive ? 'Active' : 'Inactive')}
                       </Badge>
                     </td>
-                    <td className="p-2 text-sm">
-                      {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : <span className="text-muted-foreground">Never</span>}
+                    <td className="p-2 text-xs text-foreground">
+                      {user.lastLogin
+                        ? new Date(user.lastLogin).toLocaleDateString()
+                        : <span className="text-muted-foreground">Never</span>}
                     </td>
                     <td className="p-2">
-                      <Badge variant={user.qboConnected ? "default" : "outline"}>
+                      <Badge
+                        className={
+                          user.qboConnected
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
+                            : "bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
+                        }
+                        variant="outline"
+                      >
                         {user.qboConnected ? 'Connected' : 'Not Connected'}
                       </Badge>
                     </td>
-                    <td className="p-2 font-medium">{user.cfoAgentUses}</td>
-                    <td className="p-2 font-medium">{(user.aiTokens ?? 0).toLocaleString()}</td>
+                    <td className="p-2 font-medium text-foreground">{user.cfoAgentUses}</td>
+                    <td className="p-2 font-medium text-foreground">{(user.aiTokens ?? 0).toLocaleString()}</td>
                     <td className="p-2">
-                      <Badge>{user.plan}</Badge>
+                      <Badge className="bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100">
+                        {user.plan}
+                      </Badge>
                     </td>
-                    <td className="p-2 text-right font-bold">
+                    <td className="p-2 text-right font-semibold text-foreground">
                       {user.revenueMTD !== null && user.revenueMTD !== undefined
                         ? formatCurrency(user.revenueMTD)
                         : <span className="text-muted-foreground">—</span>}
                     </td>
-                   
-                    <td className="p-2 text-right font-bold">
+                    <td className="p-2 text-right font-semibold">
                       {user.netProfitMTD !== null && user.netProfitMTD !== undefined ? (
-                        <span className={user.netProfitMTD < 0 ? 'text-red-500' : ''}>
+                        <span className={user.netProfitMTD < 0 ? 'text-red-600' : 'text-foreground'}>
                           {formatCurrency(user.netProfitMTD)}
                         </span>
                       ) : (
@@ -514,11 +541,13 @@ const AdminPanelComplete: React.FC = () => {
                       )}
                     </td>
                     <td className="p-2 text-center">
-                      {user.netMargin !== null && user.netMargin !== undefined ? getMarginBadge(user.netMargin) : <span className="text-muted-foreground">—</span>}
+                      {user.netMargin !== null && user.netMargin !== undefined
+                        ? getMarginBadge(user.netMargin)
+                        : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="p-2" onClick={(e) => e.stopPropagation()}>
                       <div className="flex space-x-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" className="dark:bg-slate-900/60 dark:border-slate-700">
                           <Key className="h-3 w-3" />
                         </Button>
                       </div>
@@ -530,6 +559,7 @@ const AdminPanelComplete: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+
       <UserDetailsModal
         user={selectedUser}
         isOpen={showUserDetails}
@@ -538,7 +568,6 @@ const AdminPanelComplete: React.FC = () => {
           setSelectedUser(null);
         }}
       />
-      {/* Drawer: now with onSaved to refresh + close */}
       <UserDetailDrawer
         user={selectedUser}
         isOpen={showUserDrawer}
