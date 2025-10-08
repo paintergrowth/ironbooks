@@ -415,7 +415,7 @@ const AdminPanelComplete: React.FC = () => {
             />
           </div>
         </div>
-
+  </div>
 
       {/* Users Table */}
       <Card className="dark:bg-slate-900/60 dark:border-slate-700">
