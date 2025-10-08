@@ -395,22 +395,27 @@ const AdminPanelComplete: React.FC = () => {
         </div>
 
         {/* Filters + Bulk actions (components keep their own styling) */}
-        <FilterChips
-          activeFilters={activeFilters}
-          onFilterToggle={handleFilterToggle}
-          onClearAll={() => setActiveFilters([])}
-          counts={counts}
-        />
-        <BulkActionsToolbar
-          selectedCount={selectedUsers.length}
-          onResendInvite={() => console.log('Resend invite')}
-          onForcePasswordReset={() => console.log('Force password reset')}
-          onSuspend={() => console.log('Suspend users')}
-          onUnsuspend={() => console.log('Unsuspend users')}
-          onExportCSV={() => console.log('Export CSV')}
-          onClear={() => setSelectedUsers([])}
-        />
-      </div>
+        <div className="rounded-lg border bg-muted/30 dark:bg-slate-900/60 dark:border-slate-700 p-3">
+          <FilterChips
+            activeFilters={activeFilters}
+            onFilterToggle={handleFilterToggle}
+            onClearAll={() => setActiveFilters([])}
+            counts={counts}
+          />
+        
+          <div className="mt-3">
+            <BulkActionsToolbar
+              selectedCount={selectedUsers.length}
+              onResendInvite={() => console.log('Resend invite')}
+              onForcePasswordReset={() => console.log('Force password reset')}
+              onSuspend={() => console.log('Suspend users')}
+              onUnsuspend={() => console.log('Unsuspend users')}
+              onExportCSV={() => console.log('Export CSV')}
+              onClear={() => setSelectedUsers([])}
+            />
+          </div>
+        </div>
+
 
       {/* Users Table */}
       <Card className="dark:bg-slate-900/60 dark:border-slate-700">
