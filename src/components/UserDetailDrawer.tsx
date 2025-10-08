@@ -51,7 +51,6 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const initialRoleTitle: RoleDraft = (user.role === 'Admin' || user.role === 'User') ? user.role : 'User';
   const initialStatus: StatusDraft = user.isActive ? 'Active' : 'Suspended';
   const initialPlan: PlanDraft = (['No Subscription', 'Iron', 'Gold', 'Platinum'].includes(user.plan) ? user.plan : 'No Subscription') as PlanDraft;
-  // Try to use any company-ish prop if present; otherwise empty string
   const initialCompany = useMemo(
     () => (user.company ?? user.organization ?? '') as string,
     [user?.id]
@@ -85,8 +84,8 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const buildMonths = () => {
     const out: { y: number; m: number; key: MonthKey; label: string }[] = [];
     const now = new Date();
-    const start = new Date(now.getFullYear() - 1, 0, 1); // last year Jan 1
-    const end = new Date(now.getFullYear(), now.getMonth(), 1); // current month start
+    const start = new Date(now.getFullYear() - 1, 0, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 1);
     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
       const y = d.getFullYear();
       const m = d.getMonth() + 1;
@@ -171,11 +170,10 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const handleSave = async () => {
     if (!isDirty) return;
 
-    // Build minimal update payload
     const updates: Record<string, any> = {};
     if ((nameDraft ?? '').trim() !== (baseline.name ?? '').trim()) updates.full_name = nameDraft.trim();
-    if (roleDraft !== baseline.role) updates.role = roleDraft.toLowerCase(); // 'admin' | 'user'
-    if (statusDraft !== baseline.status) updates.is_active = (statusDraft === 'Active'); // boolean
+    if (roleDraft !== baseline.role) updates.role = roleDraft.toLowerCase();
+    if (statusDraft !== baseline.status) updates.is_active = (statusDraft === 'Active');
     if (planDraft !== baseline.plan) updates.plan = planDraft;
     if ((companyDraft ?? '').trim() !== (baseline.company ?? '').trim()) updates.company = companyDraft.trim();
 
@@ -194,7 +192,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
         return;
       }
 
-      onSaved?.(); // let parent refresh grid
+      onSaved?.();
       onClose();
     } finally {
       setIsSaving(false);
@@ -236,13 +234,10 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
     let cancelled = false;
 
     const run = async () => {
-      // if grid already provided it, keep it
       if (initialRealmGuess) {
         if (!cancelled) setResolvedRealmId(initialRealmGuess);
         return;
       }
-
-      // else fetch from profiles
       try {
         const { data, error } = await supabase
           .from('profiles')
@@ -294,7 +289,6 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
         const drafts: Record<MonthKey, string> = {};
         Object.entries(map).forEach(([k, r]) => { drafts[k] = r?.video_url || ''; });
 
-        // Pre-generate signed URLs for rows that have a pdf_path
         const links: Record<MonthKey, string> = {};
         for (const { key } of months) {
           const r = map[key];
@@ -366,7 +360,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
       if (upErr) throw upErr;
 
       const { data: { user: u } } = await supabase.auth.getUser();
-      await upsertRow(y, m, { pdf_path: path, uploaded_by: u?.id || null });
+      await upsertRow(y, m, { pdf_path: path, uploaded_by: u?.id || null } as any);
 
       await refreshOne(y, m);
       onSaved?.();
@@ -416,17 +410,18 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent className="w-[600px] sm:max-w-[600px] overflow-y-auto">
+      <SheetContent className="w-[600px] sm:max-w-[600px] overflow-y-auto bg-background text-foreground">
         <SheetHeader>
           <div className="flex items-center justify-between">
-            <SheetTitle className="flex items-center space-x-2">
+            <SheetTitle className="flex items-center space-x-2 text-foreground">
               <User className="w-5 h-5" />
               <span>{baseline.name || user.fullName}</span>
             </SheetTitle>
 
             {isDirty && (
               <div className="space-x-2">
-                <Button variant="outline" size="sm" onClick={handleCancel} disabled={isSaving}>
+                <Button variant="outline" size="sm" onClick={handleCancel} disabled={isSaving}
+                  className="dark:bg-slate-900/60 dark:border-slate-700">
                   Cancel
                 </Button>
                 <Button size="sm" onClick={handleSave} disabled={isSaving}>
@@ -439,8 +434,7 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
 
         <div className="mt-6">
           <Tabs defaultValue="overview" className="w-full">
-            {/* grid-cols from 4 -> 5 to add Financials */}
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-5 rounded-lg border bg-muted/30 dark:bg-slate-900/60 dark:border-slate-700">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
               <TabsTrigger value="billing">Billing</TabsTrigger>
@@ -450,38 +444,36 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
 
             {/* OVERVIEW */}
             <TabsContent value="overview" className="space-y-4">
-              <Card>
+              <Card className="dark:bg-slate-900/60 dark:border-slate-700">
                 <CardHeader>
-                  <CardTitle className="text-sm">Profile</CardTitle>
+                  <CardTitle className="text-sm text-foreground">Profile</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {/* Name (editable) – shown ABOVE Email */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Name:</span>
+                    <span className="text-sm text-muted-foreground">Name:</span>
                     <div className="min-w-[14rem]">
                       <Input
                         value={nameDraft}
                         onChange={(e) => setNameDraft(e.target.value)}
-                        className="h-8"
+                        className="h-8 dark:bg-slate-900/60 dark:border-slate-700 placeholder:text-muted-foreground"
                         placeholder="Enter full name"
                       />
                     </div>
                   </div>
 
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Email:</span>
-                    <span className="text-sm font-medium">{user.email}</span>
+                    <span className="text-sm text-muted-foreground">Email:</span>
+                    <span className="text-sm font-medium text-foreground">{user.email}</span>
                   </div>
 
-                  {/* Status (editable) */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Status:</span>
+                    <span className="text-sm text-muted-foreground">Status:</span>
                     <div className="min-w-[10rem]">
                       <Select value={statusDraft} onValueChange={(v) => setStatusDraft(v as StatusDraft)}>
-                        <SelectTrigger className="h-8">
+                        <SelectTrigger className="h-8 dark:bg-slate-900/60 dark:border-slate-700">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="dark:bg-slate-900/90 dark:border-slate-700">
                           <SelectItem value="Active">Active</SelectItem>
                           <SelectItem value="Suspended">Suspended</SelectItem>
                         </SelectContent>
@@ -489,15 +481,14 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                     </div>
                   </div>
 
-                  {/* Role (editable) */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Role:</span>
+                    <span className="text-sm text-muted-foreground">Role:</span>
                     <div className="min-w-[8rem]">
                       <Select value={roleDraft} onValueChange={(v) => setRoleDraft(v as RoleDraft)}>
-                        <SelectTrigger className="h-8">
+                        <SelectTrigger className="h-8 dark:bg-slate-900/60 dark:border-slate-700">
                           <SelectValue placeholder="Select role" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="dark:bg-slate-900/90 dark:border-slate-700">
                           <SelectItem value="User">User</SelectItem>
                           <SelectItem value="Admin">Admin</SelectItem>
                         </SelectContent>
@@ -505,14 +496,13 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                     </div>
                   </div>
 
-                  {/* Organization (editable -> profiles.company) */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Organization:</span>
+                    <span className="text-sm text-muted-foreground">Organization:</span>
                     <div className="min-w-[14rem]">
                       <Input
                         value={companyDraft}
                         onChange={(e) => setCompanyDraft(e.target.value)}
-                        className="h-8"
+                        className="h-8 dark:bg-slate-900/60 dark:border-slate-700 placeholder:text-muted-foreground"
                         placeholder="Enter organization"
                       />
                     </div>
@@ -520,26 +510,33 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="dark:bg-slate-900/60 dark:border-slate-700">
                 <CardHeader>
-                  <CardTitle className="text-sm">QuickBooks Integration</CardTitle>
+                  <CardTitle className="text-sm text-foreground">QuickBooks Integration</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Status:</span>
-                    <Badge variant={user.qboConnected ? "default" : "outline"}>
+                    <span className="text-sm text-muted-foreground">Status:</span>
+                    <Badge
+                      variant={user.qboConnected ? "default" : "outline"}
+                      className={
+                        user.qboConnected
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
+                      }
+                    >
                       {user.qboConnected ? 'Connected' : 'Not Connected'}
                     </Badge>
                   </div>
                   {user.qboConnected && (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Company:</span>
-                        <span className="text-sm">{user.qboCompany || 'N/A'}</span>
+                        <span className="text-sm text-muted-foreground">Company:</span>
+                        <span className="text-sm text-foreground">{user.qboCompany || 'N/A'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Last Sync:</span>
-                        <span className="text-sm">{formatDate(user.qboLastSync || user.lastLogin)}</span>
+                        <span className="text-sm text-muted-foreground">Last Sync:</span>
+                        <span className="text-sm text-foreground">{formatDate(user.qboLastSync || user.lastLogin)}</span>
                       </div>
                     </>
                   )}
@@ -549,41 +546,41 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
 
             {/* ACTIVITY */}
             <TabsContent value="activity" className="space-y-4">
-              <Card>
+              <Card className="dark:bg-slate-900/60 dark:border-slate-700">
                 <CardHeader>
-                  <CardTitle className="text-sm">CFO Agent Usage</CardTitle>
+                  <CardTitle className="text-sm text-foreground">CFO Agent Usage</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Total Uses:</span>
-                      <span className="text-sm font-bold">{user.cfoAgentUses}</span>
+                      <span className="text-sm text-muted-foreground">Total Uses:</span>
+                      <span className="text-sm font-bold text-foreground">{user.cfoAgentUses}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Last 7 days:</span>
-                      <span className="text-sm">{user.cfoUses7d || Math.floor(user.cfoAgentUses * 0.3)}</span>
+                      <span className="text-sm text-muted-foreground">Last 7 days:</span>
+                      <span className="text-sm text-foreground">{user.cfoUses7d || Math.floor(user.cfoAgentUses * 0.3)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Last 30 days:</span>
-                      <span className="text-sm">{user.cfoUses30d || Math.floor(user.cfoAgentUses * 0.7)}</span>
+                      <span className="text-sm text-muted-foreground">Last 30 days:</span>
+                      <span className="text-sm text-foreground">{user.cfoUses30d || Math.floor(user.cfoAgentUses * 0.7)}</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="dark:bg-slate-900/60 dark:border-slate-700">
                 <CardHeader>
-                  <CardTitle className="text-sm">Login History</CardTitle>
+                  <CardTitle className="text-sm text-foreground">Login History</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Last Login:</span>
-                      <span>{formatDate(user.lastLogin)}</span>
+                      <span className="text-muted-foreground">Last Login:</span>
+                      <span className="text-foreground">{formatDate(user.lastLogin)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Created:</span>
-                      <span>{formatDate(user.createdAt)}</span>
+                      <span className="text-muted-foreground">Created:</span>
+                      <span className="text-foreground">{formatDate(user.createdAt)}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -592,20 +589,19 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
 
             {/* BILLING */}
             <TabsContent value="billing" className="space-y-4">
-              <Card>
+              <Card className="dark:bg-slate-900/60 dark:border-slate-700">
                 <CardHeader>
-                  <CardTitle className="text-sm">Plan & Billing</CardTitle>
+                  <CardTitle className="text-sm text-foreground">Plan & Billing</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {/* Plan (editable) */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Plan:</span>
+                    <span className="text-sm text-muted-foreground">Plan:</span>
                     <div className="min-w-[12rem]">
                       <Select value={planDraft} onValueChange={(v) => setPlanDraft(v as PlanDraft)}>
-                        <SelectTrigger className="h-8">
+                        <SelectTrigger className="h-8 dark:bg-slate-900/60 dark:border-slate-700">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="dark:bg-slate-900/90 dark:border-slate-700">
                           <SelectItem value="No Subscription">No Subscription</SelectItem>
                           <SelectItem value="Iron">Iron</SelectItem>
                           <SelectItem value="Gold">Gold</SelectItem>
@@ -616,14 +612,14 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                   </div>
 
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Status:</span>
+                    <span className="text-sm text-muted-foreground">Status:</span>
                     <Badge variant={user.billingStatus === 'active' ? 'default' : 'destructive'}>
                       {user.billingStatus || 'Active'}
                     </Badge>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">MRR:</span>
-                    <span className="text-sm font-medium">${user.mrr || '99'}</span>
+                    <span className="text-sm text-muted-foreground">MRR:</span>
+                    <span className="text-sm font-medium text-foreground">${user.mrr || '99'}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -632,27 +628,27 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
             {/* ACTIONS */}
             <TabsContent value="actions" className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <Button size="sm" variant="outline" className="justify-start">
+                <Button size="sm" variant="outline" className="justify-start dark:bg-slate-900/60 dark:border-slate-700">
                   <Shield className="w-4 h-4 mr-2" />
                   Impersonate
                 </Button>
-                <Button size="sm" variant="outline" className="justify-start">
+                <Button size="sm" variant="outline" className="justify-start dark:bg-slate-900/60 dark:border-slate-700">
                   <Key className="w-4 h-4 mr-2" />
                   Reset Password
                 </Button>
-                <Button size="sm" variant="outline" className="justify-start">
+                <Button size="sm" variant="outline" className="justify-start dark:bg-slate-900/60 dark:border-slate-700">
                   <Mail className="w-4 h-4 mr-2" />
                   Resend Invite
                 </Button>
-                <Button size="sm" variant="outline" className="justify-start">
+                <Button size="sm" variant="outline" className="justify-start dark:bg-slate-900/60 dark:border-slate-700">
                   <Link className="w-4 h-4 mr-2" />
                   Relink QBO
                 </Button>
-                <Button size="sm" variant="outline" className="justify-start">
+                <Button size="sm" variant="outline" className="justify-start dark:bg-slate-900/60 dark:border-slate-700">
                   <UserX className="w-4 h-4 mr-2" />
                   Suspend User
                 </Button>
-                <Button size="sm" variant="outline" className="justify-start">
+                <Button size="sm" variant="outline" className="justify-start dark:bg-slate-900/60 dark:border-slate-700">
                   <CreditCard className="w-4 h-4 mr-2" />
                   Grant Credit
                 </Button>
@@ -662,149 +658,157 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
             {/* FINANCIALS (admin-only) */}
             <TabsContent value="financials" className="space-y-4">
               {!viewerIsAdmin ? (
-                <Card>
-                  <CardContent className="text-sm text-gray-600">
+                <Card className="dark:bg-slate-900/60 dark:border-slate-700">
+                  <CardContent className="text-sm text-muted-foreground">
                     Only admins can view Financials.
                   </CardContent>
                 </Card>
               ) : !resolvedRealmId ? (
-                <Card>
-                  <CardContent className="text-sm text-gray-600">
+                <Card className="dark:bg-slate-900/60 dark:border-slate-700">
+                  <CardContent className="text-sm text-muted-foreground">
                     This user does not have a connected QuickBooks realm.
                   </CardContent>
                 </Card>
               ) : (
-                <Card>
+                <Card className="dark:bg-slate-900/60 dark:border-slate-700">
                   <CardHeader>
-                    <CardTitle className="text-sm">Financials (Realm: {resolvedRealmId})</CardTitle>
+                    <CardTitle className="text-sm text-foreground">Financials (Realm: {resolvedRealmId})</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {loadingArtifacts ? (
-                      <div className="text-sm text-gray-600">Loading…</div>
+                      <div className="text-sm text-muted-foreground">Loading…</div>
                     ) : (
-                    <>
-{/* nicer monthly cards */}
-<div className="grid grid-cols-1 gap-3">
-  {months.map(({ y, m, key, label }) => {
-    const row = artifacts[key];
-    const busy = !!savingByMonth[key];
-    const signedUrl = signedLinks[key];
+                      <>
+                        {/* monthly cards */}
+                        <div className="grid grid-cols-1 gap-3">
+                          {months.map(({ y, m, key, label }) => {
+                            const row = artifacts[key];
+                            const busy = !!savingByMonth[key];
+                            const signedUrl = signedLinks[key];
 
-    return (
-      <div
-        key={key}
-        className="rounded-xl border bg-white/50 p-4 shadow-sm hover:shadow-md transition-colors"
-      >
-        {/* Row 1 — Month & Year */}
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">{label}</div>
-          {/* optional tiny status chips */}
-          <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${
-              row?.pdf_path ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'
-            }`}>
-              PDF {row?.pdf_path ? 'attached' : 'missing'}
-            </span>
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${
-              row?.video_added ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'
-            }`}>
-              Video {row?.video_added ? 'added' : 'pending'}
-            </span>
-          </div>
-        </div>
+                            return (
+                              <div
+                                key={key}
+                                className="rounded-xl border p-4 shadow-sm hover:shadow-md transition-colors
+                                           bg-muted/30 dark:bg-slate-900/60 dark:border-slate-700"
+                              >
+                                {/* Row 1 — Month & Year */}
+                                <div className="flex items-center justify-between">
+                                  <div className="text-sm font-semibold text-foreground">{label}</div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                                      row?.pdf_path
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800'
+                                        : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
+                                    }`}>
+                                      PDF {row?.pdf_path ? 'attached' : 'missing'}
+                                    </span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                                      row?.video_added
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800'
+                                        : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
+                                    }`}>
+                                      Video {row?.video_added ? 'added' : 'pending'}
+                                    </span>
+                                  </div>
+                                </div>
 
-        <div className="mt-3 space-y-3 divide-y">
-          {/* Row 2 — P&L Generated + PDF controls */}
-          <div className="pt-1 first:pt-0 flex flex-wrap items-center gap-3">
-            <label className="inline-flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                readOnly
-                checked={!!row?.pnl_generated}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/30"
-              />
-              <span className="text-gray-700">P&amp;L Generated</span>
-            </label>
+                                <div className="mt-3 space-y-3 divide-y divide-slate-200/60 dark:divide-slate-800">
+                                  {/* Row 2 — P&L Generated + PDF controls */}
+                                  <div className="pt-1 first:pt-0 flex flex-wrap items-center gap-3">
+                                    <label className="inline-flex items-center gap-2 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        readOnly
+                                        checked={!!row?.pnl_generated}
+                                        className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-2 focus:ring-primary/30 dark:border-slate-700"
+                                      />
+                                      <span className="text-foreground/80">P&amp;L Generated</span>
+                                    </label>
 
-            <div className="flex items-center gap-2">
-              {row?.pdf_path && signedUrl ? (
-                <>
-                  <a
-                    className="text-sm underline text-blue-700 hover:text-blue-800"
-                    href={signedUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View PDF
-                  </a>
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => handleDelete(y, m)}>
-                    {busy ? 'Deleting…' : 'Delete'}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    className="hidden"
-                    ref={(el) => { fileInputs.current[key] = el; }}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleUpload(y, m, f);
-                      e.currentTarget.value = '';
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => fileInputs.current[key]?.click()}
-                  >
-                    {busy ? 'Uploading…' : 'Upload PDF'}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
+                                    <div className="flex items-center gap-2">
+                                      {row?.pdf_path && signedUrl ? (
+                                        <>
+                                          <a
+                                            className="text-sm underline text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                                            href={signedUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                          >
+                                            View PDF
+                                          </a>
+                                          <Button size="sm" variant="outline" disabled={busy}
+                                            onClick={() => handleDelete(y, m)}
+                                            className="dark:bg-slate-900/60 dark:border-slate-700"
+                                          >
+                                            {busy ? 'Deleting…' : 'Delete'}
+                                          </Button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <input
+                                            type="file"
+                                            accept="application/pdf"
+                                            className="hidden"
+                                            ref={(el) => { fileInputs.current[key] = el; }}
+                                            onChange={(e) => {
+                                              const f = e.target.files?.[0];
+                                              if (f) handleUpload(y, m, f);
+                                              e.currentTarget.value = '';
+                                            }}
+                                          />
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={busy}
+                                            onClick={() => fileInputs.current[key]?.click()}
+                                            className="dark:bg-slate-900/60 dark:border-slate-700"
+                                          >
+                                            {busy ? 'Uploading…' : 'Upload PDF'}
+                                          </Button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
 
-          {/* Row 3 — Video Added + URL input (full width) */}
-          <div className="pt-3 flex flex-col gap-2">
-            <label className="inline-flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                readOnly
-                checked={!!row?.video_added}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/30"
-              />
-              <span className="text-gray-700">Video Added</span>
-            </label>
+                                  {/* Row 3 — Video Added + URL input */}
+                                  <div className="pt-3 flex flex-col gap-2">
+                                    <label className="inline-flex items-center gap-2 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        readOnly
+                                        checked={!!row?.video_added}
+                                        className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-2 focus:ring-primary/30 dark:border-slate-700"
+                                      />
+                                      <span className="text-foreground/80">Video Added</span>
+                                    </label>
 
-            <Input
-              value={videoDrafts[key] ?? ''}
-              onChange={(e) => setVideoDrafts(prev => ({ ...prev, [key]: e.target.value }))}
-              placeholder="https://video-url…"
-              className="h-9 w-full"
-              disabled={busy}
-            />
-          </div>
+                                    <Input
+                                      value={videoDrafts[key] ?? ''}
+                                      onChange={(e) => setVideoDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                                      placeholder="https://video-url…"
+                                      className="h-9 w-full dark:bg-slate-900/60 dark:border-slate-700 placeholder:text-muted-foreground"
+                                      disabled={busy}
+                                    />
+                                  </div>
 
-          {/* Row 4 — Save button (right aligned) */}
-          <div className="pt-3 flex justify-end">
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => handleSaveVideo(y, m, videoDrafts[key] ?? '')}
-              className="min-w-[88px]"
-            >
-              {busy ? 'Saving…' : 'Save'}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  })}
-</div>
-</>
+                                  {/* Row 4 — Save button */}
+                                  <div className="pt-3 flex justify-end">
+                                    <Button
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => handleSaveVideo(y, m, videoDrafts[key] ?? '')}
+                                      className="min-w-[88px]"
+                                    >
+                                      {busy ? 'Saving…' : 'Save'}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>
