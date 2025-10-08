@@ -2,24 +2,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { TrendingDownIcon, TrendingUpIcon, Calendar, Download } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TrendingDownIcon, TrendingUpIcon, Calendar, Download } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart";
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
+} from '@/components/ui/chart';
+import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts';
 import { supabase, invokeWithAuthSafe } from '@/lib/supabase';
 import { useAppContext } from '@/contexts/AppContext';
 import { useEffectiveIdentity } from '@/lib/impersonation';
@@ -50,9 +44,9 @@ const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
 const thisYear = new Date().getFullYear();
 const currentMonthIndex = Math.min(new Date().getMonth() + 1, 9); // cap at Sep (9)
 const DEMO_MONTH_SERIES: { date: string; revenue: number; expenses: number }[] = [
-  { date: `${thisYear}-01-01`, revenue: 120_000, expenses:  85_000 },
-  { date: `${thisYear}-02-01`, revenue: 130_000, expenses:  90_000 },
-  { date: `${thisYear}-03-01`, revenue: 125_000, expenses:  92_000 },
+  { date: `${thisYear}-01-01`, revenue: 120_000, expenses: 85_000 },
+  { date: `${thisYear}-02-01`, revenue: 130_000, expenses: 90_000 },
+  { date: `${thisYear}-03-01`, revenue: 125_000, expenses: 92_000 },
   { date: `${thisYear}-04-01`, revenue: 140_000, expenses: 100_000 },
   { date: `${thisYear}-05-01`, revenue: 150_000, expenses: 110_000 },
   { date: `${thisYear}-06-01`, revenue: 160_000, expenses: 115_000 },
@@ -71,8 +65,8 @@ const sumSlice = (startIdx: number, endIdx: number) => {
 };
 const quarterOfMonth = (m: number) => Math.ceil(m / 3); // 1..4
 const quarterBounds = (q: number) => {
-  const start = (q - 1) * 3 + 1; // 1,4,7,10
-  const end = q * 3;             // 3,6,9,12
+  const start = (q - 1) * 3 + 1;
+  const end = q * 3;
   return { start, end };
 };
 
@@ -84,9 +78,9 @@ function demoTiles(period: ApiPeriod) {
     const cur = monthRow(mIdx);
     const prev = monthRow(Math.max(1, mIdx - 1));
     return {
-      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
       expenses: { current: cur.expenses, previous: prev.expenses || 1 },
-      netProfit:{ current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
+      netProfit: { current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
     };
   }
 
@@ -94,9 +88,9 @@ function demoTiles(period: ApiPeriod) {
     const cur = monthRow(Math.max(1, mIdx - 1));
     const prev = monthRow(Math.max(1, mIdx - 2));
     return {
-      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
       expenses: { current: cur.expenses, previous: prev.expenses || 1 },
-      netProfit:{ current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
+      netProfit: { current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
     };
   }
 
@@ -105,12 +99,12 @@ function demoTiles(period: ApiPeriod) {
     const { start, end } = quarterBounds(thisQ);
     const prevQ = Math.max(1, thisQ - 1);
     const { start: pStart, end: pEnd } = quarterBounds(prevQ);
-    const cur = sumSlice(start, Math.min(end, mIdx)); // up to current month in quarter
+    const cur = sumSlice(start, Math.min(end, mIdx));
     const prev = sumSlice(pStart, pEnd);
     return {
-      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
       expenses: { current: cur.expenses, previous: prev.expenses || 1 },
-      netProfit:{ current: cur.net,     previous: prev.net || 1 },
+      netProfit: { current: cur.net, previous: prev.net || 1 },
     };
   }
 
@@ -123,35 +117,34 @@ function demoTiles(period: ApiPeriod) {
     const cur = sumSlice(lStart, Math.min(lEnd, mIdx));
     const prev = sumSlice(pStart, pEnd);
     return {
-      revenue:  { current: cur.revenue, previous: prev.revenue || 1 },
+      revenue: { current: cur.revenue, previous: prev.revenue || 1 },
       expenses: { current: cur.expenses, previous: prev.expenses || 1 },
-      netProfit:{ current: cur.net,     previous: prev.net || 1 },
+      netProfit: { current: cur.net, previous: prev.net || 1 },
     };
   }
 
   // ytd
   const curAgg = sumSlice(1, mIdx);
-  // fabricate prior YTD as 90% of current (so % changes render nicely)
   const prevAgg = { revenue: Math.round(curAgg.revenue * 0.9), expenses: Math.round(curAgg.expenses * 0.9) };
   return {
-    revenue:  { current: curAgg.revenue, previous: prevAgg.revenue || 1 },
+    revenue: { current: curAgg.revenue, previous: prevAgg.revenue || 1 },
     expenses: { current: curAgg.expenses, previous: prevAgg.expenses || 1 },
-    netProfit:{ current: curAgg.net,     previous: (prevAgg.revenue - prevAgg.expenses) || 1 },
+    netProfit: { current: curAgg.net, previous: (prevAgg.revenue - prevAgg.expenses) || 1 },
   };
 }
 
 // ===== Fallback chart data kept for safety =====
 const fallbackChartData = [
-  { date: "2024-01-01", revenue: 0, expenses: 0 },
-  { date: "2024-02-01", revenue: 0, expenses: 0 },
-  { date: "2024-03-01", revenue: 0, expenses: 0 },
-  { date: "2024-04-01", revenue: 0, expenses: 0 },
-  { date: "2024-05-01", revenue: 0, expenses: 0 },
-  { date: "2024-06-01", revenue: 0, expenses: 0 },
-  { date: "2024-07-01", revenue: 0, expenses: 0 },
+  { date: '2024-01-01', revenue: 0, expenses: 0 },
+  { date: '2024-02-01', revenue: 0, expenses: 0 },
+  { date: '2024-03-01', revenue: 0, expenses: 0 },
+  { date: '2024-04-01', revenue: 0, expenses: 0 },
+  { date: '2024-05-01', revenue: 0, expenses: 0 },
+  { date: '2024-06-01', revenue: 0, expenses: 0 },
+  { date: '2024-07-01', revenue: 0, expenses: 0 },
 ];
 
-// Helper functions
+// Helpers
 const toNumber = (v: unknown, def = 0): number => {
   const n = typeof v === 'string' ? Number(v) : (typeof v === 'number' ? v : NaN);
   return Number.isFinite(n) ? n : def;
@@ -167,20 +160,20 @@ const pctChange = (curr: number, prev: number): number | null => {
 };
 
 const toApiPeriod = (ui: UiTimeframe): ApiPeriod =>
-  ui === 'thisMonth'   ? 'this_month'   :
-  ui === 'lastMonth'   ? 'last_month'   :
-  ui === 'thisQuarter' ? 'this_quarter' :
-  ui === 'lastQuarter' ? 'last_quarter' :
-  'ytd';
+  ui === 'thisMonth' ? 'this_month'
+  : ui === 'lastMonth' ? 'last_month'
+  : ui === 'thisQuarter' ? 'this_quarter'
+  : ui === 'lastQuarter' ? 'last_quarter'
+  : 'ytd';
 
 const changeLabel = (period: UiTimeframe) =>
-  period === 'ytd'         ? 'from last year'
+  period === 'ytd' ? 'from last year'
   : period === 'thisQuarter' || period === 'lastQuarter' ? 'from last quarter'
   : 'from last month';
 
 const chartConfig = {
-  revenue: { label: "Revenue",  color: "hsl(var(--chart-1))" },
-  expenses:{ label: "Expenses", color: "hsl(var(--chart-2))" },
+  revenue: { label: 'Revenue', color: 'hsl(var(--chart-1))' },
+  expenses: { label: 'Expenses', color: 'hsl(var(--chart-2))' },
 } satisfies ChartConfig;
 
 interface DashboardProps {
@@ -206,27 +199,28 @@ const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }
   const ytd = rows.reduce((a, r) => a + r.expenses, 0);
 
   const base =
-    timeframe === 'this_month'   ? thisMonth   :
-    timeframe === 'last_month'   ? lastMonth   :
-    timeframe === 'this_quarter' ? thisQuarter :
-    timeframe === 'last_quarter' ? prevQuarter : ytd;
+    timeframe === 'this_month' ? thisMonth
+    : timeframe === 'last_month' ? lastMonth
+    : timeframe === 'this_quarter' ? thisQuarter
+    : timeframe === 'last_quarter' ? prevQuarter
+    : ytd;
 
-  // Simple demo split — must sum to 100%
   const split = [
-    { name: 'Materials',      pct: 0.40 },
-    { name: 'Labor',          pct: 0.30 },
-    { name: 'Equipment',      pct: 0.15 },
+    { name: 'Materials', pct: 0.40 },
+    { name: 'Labor', pct: 0.30 },
+    { name: 'Equipment', pct: 0.15 },
     { name: 'Subcontractors', pct: 0.10 },
-    { name: 'Misc',           pct: 0.05 },
+    { name: 'Misc', pct: 0.05 },
   ];
 
   const data = split.map(s => ({ name: s.name, amount: Math.round(base * s.pct) }));
 
   const tfLabel =
-    timeframe === 'this_month'   ? 'This Month'   :
-    timeframe === 'last_month'   ? 'Last Month'   :
-    timeframe === 'this_quarter' ? 'This Quarter' :
-    timeframe === 'last_quarter' ? 'Last Quarter' : 'Year-to-Date';
+    timeframe === 'this_month' ? 'This Month'
+    : timeframe === 'last_month' ? 'Last Month'
+    : timeframe === 'this_quarter' ? 'This Quarter'
+    : timeframe === 'last_quarter' ? 'Last Quarter'
+    : 'Year-to-Date';
 
   return (
     <Card className="dark:bg-slate-900/60 dark:border-slate-700">
@@ -235,7 +229,7 @@ const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }
         <CardDescription className="dark:text-slate-300/90">Showing {tfLabel} demo split</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {data.map((row) => (
+        {data.map(row => (
           <div
             key={row.name}
             className="flex items-center justify-between rounded-md border p-3 dark:bg-slate-800/60 dark:border-slate-700"
@@ -254,23 +248,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
-  // Keep auth fresh in the background to prevent transient 401/403 during tiles/chart loads
+  // Keep auth fresh to prevent transient 401/403 during loads
   useAuthRefresh();
 
-  // 🔑 Effective identity (honors impersonation)
+  // Effective identity (honors impersonation)
   const { userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
   console.log('[Dashboard] effective identity', { effUserId, effRealmId, isImpersonating });
-  const isDemo = !effRealmId; // ← no realm means demo account
+  const isDemo = !effRealmId;
 
-  // ✅ Default timeframe = Last Month
+  // Default timeframe = Last Month
   const [timeframe, setTimeframe] = useState<UiTimeframe>('lastMonth');
 
-  const [chartTimeRange, setChartTimeRange] = useState("30d");
+  const [chartTimeRange, setChartTimeRange] = useState('30d');
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
 
-  // Keep a local realmId only for OAuth flows (real user). Data fetches use effRealmId.
+  // Local realm for OAuth flows (data fetches use effRealmId)
   const [realmId, setRealmId] = useState<string | null>(null);
 
   // Metrics data
@@ -289,16 +283,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const revPct = useMemo(() => pctChange(revCurr, revPrev), [revCurr, revPrev]);
   const expPct = useMemo(() => pctChange(expCurr, expPrev), [expCurr, expPrev]);
   const netPct = useMemo(() => pctChange(netCurr, netPrev), [netCurr, netPrev]);
-  const profitMargin = useMemo(() => revCurr > 0 ? (netCurr / revCurr) * 100 : 0, [revCurr, netCurr]);
+  const profitMargin = useMemo(() => (revCurr > 0 ? (netCurr / revCurr) * 100 : 0), [revCurr, netCurr]);
 
   // Mobile responsive chart time range
-  React.useEffect(() => {
-    if (isMobile) {
-      setChartTimeRange("7d")
-    }
+  useEffect(() => {
+    if (isMobile) setChartTimeRange('7d');
   }, [isMobile]);
 
-  // Handle card clicks for navigation
+  // Card click handler
   const handleCardClick = (reportType: string) => {
     if (onNavigateToReports) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -314,7 +306,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   };
 
   // ===============================
-  // OAuth flows (remain tied to real user account)
+  // OAuth flows (real user account)
   // ===============================
 
   useEffect(() => {
@@ -353,7 +345,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       } else {
         setRealmId(pendingRealm);
         await supabase.functions.invoke('qbo-sync-transactions', {
-          body: { realmId: pendingRealm, userId: user.id, mode: 'full' }
+          body: { realmId: pendingRealm, userId: user.id, mode: 'full' },
         });
       }
 
@@ -426,7 +418,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             setRealmId(incomingRealm);
             toast({ title: 'QuickBooks', description: 'Connected successfully!' });
             await supabase.functions.invoke('qbo-sync-transactions', {
-              body: { realmId: incomingRealm, userId: user.id, mode: 'full' }
+              body: { realmId: incomingRealm, userId: user.id, mode: 'full' },
             });
           }
         } else if (incomingRealm && !user?.id) {
@@ -450,7 +442,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     const run = async () => {
       const period = toApiPeriod(timeframe);
 
-      // === DEMO PATH: no connected realm -> show demo tiles ===
+      // DEMO: no realm -> show demo tiles
       if (isDemo) {
         const demo = demoTiles(period);
         if (!isCancelled) {
@@ -460,13 +452,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           setExpPrev(demo.expenses.previous as number);
           setNetCurr(demo.netProfit.current as number);
           setNetPrev(demo.netProfit.previous as number);
-          setCompanyName((prev) => prev ?? 'Demo Company');
-          setLastSync(null); // not synced yet
+          setCompanyName(prev => prev ?? 'Demo Company');
+          setLastSync(null);
         }
         return;
       }
 
-      if (!effUserId) return; // wait for effective identity when connected
+      if (!effUserId) return;
 
       setLoading(true);
       try {
@@ -508,12 +500,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   useEffect(() => {
     let isCancelled = false;
     const loadYtd = async () => {
-      // === DEMO PATH: no connected realm -> show demo YTD series ===
       if (isDemo) {
         if (!isCancelled) {
           setYtdChartData(DEMO_MONTH_SERIES);
           setYtdLoading(false);
-          setCompanyName((prev) => prev ?? 'Demo Company');
+          setCompanyName(prev => prev ?? 'Demo Company');
           setLastSync(null);
         }
         return;
@@ -532,11 +523,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         if (!isCancelled) {
           const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
           setYtdChartData(
-            (series.length ? series : DEMO_MONTH_SERIES).map((row) => ({
+            (series.length ? series : DEMO_MONTH_SERIES).map((row: any) => ({
               date: series.length ? `${thisYear}-${String(row.name).padStart(2, '0')}-01` : row.date,
-              revenue: toNumber((row as any).revenue, 0),
-              expenses: toNumber((row as any).expenses, 0),
-            }))
+              revenue: toNumber(row.revenue, 0),
+              expenses: toNumber(row.expenses, 0),
+            })),
           );
           if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
           if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
@@ -557,45 +548,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   useEffect(() => {
     let cancelled = false;
     const loadRealm = async () => {
-      if (userLoading || !user?.id || effRealmId) return; // skip if impersonating already provides realm
+      if (userLoading || !user?.id || effRealmId) return;
       const { data, error } = await supabase
         .from('profiles')
         .select('qbo_realm_id')
         .eq('id', user.id)
         .single();
-      if (!cancelled && !error && data?.qbo_realm_id) {
-        setRealmId(data.qbo_realm_id);
-      }
+      if (!cancelled && !error && data?.qbo_realm_id) setRealmId(data.qbo_realm_id);
     };
     loadRealm();
     return () => { cancelled = true; };
   }, [userLoading, user?.id, effRealmId]);
 
-  // Fetch company name (from effective realm)
-// Fetch company name (always override demo when realm becomes available)
-useEffect(() => {
-  let cancelled = false;
-  const run = async () => {
-    if (!effUserId || !effRealmId) return; // <-- remove the companyName guard
-    try {
-      const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
-        body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
-      });
-      if (error) {
-        console.warn('qbo-company invoke error:', error);
-        return;
+  // === FIX: Always fetch company name once we have an effective realm, and overwrite demo ===
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!effUserId || !effRealmId) return;
+      try {
+        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
+          body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
+        });
+        if (error) {
+          console.warn('qbo-company invoke error:', error);
+          return;
+        }
+        if (!cancelled && data?.companyName) {
+          setCompanyName(data.companyName); // <-- always overrides any prior "Demo Company"
+        }
+      } catch (e) {
+        console.warn('qbo-company invoke exception:', e);
       }
-      if (!cancelled && data?.companyName) {
-        setCompanyName(data.companyName); // <-- overrides "Demo Company"
-      }
-    } catch (e) {
-      console.warn('qbo-company invoke exception:', e);
-    }
-  };
-  run();
-  return () => { cancelled = true; };
-}, [effUserId, effRealmId]); // <-- remove companyName from deps
-
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [effUserId, effRealmId]); // NOTE: companyName intentionally NOT in deps
 
   // Insight text for the banner
   const insightText = useMemo(() => {
@@ -614,15 +601,16 @@ useEffect(() => {
             {companyName || 'Demo Company'}
           </h1>
           <p className="text-sm text-muted-foreground dark:text-slate-300 flex items-center gap-2 mt-1">
-            Last synced: {lastSync
+            Last synced:{' '}
+            {lastSync
               ? new Date(lastSync).toLocaleDateString() + ' at ' + new Date(lastSync).toLocaleTimeString()
               : '—'}
-            <span className={`inline-block w-2 h-2 rounded-full ${lastSync ? 'bg-green-500' : 'bg-gray-500/70'}`}></span>
+            <span className={`inline-block w-2 h-2 rounded-full ${lastSync ? 'bg-green-500' : 'bg-gray-500/70'}`} />
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <Select value={timeframe} onValueChange={(v: UiTimeframe) => setTimeframe(v)}>
+          <Select value={timeframe} onValueChange={(v) => setTimeframe(v as UiTimeframe)}>
             <SelectTrigger className="w-44 dark:bg-slate-900/60 dark:border-slate-700">
               <Calendar className="w-4 h-4 mr-2" />
               <SelectValue />
@@ -678,7 +666,11 @@ useEffect(() => {
               <CardDescription className="text-gray-600 dark:text-slate-300/90">REVENUE →</CardDescription>
               <div className="text-green-500">
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
+                  <path
+                    fillRule="evenodd"
+                    d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </div>
             </div>
@@ -686,7 +678,9 @@ useEffect(() => {
               {formatCurrency(revCurr)}
             </CardTitle>
             <p className={`text-sm font-medium ${revPct !== null && revPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-              {revPct === null ? `— ${changeLabel(timeframe)}` : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}% ${changeLabel(timeframe)}`}
+              {revPct === null
+                ? `— ${changeLabel(timeframe)}`
+                : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}% ${changeLabel(timeframe)}`}
             </p>
           </CardHeader>
         </Card>
@@ -708,7 +702,9 @@ useEffect(() => {
               {formatCurrency(expCurr)}
             </CardTitle>
             <p className={`text-sm font-medium ${expPct !== null && expPct < 0 ? 'text-green-600' : 'text-red-500'}`}>
-              {expPct === null ? `— ${changeLabel(timeframe)}` : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}% ${changeLabel(timeframe)}`}
+              {expPct === null
+                ? `— ${changeLabel(timeframe)}`
+                : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}% ${changeLabel(timeframe)}`}
             </p>
           </CardHeader>
         </Card>
@@ -734,8 +730,20 @@ useEffect(() => {
             </p>
             <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
               {netPct === null
-                ? `— vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`
-                : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`}
+                ? `— vs ${
+                    timeframe === 'ytd'
+                      ? 'last year'
+                      : timeframe === 'thisQuarter' || timeframe === 'lastQuarter'
+                      ? 'last quarter'
+                      : 'last month'
+                  }`
+                : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${
+                    timeframe === 'ytd'
+                      ? 'last year'
+                      : timeframe === 'thisQuarter' || timeframe === 'lastQuarter'
+                      ? 'last quarter'
+                      : 'last month'
+                  }`}
             </p>
           </CardHeader>
         </Card>
@@ -750,7 +758,11 @@ useEffect(() => {
           <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-emerald-900/30 dark:border dark:border-emerald-800">
             <div className="mt-0.5 text-green-600">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
             <div className="flex-1 min-w-0">
@@ -782,18 +794,15 @@ useEffect(() => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ChartContainer
-            config={chartConfig}
-            className="aspect-auto h-[350px] w-full"
-          >
+          <ChartContainer config={chartConfig} className="aspect-auto h-[350px] w-full">
             <AreaChart data={ytdChartData}>
               <defs>
                 <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--color-revenue)"  stopOpacity={1.0} />
-                  <stop offset="95%" stopColor="var(--color-revenue)"  stopOpacity={0.1} />
+                  <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={1.0} />
+                  <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0.1} />
                 </linearGradient>
                 <linearGradient id="fillExpenses" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--color-expenses)" stopOpacity={0.8} />
+                  <stop offset="5%" stopColor="var(--color-expenses)" stopOpacity={0.8} />
                   <stop offset="95%" stopColor="var(--color-expenses)" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
@@ -805,8 +814,8 @@ useEffect(() => {
                 tickMargin={8}
                 minTickGap={32}
                 tickFormatter={(value) => {
-                  const date = new Date(value)
-                  return date.toLocaleDateString("en-US", { month: "short" })
+                  const date = new Date(value);
+                  return date.toLocaleDateString('en-US', { month: 'short' });
                 }}
               />
               <ChartTooltip
@@ -814,12 +823,12 @@ useEffect(() => {
                 content={
                   <ChartTooltipContent
                     className="dark:bg-slate-900/90 dark:border-slate-700"
-                    labelFormatter={(value) => {
-                      return new Date(value).toLocaleDateString("en-US", {
-                        month: "short",
-                        year: "numeric"
+                    labelFormatter={(value) =>
+                      new Date(value).toLocaleDateString('en-US', {
+                        month: 'short',
+                        year: 'numeric',
                       })
-                    }}
+                    }
                     indicator="dot"
                     formatter={(value: number) => [`${formatCurrency(value)}`, '']}
                   />
