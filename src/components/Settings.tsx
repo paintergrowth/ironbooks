@@ -87,7 +87,7 @@ const Settings: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
 
   // QuickBooks connection state (real user only)
-  const [qboConnected, setQboConnected] = useState(false);
+  the const [qboConnected, setQboConnected] = useState(false);
   const [effRealmId, setEffRealmId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null); // NEW
 
@@ -361,7 +361,7 @@ const Settings: React.FC = () => {
 
   return (
     <div className="h-[100dvh]">
-      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">  
+      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">
         {/* Header: title + Save only */}
         <div className="flex items-center justify-between">
           <div>
@@ -378,7 +378,7 @@ const Settings: React.FC = () => {
         </div>
 
         {/* Profile Settings */}
-        <Card>
+        <Card className="dark:bg-slate-900/60 dark:border-slate-700">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Users className="mr-2 h-5 w-5" />
@@ -393,6 +393,7 @@ const Settings: React.FC = () => {
                   id="name" 
                   value={profile.name}
                   onChange={(e) => setProfile({...profile, name: e.target.value})}
+                  className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                 />
               </div>
               <div>
@@ -402,6 +403,7 @@ const Settings: React.FC = () => {
                   type="email" 
                   value={profile.email}
                   disabled
+                  className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                 />
               </div>
               <div>
@@ -410,6 +412,7 @@ const Settings: React.FC = () => {
                   id="phone" 
                   value={profile.phone}
                   onChange={(e) => setProfile({...profile, phone: e.target.value})}
+                  className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                 />
               </div>
               <div>
@@ -418,6 +421,7 @@ const Settings: React.FC = () => {
                   id="designation" 
                   value={profile.designation}
                   onChange={(e) => setProfile({...profile, designation: e.target.value})}
+                  className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                 />
               </div>
             </div>
@@ -425,7 +429,7 @@ const Settings: React.FC = () => {
         </Card>
 
         {/* Appearance */}
-        <Card>
+        <Card className="dark:bg-slate-900/60 dark:border-slate-700">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Sun className="mr-2 h-5 w-5" />
@@ -456,7 +460,7 @@ const Settings: React.FC = () => {
 
         {/* --- Admin Options (below Appearance). Only visible to admins --- */}
         {isAdmin && (
-          <Card>
+          <Card className="dark:bg-slate-900/60 dark:border-slate-700">
             <CardHeader>
               <CardTitle className="flex items-center">
                 <Shield className="mr-2 h-5 w-5" />
@@ -465,17 +469,17 @@ const Settings: React.FC = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Sub-tile: Impersonation */}
-              <div className="p-4 border rounded-lg space-y-4">
+              <div className="p-4 border rounded-lg space-y-4 dark:border-slate-700 dark:bg-slate-900/40">
                 <div>
                   <p className="font-medium">Impersonate a Customer</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <p className="text-sm text-gray-600 dark:text-slate-300/90">
                     Select a customer to view the app exactly as they do.
                   </p>
                 </div>
 
                 {/* Row 1: Dropdown (full-width) */}
                 <div className="w-full">
-                  <div className="w-full border rounded-lg p-4 box-border">
+                  <div className="w-full border rounded-lg p-4 box-border dark:border-slate-700 dark:bg-slate-900/60">
                     <ImpersonateDropdown key={impersonateKey} />
                   </div>
                 </div>
@@ -484,7 +488,9 @@ const Settings: React.FC = () => {
                 <div className="w-full">
                   <div
                     className={`w-full min-h-[72px] p-4 border rounded-2xl box-border overflow-hidden ${
-                      isImpersonating ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-dashed'
+                      isImpersonating
+                        ? 'bg-amber-50 border-amber-200 dark:bg-amber-900/25 dark:border-amber-700'
+                        : 'bg-gray-50 border-dashed dark:bg-slate-900/60 dark:border-slate-700'
                     }`}
                   >
                     <div className="max-w-full">
@@ -493,7 +499,7 @@ const Settings: React.FC = () => {
                           <ViewingAsChip />
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-600">Not impersonating anyone</p>
+                        <p className="text-sm text-gray-600 dark:text-slate-300/90">Not impersonating anyone</p>
                       )}
                     </div>
                   </div>
@@ -501,10 +507,10 @@ const Settings: React.FC = () => {
               </div>
 
               {/* Sub-tile: Admin panel shortcut */}
-              <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex items-center justify-between p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
                 <div>
                   <p className="font-medium">Admin Panel</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <p className="text-sm text-gray-600 dark:text-slate-300/90">
                     Manage users, data, and integrations.
                   </p>
                 </div>
@@ -525,7 +531,7 @@ const Settings: React.FC = () => {
         )}
 
         {/* Notifications */}
-        <Card>
+        <Card className="dark:bg-slate-900/60 dark:border-slate-700">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Bell className="mr-2 h-5 w-5" />
@@ -536,7 +542,7 @@ const Settings: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Email Notifications</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">Receive updates via email</p>
+                <p className="text-sm text-gray-600 dark:text-slate-300/90">Receive updates via email</p>
               </div>
               <Switch 
                 checked={notifications.email}
@@ -546,7 +552,7 @@ const Settings: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Push Notifications</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">Browser push notifications</p>
+                <p className="text-sm text-gray-600 dark:text-slate-300/90">Browser push notifications</p>
               </div>
               <Switch 
                 checked={notifications.push}
@@ -556,7 +562,7 @@ const Settings: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Weekly Reports</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">Automated financial summaries</p>
+                <p className="text-sm text-gray-600 dark:text-slate-300/90">Automated financial summaries</p>
               </div>
               <Switch 
                 checked={notifications.reports}
@@ -567,7 +573,7 @@ const Settings: React.FC = () => {
         </Card>
 
         {/* Security */}
-        <Card>
+        <Card className="dark:bg-slate-900/60 dark:border-slate-700">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Shield className="mr-2 h-5 w-5" />
@@ -578,7 +584,7 @@ const Settings: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Two-Factor Authentication</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">Add an extra layer of security</p>
+                <p className="text-sm text-gray-600 dark:text-slate-300/90">Add an extra layer of security</p>
               </div>
               <Badge variant="outline" className="text-green-600 border-green-600">
                 Enabled
@@ -599,7 +605,7 @@ const Settings: React.FC = () => {
         </Card>
 
         {/* Integrations (QuickBooks added, Xero kept) */}
-        <Card>
+        <Card className="dark:bg-slate-900/60 dark:border-slate-700">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Database className="mr-2 h-5 w-5" />
@@ -609,14 +615,14 @@ const Settings: React.FC = () => {
           <CardContent className="space-y-4">
 
             {/* QuickBooks Online */}
-            <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div className="flex items-center justify-between p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center dark:bg-emerald-900/30">
                   <ExternalLink className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div>
                   <p className="font-medium">QuickBooks Online</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <p className="text-sm text-gray-600 dark:text-slate-300/90">
                     {qboConnected ? (
                       <>Connected{` · ${companyName || 'QuickBooks'}`}</>
                     ) : (
@@ -629,7 +635,7 @@ const Settings: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={handleConnectQuickBooks}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 dark:bg-slate-900/60 dark:border-slate-700"
                 title={isImpersonating ? 'Disabled while impersonating' : 'Connect your QuickBooks Online account'}
                 disabled={isImpersonating}
               >
@@ -638,7 +644,7 @@ const Settings: React.FC = () => {
               </Button>
               
             </div>
-              <BillingCard />
+            <BillingCard />
             {/* Xero (unchanged) Temporarily Disabled
             <div className="flex items-center justify-between p-4 border rounded-lg">
               <div className="flex items-center space-x-3">
@@ -657,7 +663,7 @@ const Settings: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Separator />
+        <Separator className="dark:bg-slate-700" />
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-4">
