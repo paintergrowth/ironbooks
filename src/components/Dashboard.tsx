@@ -35,14 +35,14 @@ interface QboDashboardPayload {
   netProfit?: ApiNumberPair;
   ytdSeries?: Array<{ name: string; revenue: number; expenses: number }>;
   lastSyncAt?: string;
-  companyName?: string;
+  companyName?: string | null;
 }
 
 const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
 
 // ===== DEMO DATA (Jan–Sep of current year) =====
 const thisYear = new Date().getFullYear();
-const currentMonthIndex = Math.min(new Date().getMonth() + 1, 9); // cap at Sep (9)
+const currentMonthIndex = Math.min(new Date().getMonth() + 1, 9);
 const DEMO_MONTH_SERIES: { date: string; revenue: number; expenses: number }[] = [
   { date: `${thisYear}-01-01`, revenue: 120_000, expenses: 85_000 },
   { date: `${thisYear}-02-01`, revenue: 130_000, expenses: 90_000 },
@@ -55,7 +55,7 @@ const DEMO_MONTH_SERIES: { date: string; revenue: number; expenses: number }[] =
   { date: `${thisYear}-09-01`, revenue: 180_000, expenses: 130_000 },
 ].slice(0, currentMonthIndex);
 
-// ===== Helpers for demo math =====
+// Demo helpers
 const monthRow = (i: number) => DEMO_MONTH_SERIES[i - 1] ?? { revenue: 0, expenses: 0 };
 const sumSlice = (startIdx: number, endIdx: number) => {
   const slice = DEMO_MONTH_SERIES.slice(Math.max(0, startIdx - 1), Math.max(0, endIdx));
@@ -63,16 +63,15 @@ const sumSlice = (startIdx: number, endIdx: number) => {
   const expenses = slice.reduce((a, r) => a + r.expenses, 0);
   return { revenue, expenses, net: revenue - expenses };
 };
-const quarterOfMonth = (m: number) => Math.ceil(m / 3); // 1..4
+const quarterOfMonth = (m: number) => Math.ceil(m / 3);
 const quarterBounds = (q: number) => {
   const start = (q - 1) * 3 + 1;
   const end = q * 3;
   return { start, end };
 };
 
-// Helper to compute demo tiles based on timeframe
 function demoTiles(period: ApiPeriod) {
-  const mIdx = currentMonthIndex; // 1..9 in our demo cap
+  const mIdx = currentMonthIndex;
 
   if (period === 'this_month') {
     const cur = monthRow(mIdx);
@@ -83,7 +82,6 @@ function demoTiles(period: ApiPeriod) {
       netProfit: { current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
     };
   }
-
   if (period === 'last_month') {
     const cur = monthRow(Math.max(1, mIdx - 1));
     const prev = monthRow(Math.max(1, mIdx - 2));
@@ -93,7 +91,6 @@ function demoTiles(period: ApiPeriod) {
       netProfit: { current: cur.revenue - cur.expenses, previous: (prev.revenue - prev.expenses) || 1 },
     };
   }
-
   if (period === 'this_quarter') {
     const thisQ = quarterOfMonth(mIdx);
     const { start, end } = quarterBounds(thisQ);
@@ -107,7 +104,6 @@ function demoTiles(period: ApiPeriod) {
       netProfit: { current: cur.net, previous: prev.net || 1 },
     };
   }
-
   if (period === 'last_quarter') {
     const thisQ = quarterOfMonth(mIdx);
     const lastQ = Math.max(1, thisQ - 1);
@@ -123,7 +119,6 @@ function demoTiles(period: ApiPeriod) {
     };
   }
 
-  // ytd
   const curAgg = sumSlice(1, mIdx);
   const prevAgg = { revenue: Math.round(curAgg.revenue * 0.9), expenses: Math.round(curAgg.expenses * 0.9) };
   return {
@@ -133,7 +128,7 @@ function demoTiles(period: ApiPeriod) {
   };
 }
 
-// ===== Fallback chart data kept for safety =====
+// Fallback chart
 const fallbackChartData = [
   { date: '2024-01-01', revenue: 0, expenses: 0 },
   { date: '2024-02-01', revenue: 0, expenses: 0 },
@@ -149,23 +144,19 @@ const toNumber = (v: unknown, def = 0): number => {
   const n = typeof v === 'string' ? Number(v) : (typeof v === 'number' ? v : NaN);
   return Number.isFinite(n) ? n : def;
 };
-
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-
 const pctChange = (curr: number, prev: number): number | null => {
   if (!Number.isFinite(curr) || !Number.isFinite(prev)) return null;
   if (prev === 0) return null;
   return ((curr - prev) / Math.abs(prev)) * 100;
 };
-
 const toApiPeriod = (ui: UiTimeframe): ApiPeriod =>
   ui === 'thisMonth' ? 'this_month'
   : ui === 'lastMonth' ? 'last_month'
   : ui === 'thisQuarter' ? 'this_quarter'
   : ui === 'lastQuarter' ? 'last_quarter'
   : 'ytd';
-
 const changeLabel = (period: UiTimeframe) =>
   period === 'ytd' ? 'from last year'
   : period === 'thisQuarter' || period === 'lastQuarter' ? 'from last quarter'
@@ -180,7 +171,6 @@ interface DashboardProps {
   onNavigateToReports?: (filter: string, timeframe: string) => void;
 }
 
-/** Demo-only categories card (avoids Supabase calls in demo mode) */
 const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }) => {
   const monthIdx = currentMonthIndex;
   const rows = DEMO_MONTH_SERIES;
@@ -200,10 +190,10 @@ const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }
 
   const base =
     timeframe === 'this_month' ? thisMonth
-    : timeframe === 'last_month' ? lastMonth
-    : timeframe === 'this_quarter' ? thisQuarter
-    : timeframe === 'last_quarter' ? prevQuarter
-    : ytd;
+      : timeframe === 'last_month' ? lastMonth
+        : timeframe === 'this_quarter' ? thisQuarter
+          : timeframe === 'last_quarter' ? prevQuarter
+            : ytd;
 
   const split = [
     { name: 'Materials', pct: 0.40 },
@@ -217,10 +207,10 @@ const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }
 
   const tfLabel =
     timeframe === 'this_month' ? 'This Month'
-    : timeframe === 'last_month' ? 'Last Month'
-    : timeframe === 'this_quarter' ? 'This Quarter'
-    : timeframe === 'last_quarter' ? 'Last Quarter'
-    : 'Year-to-Date';
+      : timeframe === 'last_month' ? 'Last Month'
+        : timeframe === 'this_quarter' ? 'This Quarter'
+          : timeframe === 'last_quarter' ? 'Last Quarter'
+            : 'Year-to-Date';
 
   return (
     <Card className="dark:bg-slate-900/60 dark:border-slate-700">
@@ -248,26 +238,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
-  // Keep auth fresh to prevent transient 401/403 during loads
   useAuthRefresh();
 
-  // Effective identity (honors impersonation)
   const { userId: effUserId, realmId: effRealmId, isImpersonating } = useEffectiveIdentity();
   console.log('[Dashboard] effective identity', { effUserId, effRealmId, isImpersonating });
   const isDemo = !effRealmId;
 
-  // Default timeframe = Last Month
   const [timeframe, setTimeframe] = useState<UiTimeframe>('lastMonth');
 
   const [chartTimeRange, setChartTimeRange] = useState('30d');
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
+  const [needsQboReconnect, setNeedsQboReconnect] = useState(false); // NEW: show reconnect hint if tokens invalid
 
-  // Local realm for OAuth flows (data fetches use effRealmId)
   const [realmId, setRealmId] = useState<string | null>(null);
 
-  // Metrics data
   const [revCurr, setRevCurr] = useState(0);
   const [revPrev, setRevPrev] = useState(0);
   const [expCurr, setExpCurr] = useState(0);
@@ -275,22 +261,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const [netCurr, setNetCurr] = useState(0);
   const [netPrev, setNetPrev] = useState(0);
 
-  // Chart data
   const [ytdChartData, setYtdChartData] = useState(fallbackChartData);
   const [ytdLoading, setYtdLoading] = useState(false);
 
-  // Computed values
   const revPct = useMemo(() => pctChange(revCurr, revPrev), [revCurr, revPrev]);
   const expPct = useMemo(() => pctChange(expCurr, expPrev), [expCurr, expPrev]);
   const netPct = useMemo(() => pctChange(netCurr, netPrev), [netCurr, netPrev]);
   const profitMargin = useMemo(() => (revCurr > 0 ? (netCurr / revCurr) * 100 : 0), [revCurr, netCurr]);
 
-  // Mobile responsive chart time range
   useEffect(() => {
     if (isMobile) setChartTimeRange('7d');
   }, [isMobile]);
 
-  // Card click handler
   const handleCardClick = (reportType: string) => {
     if (onNavigateToReports) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -306,7 +288,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   };
 
   // ===============================
-  // OAuth flows (real user account)
+  // OAuth flows (real user)
   // ===============================
 
   useEffect(() => {
@@ -433,16 +415,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   }, [user?.id, toast]);
 
   // ===============================
-  // Data fetches (use effective identity)
+  // Data fetches (effective identity)
   // ===============================
 
-  // Fetch dashboard metrics
+  // Metrics
   useEffect(() => {
     let isCancelled = false;
     const run = async () => {
       const period = toApiPeriod(timeframe);
 
-      // DEMO: no realm -> show demo tiles
       if (isDemo) {
         const demo = demoTiles(period);
         if (!isCancelled) {
@@ -484,6 +465,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           setNetCurr(nc);
           setNetPrev(np);
           setLastSync(payload?.lastSyncAt ?? new Date().toISOString());
+
+          // If backend could resolve a companyName, take it
           if (payload?.companyName) setCompanyName(payload.companyName);
         }
       } catch (e) {
@@ -496,7 +479,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     return () => { isCancelled = true; };
   }, [timeframe, effUserId, effRealmId, isDemo]);
 
-  // Fetch YTD chart data
+  // YTD chart
   useEffect(() => {
     let isCancelled = false;
     const loadYtd = async () => {
@@ -544,7 +527,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     return () => { isCancelled = true; };
   }, [effUserId, effRealmId, companyName, isDemo]);
 
-  // Load realm ID from profiles (only to support real-user OAuth UI; data fetches use effRealmId)
+  // Load realm for OAuth UI (not used for data)
   useEffect(() => {
     let cancelled = false;
     const loadRealm = async () => {
@@ -560,31 +543,56 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     return () => { cancelled = true; };
   }, [userLoading, user?.id, effRealmId]);
 
-  // === FIX: Always fetch company name once we have an effective realm, and overwrite demo ===
+  // === Company name: try QBO; on 401/error, fall back to profiles.company and set reconnect hint ===
   useEffect(() => {
     let cancelled = false;
+
+    const fetchProfileCompany = async () => {
+      if (!effUserId) return;
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('company')
+          .eq('id', effUserId)
+          .maybeSingle();
+        if (!cancelled && data?.company) {
+          setCompanyName(data.company);
+        }
+      } catch {}
+    };
+
     const run = async () => {
       if (!effUserId || !effRealmId) return;
+
       try {
         const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
           body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
         });
+
         if (error) {
-          console.warn('qbo-company invoke error:', error);
+          // Any error (incl. 401 invalid_grant) -> show reconnect hint and fall back to profile.company
+          setNeedsQboReconnect(true);
+          await fetchProfileCompany();
           return;
         }
+
         if (!cancelled && data?.companyName) {
-          setCompanyName(data.companyName); // <-- always overrides any prior "Demo Company"
+          setCompanyName(data.companyName);     // real QBO name
+          setNeedsQboReconnect(false);          // tokens OK
+        } else {
+          // no name from QBO -> try profile.company
+          await fetchProfileCompany();
         }
-      } catch (e) {
-        console.warn('qbo-company invoke exception:', e);
+      } catch {
+        setNeedsQboReconnect(true);
+        await fetchProfileCompany();
       }
     };
+
     run();
     return () => { cancelled = true; };
-  }, [effUserId, effRealmId]); // NOTE: companyName intentionally NOT in deps
+  }, [effUserId, effRealmId]);
 
-  // Insight text for the banner
   const insightText = useMemo(() => {
     const label = changeLabel(timeframe);
     const revStr = revPct === null ? '—' : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}%`;
@@ -592,14 +600,36 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     return `Revenue ${revStr} ${label} while expenses ${expPct && expPct < 0 ? 'decreased' : 'changed'} ${expStr}`;
   }, [revPct, expPct, timeframe]);
 
+  // simple helper to route user to your Settings/Integrations screen
+  const goReconnectQBO = () => {
+    // If you have a dedicated connect handler, call it here.
+    // For now, push user to Settings where they can reconnect.
+    try {
+      const url = '/settings?tab=integrations';
+      window.open(url, '_blank');
+    } catch {}
+  };
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex flex-col">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            {companyName || 'Demo Company'}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              {companyName || 'Demo Company'}
+            </h1>
+            {needsQboReconnect && (
+              <Badge
+                variant="destructive"
+                className="cursor-pointer"
+                onClick={goReconnectQBO}
+                title="QuickBooks token expired. Click to reconnect."
+              >
+                Reconnect QuickBooks
+              </Badge>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground dark:text-slate-300 flex items-center gap-2 mt-1">
             Last synced:{' '}
             {lastSync
@@ -749,7 +779,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         </Card>
       </div>
 
-      {/* Business Health Insights */}
+      {/* Business Health */}
       <Card className="dark:bg-slate-900/60 dark:border-slate-700">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg font-bold text-gray-900 dark:text-white">Business Health</CardTitle>
@@ -780,7 +810,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         </CardContent>
       </Card>
 
-      {/* Chart with Revenue Trend Banner */}
+      {/* Chart */}
       <Card className="border-2 shadow-lg dark:border-slate-700 dark:bg-slate-900/60">
         <CardHeader>
           <div className="bg-green-50 dark:bg-emerald-900/30 p-3 rounded-lg mb-4 border border-green-200 dark:border-emerald-800">
