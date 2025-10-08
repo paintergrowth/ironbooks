@@ -572,32 +572,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   }, [userLoading, user?.id, effRealmId]);
 
   // Fetch company name (from effective realm)
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (!effUserId || !effRealmId || companyName) return;
-
-      try {
-        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
-          body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
-        });
-
-        if (error) {
-          console.warn('qbo-company invoke error:', error);
-          return;
-        }
-
-        if (!cancelled && data?.companyName) {
-          setCompanyName(data.companyName);
-        }
-      } catch (e) {
-        console.warn('qbo-company invoke exception:', e);
+// Fetch company name (always override demo when realm becomes available)
+useEffect(() => {
+  let cancelled = false;
+  const run = async () => {
+    if (!effUserId || !effRealmId) return; // <-- remove the companyName guard
+    try {
+      const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
+        body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
+      });
+      if (error) {
+        console.warn('qbo-company invoke error:', error);
+        return;
       }
-    };
+      if (!cancelled && data?.companyName) {
+        setCompanyName(data.companyName); // <-- overrides "Demo Company"
+      }
+    } catch (e) {
+      console.warn('qbo-company invoke exception:', e);
+    }
+  };
+  run();
+  return () => { cancelled = true; };
+}, [effUserId, effRealmId]); // <-- remove companyName from deps
 
-    run();
-    return () => { cancelled = true; };
-  }, [effUserId, effRealmId, companyName]);
 
   // Insight text for the banner
   const insightText = useMemo(() => {
