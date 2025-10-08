@@ -197,10 +197,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   ];
 
   const actionButtons = [
-    { icon: Sparkles, label: 'Analyze', color: 'bg-purple-100 hover:bg-purple-200 text-purple-700' },
-    { icon: BarChart3, label: 'Reports', color: 'bg-blue-100 hover:bg-blue-200 text-blue-700' },
-    { icon: FileText, label: 'Documents', color: 'bg-green-100 hover:bg-green-200 text-green-700' },
-    { icon: Calculator, label: 'Calculate', color: 'bg-orange-100 hover:bg-orange-200 text-orange-700' },
+    { icon: Sparkles, label: 'Analyze', color: 'bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/30 dark:hover:bg-purple-900/40 dark:text-purple-200' },
+    { icon: BarChart3, label: 'Reports', color: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/40 dark:text-blue-200' },
+    { icon: FileText, label: 'Documents', color: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900/30 dark:hover:bg-green-900/40 dark:text-green-200' },
+    { icon: Calculator, label: 'Calculate', color: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/40 dark:text-orange-200' },
   ];
 
   const handleSendMessage = async () => {
@@ -508,7 +508,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   <Button
                     key={index}
                     variant="outline"
-                    className={`flex items-center gap-2 px-4 py-2 ${action.color} border-0`}
+                    className={`flex items-center gap-2 px-4 py-2 ${action.color} border-0 dark:hover:border-slate-600`}
                   >
                     <action.icon size={16} />
                     {action.label}
@@ -522,7 +522,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   <Button
                     key={index}
                     variant="outline"
-                    className="text-left justify-start h-auto p-4 whitespace-normal bg-muted/50 hover:bg-muted"
+                    className="text-left justify-start h-auto p-4 whitespace-normal bg-muted/50 hover:bg-muted dark:bg-slate-900/60 dark:hover:bg-slate-900/70 dark:border-slate-700"
                     onClick={() => setInputValue(prompt)}
                   >
                     {prompt}
@@ -578,7 +578,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     <ReasoningTrigger>
                       <div className="flex items-center gap-2 animate-pulse">
                         <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-                        <span>
+                        <span className="dark:text-slate-200">
                           {currentReasoning.length > 0
                             ? currentReasoning[currentReasoning.length - 1].title
                             : "Analyzing your financial data..."
@@ -594,21 +594,23 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                               <div className="w-2 h-2 bg-green-500 rounded-full mt-1.5 flex-shrink-0"></div>
                               <div>
                                 <div className="text-sm font-medium">{step.title}</div>
-                                <div className="text-xs text-muted-foreground">{step.content}</div>
+                                <div className="text-xs text-muted-foreground dark:text-slate-300/90">{step.content}</div>
                               </div>
                             </div>
                           ))}
                           {isTyping && currentReasoning.length > 0 && (
                             <div className="flex items-start gap-2">
                               <div className="w-2 h-2 bg-primary rounded-full animate-pulse mt-1.5 flex-shrink-0"></div>
-                              <div className="text-sm text-muted-foreground animate-pulse">
+                              <div className="text-sm text-muted-foreground animate-pulse dark:text-slate-300/90">
                                 Generating response...
                               </div>
                             </div>
                           )}
                         </div>
                       ) : (
-                        "I'm examining your QuickBooks data to provide accurate financial insights and recommendations tailored to your business."
+                        <span className="dark:text-slate-300/90">
+                          I'm examining your QuickBooks data to provide accurate financial insights and recommendations tailored to your business.
+                        </span>
                       )}
                     </ReasoningContent>
                   </Reasoning>
@@ -619,7 +621,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         </div>
 
         {/* Chat Input - Absolutely positioned at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 border-t bg-background p-4 z-10">
+        <div className="absolute bottom-0 left-0 right-0 border-t bg-background p-4 z-10 dark:border-slate-700">
           <div className="max-w-2xl mx-auto">
             <div className="flex gap-2">
               <div className="flex-1 relative">
@@ -627,7 +629,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   placeholder="Type your message here..."
-                  className="pr-12"
+                  className="pr-12 dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                   onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                 />
                 <Button
@@ -645,9 +647,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       </div>
 
       {/* Desktop Right Sidebar - Chat History */}
-      <div className="w-96 border-l bg-muted/20 flex flex-col flex-shrink-0 overflow-hidden hidden md:flex">
+      <div className="w-96 border-l bg-muted/20 flex flex-col flex-shrink-0 overflow-hidden hidden md:flex dark:bg-slate-900/60 dark:border-slate-700">
         {/* Sidebar Header */}
-        <div className="p-4 border-b">
+        <div className="p-4 border-b dark:border-slate-700">
           {/* QuickBooks Connection Status & Actions */}
           {!qboStatus.connected ? (
             <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
@@ -658,7 +660,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   <p className="text-amber-700 dark:text-amber-200 text-xs">Connect to access financial data</p>
                 </div>
               </div>
-              <Button size="sm" className="w-full" onClick={handleConnectQuickBooks}>
+              <Button size="sm" className="w-full">
                 <ExternalLink size={14} className="mr-2" />
                 Connect QuickBooks
               </Button>
@@ -675,18 +677,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     {companyName || qboStatus.company_name || 'QuickBooks'}
                   </div>
                 </div>
-                {/*
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleSyncTransactions}
-                    className="h-7 px-2 text-xs"
-                    disabled={qboStatus.loading}
-                  >
-                    {qboStatus.loading && <Loader2 size={12} className="mr-1 animate-spin" />}
-                    Sync Data
-                  </Button>
-                */}
               </div>
             </div>
           )}
@@ -698,12 +688,12 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         </div>
 
         {/* Search */}
-        <div className="p-4 border-b">
+        <div className="p-4 border-b dark:border-slate-700">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search your chats..."
-              className="pl-9"
+              className="pl-9 dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -714,7 +704,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         <ScrollArea className="flex-1 min-h-0 max-h-[calc(100vh-285px)]">
           <div className="py-4 pr-6 pl-1">
             <div className="space-y-1 max-w-full overflow-hidden">
-              {loading && <div className="text-sm text-muted-foreground px-2">Loading...</div>}
+              {loading && <div className="text-sm text-muted-foreground px-2 dark:text-slate-300/90">Loading...</div>}
 
               {(() => {
                 const groups = sessionGroups;
@@ -722,11 +712,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   <>
                     {groups.today.length > 0 && (
                       <>
-                        <div className="text-xs font-medium text-muted-foreground px-2 py-1">Today</div>
+                        <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">Today</div>
                         {groups.today.slice(0, displayLimits.today).map((session) => (
                           <Card
                             key={session.id}
-                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                             onClick={() => selectSession(session)}
                           >
                             <div className="space-y-1">
@@ -741,7 +731,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                   <Trash2 size={12} />
                                 </Button>
                               </div>
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-xs text-muted-foreground dark:text-slate-300/90">
                                 {formatTime(new Date(session.updated_at))}
                               </div>
                             </div>
@@ -751,7 +741,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="w-full mt-2 text-xs text-muted-foreground"
+                            className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
                             onClick={() => loadMoreSessions('today')}
                           >
                             Load {Math.min(10, groups.today.length - displayLimits.today)} more from today
@@ -762,11 +752,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
                     {groups.yesterday.length > 0 && (
                       <>
-                        <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4">Yesterday</div>
+                        <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4 dark:text-slate-300/90">Yesterday</div>
                         {groups.yesterday.slice(0, displayLimits.yesterday).map((session) => (
                           <Card
                             key={session.id}
-                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                             onClick={() => selectSession(session)}
                           >
                             <div className="space-y-1">
@@ -781,7 +771,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                   <Trash2 size={12} />
                                 </Button>
                               </div>
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-xs text-muted-foreground dark:text-slate-300/90">
                                 {formatTime(new Date(session.updated_at))}
                               </div>
                             </div>
@@ -791,7 +781,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="w-full mt-2 text-xs text-muted-foreground"
+                            className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
                             onClick={() => loadMoreSessions('yesterday')}
                           >
                             Load {Math.min(10, groups.yesterday.length - displayLimits.yesterday)} more from yesterday
@@ -802,11 +792,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
                     {groups.week.length > 0 && (
                       <>
-                        <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4">Last 7 Days</div>
+                        <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4 dark:text-slate-300/90">Last 7 Days</div>
                         {groups.week.slice(0, displayLimits.week).map((session) => (
                           <Card
                             key={session.id}
-                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                             onClick={() => selectSession(session)}
                           >
                             <div className="space-y-1">
@@ -821,7 +811,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                   <Trash2 size={12} />
                                 </Button>
                               </div>
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-xs text-muted-foreground dark:text-slate-300/90">
                                 {formatTime(new Date(session.updated_at))}
                               </div>
                             </div>
@@ -831,7 +821,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="w-full mt-2 text-xs text-muted-foreground"
+                            className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
                             onClick={() => loadMoreSessions('week')}
                           >
                             Load {Math.min(10, groups.week.length - displayLimits.week)} more from this week
@@ -842,11 +832,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
                     {groups.older.length > 0 && (
                       <>
-                        <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4">Older</div>
+                        <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4 dark:text-slate-300/90">Older</div>
                         {groups.older.slice(0, displayLimits.older).map((session) => (
                           <Card
                             key={session.id}
-                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                            className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                             onClick={() => selectSession(session)}
                           >
                             <div className="space-y-1">
@@ -871,7 +861,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="w-full mt-2 text-xs text-muted-foreground"
+                            className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
                             onClick={() => loadMoreSessions('older')}
                           >
                             Load {Math.min(10, groups.older.length - displayLimits.older)} more older chats
@@ -881,7 +871,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     )}
 
                     {!loading && sessions.length === 0 && (
-                      <div className="text-sm text-muted-foreground px-2 py-4 text-center">
+                      <div className="text-sm text-muted-foreground px-2 py-4 text-center dark:text-slate-300/90">
                         No chat history yet
                       </div>
                     )}
@@ -896,9 +886,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div className="md:hidden fixed inset-0 z-30 bg-black/50" onClick={() => setSidebarOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-80 bg-background border-l flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute right-0 top-0 h-full w-80 bg-background border-l flex flex-col overflow-hidden dark:bg-slate-900/60 dark:border-slate-700" onClick={(e) => e.stopPropagation()}>
             {/* Mobile Close Button */}
-            <div className="flex justify-between items-center p-4 border-b">
+            <div className="flex justify-between items-center p-4 border-b dark:border-slate-700">
               <h3 className="font-semibold">Chat History</h3>
               <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
                 <X size={20} />
@@ -906,11 +896,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             </div>
 
             {/* Mobile Sidebar Content - Same as desktop */}
-            <div className="p-4 border-b">
+            <div className="p-4 border-b dark:border-slate-700">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   {qboStatus.connected ? (
-                    <Badge variant="default" className="text-xs bg-green-100 text-green-800 border-green-200">
+                    <Badge variant="default" className="text-xs bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800">
                       <CheckCircle size={12} className="mr-1" />
                       Connected
                       {qboStatus.loading && <Loader2 size={10} className="ml-1 animate-spin" />}
@@ -923,7 +913,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     </Badge>
                   )}
                 </div>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" className="dark:bg-slate-900/60 dark:border-slate-700">
                   <Settings2 size={16} />
                 </Button>
               </div>
@@ -956,7 +946,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                       size="sm"
                       variant="outline"
                       onClick={handleSyncTransactions}
-                      className="h-7 px-2 text-xs"
+                      className="h-7 px-2 text-xs dark:bg-slate-900/60 dark:border-slate-700"
                       disabled={qboStatus.loading}
                     >
                       {qboStatus.loading && <Loader2 size={12} className="mr-1 animate-spin" />}
@@ -978,7 +968,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Search your chats..."
-                  className="pl-9"
+                  className="pl-9 dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -989,16 +979,16 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             <ScrollArea className="flex-1 min-h-0 max-h=[calc(100vh-325px)]">
               <div className="p-2">
                 <div className="space-y-1">
-                  {loading && <div className="text-sm text-muted-foreground px-2">Loading...</div>}
+                  {loading && <div className="text-sm text-muted-foreground px-2 dark:text-slate-300/90">Loading...</div>}
 
                   {/* Today */}
                   {sessionGroups.today.length > 0 && (
                     <>
-                      <div className="text-xs font-medium text-muted-foreground px-2 py-1">Today</div>
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">Today</div>
                       {sessionGroups.today.slice(0, displayLimits.today).map((session) => (
                         <Card
                           key={session.id}
-                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                           onClick={() => { selectSession(session); setSidebarOpen(false); }}
                         >
                           <div className="space-y-1">
@@ -1013,14 +1003,14 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                 <Trash2 size={12} />
                               </Button>
                             </div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-xs text-muted-foreground truncate dark:text-slate-300/90">
                               {formatTime(new Date(session.updated_at))}
                             </div>
                           </div>
                         </Card>
                       ))}
                       {sessionGroups.today.length > displayLimits.today && (
-                        <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => loadMoreSessions('today')}>
+                        <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('today')}>
                           Show more from today
                         </Button>
                       )}
@@ -1030,11 +1020,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   {/* Yesterday */}
                   {sessionGroups.yesterday.length > 0 && (
                     <>
-                      <div className="text-xs font-medium text-muted-foreground px-2 py-1">Yesterday</div>
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">Yesterday</div>
                       {sessionGroups.yesterday.slice(0, displayLimits.yesterday).map((session) => (
                         <Card
                           key={session.id}
-                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                           onClick={() => { selectSession(session); setSidebarOpen(false); }}
                         >
                           <div className="space-y-1">
@@ -1049,14 +1039,14 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                 <Trash2 size={12} />
                               </Button>
                             </div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-xs text-muted-foreground truncate dark:text-slate-300/90">
                               {formatTime(new Date(session.updated_at))}
                             </div>
                           </div>
                         </Card>
                       ))}
                       {sessionGroups.yesterday.length > displayLimits.yesterday && (
-                        <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => loadMoreSessions('yesterday')}>
+                        <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('yesterday')}>
                           Show more from yesterday
                         </Button>
                       )}
@@ -1066,11 +1056,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   {/* This Week */}
                   {sessionGroups.week.length > 0 && (
                     <>
-                      <div className="text-xs font-medium text-muted-foreground px-2 py-1">This Week</div>
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">This Week</div>
                       {sessionGroups.week.slice(0, displayLimits.week).map((session) => (
                         <Card
                           key={session.id}
-                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                           onClick={() => { selectSession(session); setSidebarOpen(false); }}
                         >
                           <div className="space-y-1">
@@ -1085,14 +1075,14 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                                 <Trash2 size={12} />
                               </Button>
                             </div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-xs text-muted-foreground truncate dark:text-slate-300/90">
                               {formatTime(new Date(session.updated_at))}
                             </div>
                           </div>
                         </Card>
                       ))}
                       {sessionGroups.week.length > displayLimits.week && (
-                        <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => loadMoreSessions('week')}>
+                        <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('week')}>
                           Show more from this week
                         </Button>
                       )}
@@ -1102,11 +1092,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   {/* Older */}
                   {sessionGroups.older.length > 0 && (
                     <>
-                      <div className="text-xs font-medium text-muted-foreground px-2 py-1">Older</div>
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">Older</div>
                       {sessionGroups.older.slice(0, displayLimits.older).map((session) => (
                         <Card
                           key={session.id}
-                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group ${currentSession?.id === session.id ? 'bg-muted' : 'bg-transparent'}`}
+                          className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
                           onClick={() => { selectSession(session); setSidebarOpen(false); }}
                         >
                           <div className="space-y-1">
@@ -1128,7 +1118,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         </Card>
                       ))}
                       {sessionGroups.older.length > displayLimits.older && (
-                        <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => loadMoreSessions('older')}>
+                        <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('older')}>
                           Show more
                         </Button>
                       )}
@@ -1136,7 +1126,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   )}
 
                   {!loading && sessions.length === 0 && (
-                    <div className="text-sm text-muted-foreground px-2 py-4 text-center">
+                    <div className="text-sm text-muted-foreground px-2 py-4 text-center dark:text-slate-300/90">
                       No chat history yet
                     </div>
                   )}
