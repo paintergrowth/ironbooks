@@ -229,14 +229,17 @@ const DemoExpenseCategories: React.FC<{ timeframe: ApiPeriod }> = ({ timeframe }
     timeframe === 'last_quarter' ? 'Last Quarter' : 'Year-to-Date';
 
   return (
-    <Card>
+    <Card className="dark:bg-slate-900/60 dark:border-slate-700">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg font-bold">Expense Categories (Demo)</CardTitle>
-        <CardDescription>Showing {tfLabel} demo split</CardDescription>
+        <CardDescription className="dark:text-slate-300/90">Showing {tfLabel} demo split</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {data.map((row) => (
-          <div key={row.name} className="flex items-center justify-between rounded-md border p-3">
+          <div
+            key={row.name}
+            className="flex items-center justify-between rounded-md border p-3 dark:bg-slate-800/60 dark:border-slate-700"
+          >
             <span className="text-sm font-medium">{row.name}</span>
             <span className="text-sm">{formatCurrency(row.amount)}</span>
           </div>
@@ -612,21 +615,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             {companyName || 'Demo Company'}
           </h1>
-          <p className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+          <p className="text-sm text-muted-foreground dark:text-slate-300 flex items-center gap-2 mt-1">
             Last synced: {lastSync
               ? new Date(lastSync).toLocaleDateString() + ' at ' + new Date(lastSync).toLocaleTimeString()
               : '—'}
-            <span className={`inline-block w-2 h-2 rounded-full ${lastSync ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+            <span className={`inline-block w-2 h-2 rounded-full ${lastSync ? 'bg-green-500' : 'bg-gray-500/70'}`}></span>
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Select value={timeframe} onValueChange={(v: UiTimeframe) => setTimeframe(v)}>
-            <SelectTrigger className="w-44" disabled={loading}>
+            <SelectTrigger className="w-44 dark:bg-slate-900/60 dark:border-slate-700">
               <Calendar className="w-4 h-4 mr-2" />
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="dark:bg-slate-900 dark:border-slate-700">
               <SelectItem value="thisMonth">This Month</SelectItem>
               <SelectItem value="lastMonth">Last Month</SelectItem>
               <SelectItem value="thisQuarter">This Quarter</SelectItem>
@@ -634,7 +637,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
               <SelectItem value="ytd">YTD</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleExportSnapshot} variant="outline" size="sm" disabled={loading || ytdLoading}>
+          <Button
+            onClick={handleExportSnapshot}
+            variant="outline"
+            size="sm"
+            disabled={loading || ytdLoading}
+            className="dark:bg-slate-900/60 dark:border-slate-700"
+          >
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
@@ -642,7 +651,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       </div>
 
       {/* Key Insight */}
-      <Card className="border-l-4 border-l-primary bg-primary/5 dark:bg-primary/10">
+      <Card className="border-l-4 border-l-primary bg-primary/5 dark:bg-slate-900/70 dark:border-slate-700">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 text-primary">
@@ -654,7 +663,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             </div>
             <div>
               <p className="text-sm font-semibold text-primary mb-1">Performance Trend</p>
-              <p className="text-primary font-medium">{insightText}</p>
+              <p className="text-primary font-medium dark:text-slate-200">{insightText}</p>
             </div>
           </div>
         </CardContent>
@@ -662,10 +671,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
       {/* 3 Main Metric Cards */}
       <div className="grid gap-6 md:grid-cols-3">
-        <Card className="cursor-pointer transition-colors hover:shadow-lg" onClick={() => handleCardClick('revenue')}>
+        <Card
+          className="cursor-pointer transition-colors hover:shadow-lg dark:bg-slate-900/60 dark:border-slate-700"
+          onClick={() => handleCardClick('revenue')}
+        >
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardDescription className="text-gray-600 dark:text-gray-400">REVENUE →</CardDescription>
+              <CardDescription className="text-gray-600 dark:text-slate-300/90">REVENUE →</CardDescription>
               <div className="text-green-500">
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
@@ -675,16 +687,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             <CardTitle className="text-3xl font-bold text-gray-900 dark:text-white">
               {formatCurrency(revCurr)}
             </CardTitle>
-            <p className={`text-sm font-medium ${revPct !== null && revPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <p className={`text-sm font-medium ${revPct !== null && revPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
               {revPct === null ? `— ${changeLabel(timeframe)}` : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}% ${changeLabel(timeframe)}`}
             </p>
           </CardHeader>
         </Card>
 
-        <Card className="cursor-pointer transition-colors hover:shadow-lg" onClick={() => handleCardClick('expenses')}>
+        <Card
+          className="cursor-pointer transition-colors hover:shadow-lg dark:bg-slate-900/60 dark:border-slate-700"
+          onClick={() => handleCardClick('expenses')}
+        >
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardDescription className="text-gray-600 dark:text-gray-400">EXPENSES →</CardDescription>
+              <CardDescription className="text-gray-600 dark:text-slate-300/90">EXPENSES →</CardDescription>
               <div className="text-red-500">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
@@ -694,16 +709,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             <CardTitle className="text-3xl font-bold text-gray-900 dark:text-white">
               {formatCurrency(expCurr)}
             </CardTitle>
-            <p className={`text-sm font-medium ${expPct !== null && expPct < 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <p className={`text-sm font-medium ${expPct !== null && expPct < 0 ? 'text-green-600' : 'text-red-500'}`}>
               {expPct === null ? `— ${changeLabel(timeframe)}` : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}% ${changeLabel(timeframe)}`}
             </p>
           </CardHeader>
         </Card>
 
-        <Card className="cursor-pointer transition-colors hover:shadow-lg" onClick={() => handleCardClick('profit-loss')}>
+        <Card
+          className="cursor-pointer transition-colors hover:shadow-lg dark:bg-slate-900/60 dark:border-slate-700"
+          onClick={() => handleCardClick('profit-loss')}
+        >
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardDescription className="text-gray-600 dark:text-gray-400">NET PROFIT →</CardDescription>
+              <CardDescription className="text-gray-600 dark:text-slate-300/90">NET PROFIT →</CardDescription>
               <div className="text-green-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -713,10 +731,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             <CardTitle className="text-3xl font-bold text-gray-900 dark:text-white">
               {formatCurrency(netCurr)}
             </CardTitle>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-gray-600 dark:text-slate-300/90">
               Margin: {profitMargin.toFixed(1)}%
             </p>
-            <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
               {netPct === null
                 ? `— vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`
                 : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd' ? 'last year' : timeframe === 'thisQuarter' || timeframe === 'lastQuarter' ? 'last quarter' : 'last month'}`}
@@ -726,12 +744,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       </div>
 
       {/* Business Health Insights */}
-      <Card>
+      <Card className="dark:bg-slate-900/60 dark:border-slate-700">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg font-bold text-gray-900 dark:text-white">Business Health</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/20">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-emerald-900/30 dark:border dark:border-emerald-800">
             <div className="mt-0.5 text-green-600">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
@@ -744,7 +762,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
                   {profitMargin.toFixed(1)}%
                 </Badge>
               </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-gray-600 dark:text-slate-300/90">
                 Your {profitMargin.toFixed(1)}% net margin shows healthy operational efficiency
               </p>
             </div>
@@ -753,10 +771,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       </Card>
 
       {/* Chart with Revenue Trend Banner */}
-      <Card className="border-2 shadow-lg dark:border-gray-700">
+      <Card className="border-2 shadow-lg dark:border-slate-700 dark:bg-slate-900/60">
         <CardHeader>
-          <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg mb-4 border border-green-200 dark:border-green-800">
-            <p className="text-sm text-green-600 dark:text-green-400 font-medium">
+          <div className="bg-green-50 dark:bg-emerald-900/30 p-3 rounded-lg mb-4 border border-green-200 dark:border-emerald-800">
+            <p className="text-sm text-green-600 dark:text-emerald-300 font-medium">
               Revenue trend {timeframe === 'ytd' ? 'YTD' : 'recent'}:{' '}
               {revPct === null ? '—' : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}%`} {changeLabel(timeframe)}
             </p>
@@ -781,7 +799,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
                   <stop offset="95%" stopColor="var(--color-expenses)" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} />
+              <CartesianGrid vertical={false} strokeOpacity={0.25} />
               <XAxis
                 dataKey="date"
                 tickLine={false}
@@ -797,6 +815,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
                 cursor={false}
                 content={
                   <ChartTooltipContent
+                    className="dark:bg-slate-900/90 dark:border-slate-700"
                     labelFormatter={(value) => {
                       return new Date(value).toLocaleDateString("en-US", {
                         month: "short",
@@ -834,6 +853,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         <ExpenseCategories
           timeframe={toApiPeriod(timeframe)}
           {...({ userId: effUserId, realmId: effRealmId } as any)}
+          className="dark:bg-slate-900/60 dark:border-slate-700"
         />
       )}
     </div>
