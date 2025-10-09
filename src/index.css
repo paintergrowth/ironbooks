@@ -47,7 +47,7 @@
     --input: 220 13% 91%;
     --ring: 220 100% 55%;
 
-    --radius: 1.25rem; /* 20px for more modern feel */
+    --radius: 0.5rem; /* 8px - subtle rounded corners */
 
     /* Sidebar */
     --sidebar-background: 0 0% 98%;
@@ -69,57 +69,61 @@
     --primary: 220 100% 55%; /* #315EFF - IronBooks ultramarine */
     --primary-foreground: 0 0% 100%; /* White text on primary */
     
-    --success: 160 84% 45%; /* Brighter green for dark mode */
-    --success-foreground: 0 0% 100%;
+    --success: 152 67% 45%; /* Green for dark mode */
+    --success-foreground: 152 30% 90%;
     
-    --warning: 45 93% 50%; /* Brighter orange for dark mode */
-    --warning-foreground: 0 0% 0%;
+    --warning: 45 93% 47%; /* Orange for dark mode */
+    --warning-foreground: 45 30% 92%;
     
-    --destructive: 0 84% 65%; /* Brighter red for dark mode */
-    --destructive-foreground: 0 0% 0%;
+    --destructive: 0 84% 60%; /* Red for dark mode */
+    --destructive-foreground: 0 0% 98%;
 
-    /* Dark theme backgrounds */
-    --background: 220 15% 6%; /* #0E0F11 - IronBooks deep space black */
-    --foreground: 220 15% 97%; /* #F5F7FA - IronBooks soft grey */
+    /* Dark theme backgrounds - matching Uptime design */
+    --background: 220 20% 12%; /* #1A1F2E - deep navy background */
+    --foreground: 220 15% 95%; /* #F1F2F4 - crisp white text */
 
-    --card: 220 10% 12%; /* Slightly lighter than background for depth */
-    --card-foreground: 220 15% 97%;
+    --card: 220 18% 17%; /* #252D3E - slightly elevated card */
+    --card-foreground: 220 15% 95%;
 
-    --popover: 220 10% 12%;
-    --popover-foreground: 220 15% 97%;
+    --popover: 220 18% 19%; /* Popovers/menus - slightly brighter */
+    --popover-foreground: 220 15% 95%;
 
     /* Secondary & Muted */
-    --secondary: 220 10% 18%; /* Subtle grey cards */
-    --secondary-foreground: 220 15% 97%;
+    --secondary: 220 18% 20%; /* Nested elements */
+    --secondary-foreground: 220 15% 95%;
 
-    --muted: 220 10% 18%;
-    --muted-foreground: 220 9% 60%; /* Muted text */
+    --muted: 220 18% 20%; /* Nested rows/blocks inside cards */
+    --muted-foreground: 220 12% 65%; /* #A0A6B1 - muted text */
 
-    --accent: 220 10% 18%;
-    --accent-foreground: 220 15% 97%;
+    --accent: 220 18% 20%;
+    --accent-foreground: 220 15% 95%;
 
-    /* Borders & Input */
-    --border: 220 10% 20%; /* Subtle borders */
-    --input: 220 10% 18%;
-    --ring: 220 100% 55%;
+    /* Borders & Input - Use with alpha for soft edges */
+    --border: 220 15% 30%; /* Subtle border color */
+    --input: 220 18% 17%;
+    --ring: 220 100% 55%; /* Focus rings */
 
     /* Sidebar */
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-background: 220 20% 12%;
+    --sidebar-foreground: 220 15% 95%;
+    --sidebar-primary: 220 100% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 220 18% 17%;
+    --sidebar-accent-foreground: 220 15% 95%;
+    --sidebar-border: 220 15% 30%;
+    --sidebar-ring: 220 100% 55%;
 
     /* Chart Colors */
-    --chart-1: 160 84% 45%; /* Brighter green for revenue */
-    --chart-2: 0 84% 65%;    /* Brighter red for expenses */
+    --chart-1: 160 84% 45%; /* Green for revenue */
+    --chart-2: 0 84% 65%;    /* Red for expenses */
   }
 }
 
 @layer base {
+  html {
+    font-size: 14px; /* Reduced from 16px default (25% smaller) */
+  }
+
   * {
     @apply border-border;
   }
