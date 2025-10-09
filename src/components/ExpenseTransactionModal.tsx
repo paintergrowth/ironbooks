@@ -19,17 +19,17 @@ interface ExpenseTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   category: string;
-  /** existing prop: still supported for preset labels */
+  /** existing prop: still supported for preset labels; may be "ytd (custom)" in some flows */
   timeframe: string;
   transactions: Transaction[];
 
-  /** NEW (optional): pass these when using a custom range */
+  /** Optional: pass these when using a custom range */
   mode?: 'preset' | 'custom';
   /** YYYY-MM-DD if mode==='custom' */
   rangeFrom?: string | null;
   /** YYYY-MM-DD if mode==='custom' */
   rangeTo?: string | null;
-  /** Optional: if you want to force a preset label; otherwise derived from `timeframe` */
+  /** Optional: explicit preset enum to override timeframe free text */
   preset?: ApiPeriod;
 }
 
@@ -58,9 +58,8 @@ const ExpenseTransactionModal: React.FC<ExpenseTransactionModalProps> = ({
       year: 'numeric',
     });
 
-  // Special short, compact label for the header range (1 Jan 2025 ~ 10 Jan 2025)
+  // Header-friendly formatter: "1 Jan 2025"
   const formatHeaderDate = (yyyyMmDd: string) => {
-    // Safe parse YYYY-MM-DD as UTC to avoid TZ off-by-one in some locales
     const d = new Date(`${yyyyMmDd}T00:00:00Z`);
     const day = d.getUTCDate();
     const month = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
@@ -83,11 +82,18 @@ const ExpenseTransactionModal: React.FC<ExpenseTransactionModalProps> = ({
 
   const totalAmount = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  // ----- Header label logic -----
+  // ----- Robust custom detection -----
+  const timeframeLooksCustom = /\bcustom\b/i.test(timeframe || '');
+  const hasRange = !!(rangeFrom && rangeTo);
+  const isCustom = mode === 'custom' || hasRange || timeframeLooksCustom;
+
+  // ----- Preset label when not custom -----
   const effectivePreset: ApiPeriod | null =
     preset ??
-    (['this_month', 'last_month', 'this_quarter', 'last_quarter', 'ytd'].includes(timeframe)
-      ? (timeframe as ApiPeriod)
+    (['this_month', 'last_month', 'this_quarter', 'last_quarter', 'ytd'].includes(
+      (timeframe || '').toLowerCase()
+    )
+      ? ((timeframe as unknown) as ApiPeriod)
       : null);
 
   const presetLabel =
@@ -101,12 +107,13 @@ const ExpenseTransactionModal: React.FC<ExpenseTransactionModalProps> = ({
       ? 'Last Quarter'
       : effectivePreset === 'ytd'
       ? 'YTD'
-      : timeframe; // fallback to whatever was passed
+      : timeframe; // fallback: whatever string was passed in
 
-  // If we're in custom mode AND have both endpoints, show range; otherwise show preset label
-  const isCustom = mode === 'custom' && !!rangeFrom && !!rangeTo;
+  // ----- Final heading suffix -----
   const headingSuffix = isCustom
-    ? `(${formatHeaderDate(rangeFrom!)} ~ ${formatHeaderDate(rangeTo!)})`
+    ? hasRange
+      ? `(${formatHeaderDate(rangeFrom!)} ~ ${formatHeaderDate(rangeTo!)})`
+      : '(Custom Range)'
     : presetLabel;
 
   return (
