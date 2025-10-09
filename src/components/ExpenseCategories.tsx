@@ -5,7 +5,18 @@ import { Button } from '@/components/ui/button';
 import { invokeWithAuth } from '@/lib/supabase';
 import { useEffectiveIdentity } from '@/lib/impersonation';
 
-type ApiPeriod = 'this_month' | 'last_month' | 'ytd';
+// ⬅️ Expanded to match backend + dashboard (adds quarters)
+type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'ytd';
+
+// NEW: accept custom range from parent (dashboard)
+interface ExpenseCategoriesProps {
+  timeframe: ApiPeriod;
+  className?: string;
+  // optional; when provided and mode==='custom', we'll include them in the request
+  mode?: 'preset' | 'custom';
+  fromDate?: string;   // 'YYYY-MM-DD'
+  toDate?: string;     // 'YYYY-MM-DD'
+}
 
 function fmt0(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -15,7 +26,11 @@ function pctChange(curr: number, prev: number): number | null {
   return ((curr - prev) / Math.abs(prev)) * 100;
 }
 function changeLabel(period: ApiPeriod) {
-  return period === 'ytd' ? 'from last year' : 'from last month';
+  return period === 'ytd'
+    ? 'from last year'
+    : (period === 'this_quarter' || period === 'last_quarter')
+    ? 'from last quarter'
+    : 'from last month';
 }
 
 interface CategoryRow {
@@ -40,7 +55,13 @@ interface TxnRow {
   amount: number | string;
 }
 
-export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod }) {
+export default function ExpenseCategories({
+  timeframe,
+  className,
+  mode = 'preset',
+  fromDate,
+  toDate,
+}: ExpenseCategoriesProps) {
   // 🔑 honor impersonation
   const { userId: effUserId, realmId: effRealmId } = useEffectiveIdentity();
 
@@ -57,21 +78,26 @@ export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod 
 
   useEffect(() => { setPeriod(timeframe); }, [timeframe]);
 
-  // ⬇️ categories fetch (impersonation-aware)
+  // ⬇️ categories fetch (impersonation-aware) with custom range passthrough
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!effUserId) return;
       setLoading(true);
       try {
-        const { data, error } = await invokeWithAuth('qbo-expense-categories', {
-          body: {
-            period,
-            userId: effUserId ?? null,
-            realmId: effRealmId ?? null,
-            nonce: Date.now(),
-          },
-        });
+        const body: any = {
+          period,
+          userId: effUserId ?? null,
+          realmId: effRealmId ?? null,
+          nonce: Date.now(),
+        };
+        if (mode === 'custom' && fromDate && toDate) {
+          body.mode = 'custom';
+          body.from_date = fromDate;
+          body.to_date = toDate;
+        }
+
+        const { data, error } = await invokeWithAuth('qbo-expense-categories', { body });
         if (error) throw error;
         const payload = data as CategoriesPayload;
         if (!cancelled && payload) {
@@ -88,24 +114,29 @@ export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod 
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [period, effUserId, effRealmId]);
+    // 🔁 re-fetch when custom inputs or impersonation context changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, effUserId, effRealmId, mode, fromDate, toDate]);
 
   const openDetails = async (row: CategoryRow) => {
     setSelected(row);
     setOpen(true);
     setLoadingTxns(true);
     try {
-      const { data, error } = await invokeWithAuth('qbo-expense-transactions', {
-        body: {
-          period,
-          accountId: row.accountId ?? undefined,
-          accountName: row.name,
-          userId: effUserId ?? null,
-          realmId: effRealmId ?? null,
-          nonce: Date.now(),
-        },
-      });
+      const body: any = {
+        period,
+        accountId: row.accountId ?? undefined,
+        accountName: row.name,
+        userId: effUserId ?? null,
+        realmId: effRealmId ?? null,
+        nonce: Date.now(),
+      };
+      if (mode === 'custom' && fromDate && toDate) {
+        body.mode = 'custom';
+        body.from_date = fromDate;
+        body.to_date = toDate;
+      }
+      const { data, error } = await invokeWithAuth('qbo-expense-transactions', { body });
       if (error) throw error;
       const coerced = Array.isArray(data?.transactions)
         ? data.transactions.map((t: TxnRow) => ({ ...t, amount: Number((t as any).amount) || 0 }))
@@ -120,15 +151,18 @@ export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod 
   };
 
   const closeDetails = () => { setOpen(false); setSelected(null); setTxns([]); };
-  const txnTotal = useMemo(() => txns.reduce((s, t) => s + (typeof t.amount === 'string' ? Number(t.amount) || 0 : (t.amount || 0)), 0), [txns]);
+  const txnTotal = useMemo(
+    () => txns.reduce((s, t) => s + (typeof t.amount === 'string' ? Number(t.amount) || 0 : (t.amount || 0)), 0),
+    [txns]
+  );
 
   const periodChangeText = useMemo(() => changeLabel(period), [period]);
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${className || ''}`}>
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Top Expense Categories <span className="text-sm text-gray-500">({period === 'ytd' ? 'YoY Change' : 'MoM Change'})</span>
+          Top Expense Categories <span className="text-sm text-gray-500">({period === 'ytd' ? 'YoY Change' : (period === 'this_quarter' || period === 'last_quarter') ? 'QoQ Change' : 'MoM Change'})</span>
         </h3>
         {loading ? <span className="text-xs text-gray-500">Loading…</span> : null}
       </div>
@@ -140,7 +174,11 @@ export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod 
           const isUp = delta > 0;
           const barPct = Math.max(0, Math.min(100, (c.share || 0) * 100));
           return (
-            <Card key={`${c.accountId || c.name}`} className="p-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => openDetails(c)}>
+            <Card
+              key={`${c.accountId || c.name}`}
+              className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => openDetails(c)}
+            >
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium text-gray-900 dark:text-white">{c.name}</div>
                 <div className="text-sm text-gray-500">{((c.share || 0) * 100).toFixed(1)}%</div>
@@ -171,7 +209,7 @@ export default function ExpenseCategories({ timeframe }: { timeframe: ApiPeriod 
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h4 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {selected?.name} — {period}
+                  {selected?.name} — {period}{mode === 'custom' ? ' (custom)' : ''}
                 </h4>
                 <p className="text-sm text-gray-500">
                   {fmt0(txnTotal)} total • {((selected?.share || 0) * 100).toFixed(1)}% of expenses
