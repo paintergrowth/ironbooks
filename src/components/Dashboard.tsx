@@ -19,8 +19,10 @@ import { useAppContext } from '@/contexts/AppContext';
 import { useEffectiveIdentity } from '@/lib/impersonation';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
+// 🔽 NEW: helper for building range payloads (single tiny util file below)
+import { buildRangePayload } from '@/utils/dateRanges';
 
-type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd';
+type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd' | 'custom'; // ⬅ added 'custom'
 type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'ytd';
 
 interface ApiNumberPair {
@@ -151,7 +153,7 @@ const pctChange = (curr: number, prev: number): number | null => {
     if (prev === 0) return null;
     return ((curr - prev) / Math.abs(prev)) * 100;
 };
-const toApiPeriod = (ui: UiTimeframe): ApiPeriod =>
+const toApiPeriod = (ui: Exclude<UiTimeframe, 'custom'>): ApiPeriod =>
     ui === 'thisMonth' ? 'this_month'
         : ui === 'lastMonth' ? 'last_month'
             : ui === 'thisQuarter' ? 'this_quarter'
@@ -160,6 +162,7 @@ const toApiPeriod = (ui: UiTimeframe): ApiPeriod =>
 const changeLabel = (period: UiTimeframe) =>
     period === 'ytd' ? 'from last year'
         : period === 'thisQuarter' || period === 'lastQuarter' ? 'from last quarter'
+            : period === 'custom' ? 'vs selected range'
             : 'from last month';
 
 const chartConfig = {
@@ -245,6 +248,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     const isDemo = !effRealmId;
 
     const [timeframe, setTimeframe] = useState<UiTimeframe>('lastMonth');
+    // 🔽 NEW: custom range state
+    const [fromDate, setFromDate] = useState<string | null>(null); // YYYY-MM-DD
+    const [toDate, setToDate] = useState<string | null>(null);     // YYYY-MM-DD
 
     const [chartTimeRange, setChartTimeRange] = useState('30d');
     const [loading, setLoading] = useState(false);
@@ -422,10 +428,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     useEffect(() => {
         let isCancelled = false;
         const run = async () => {
-            const period = toApiPeriod(timeframe);
+            // 🔽 Build unified payload (preset or custom)
+            const rangePayload = buildRangePayload({
+                mode: timeframe === 'custom' ? 'custom' : 'preset',
+                preset: timeframe !== 'custom' ? toApiPeriod(timeframe as Exclude<UiTimeframe, 'custom'>) : null,
+                from_date: timeframe === 'custom' ? fromDate : null,
+                to_date: timeframe === 'custom' ? toDate : null,
+            });
 
             if (isDemo) {
-                const demo = demoTiles(period);
+                // Demo: keep existing behavior; if custom, just show YTD-like demo numbers
+                const demo = demoTiles(rangePayload.preset ?? 'ytd');
                 if (!isCancelled) {
                     setRevCurr(demo.revenue.current as number);
                     setRevPrev(demo.revenue.previous as number);
@@ -444,7 +457,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
             setLoading(true);
             try {
                 const { data, error } = await invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
-                    body: { period, userId: effUserId, realmId: effRealmId, nonce: Date.now() },
+                    body: {
+                        ...rangePayload,
+                        userId: effUserId,
+                        realmId: effRealmId,
+                        nonce: Date.now(),
+                    },
                 });
 
                 if (error) console.error('qbo-dashboard error:', error);
@@ -477,9 +495,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         };
         run();
         return () => { isCancelled = true; };
-    }, [timeframe, effUserId, effRealmId, isDemo]);
+    }, [timeframe, fromDate, toDate, effUserId, effRealmId, isDemo]);
 
-    // YTD chart
+    // YTD chart (unchanged behavior)
     useEffect(() => {
         let isCancelled = false;
         const loadYtd = async () => {
@@ -602,13 +620,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
     // simple helper to route user to your Settings/Integrations screen
     const goReconnectQBO = () => {
-        // If you have a dedicated connect handler, call it here.
-        // For now, push user to Settings where they can reconnect.
         try {
             const url = '/settings?tab=integrations';
             window.open(url, '_blank');
         } catch { }
     };
+
+    const isCustom = timeframe === 'custom';
+    const customValid = isCustom && !!fromDate && !!toDate && fromDate <= toDate;
 
     return (
         <div className="space-y-6 p-6">
@@ -640,7 +659,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <Select value={timeframe} onValueChange={(v) => setTimeframe(v as UiTimeframe)}>
+                    <Select
+                        value={timeframe}
+                        onValueChange={(v) => {
+                            const val = v as UiTimeframe;
+                            setTimeframe(val);
+                            if (val !== 'custom') {
+                                // 🔽 Clear custom dates when leaving custom
+                                setFromDate(null);
+                                setToDate(null);
+                            }
+                        }}
+                    >
                         <SelectTrigger className="w-44 bg-card border border-border/30 hover:bg-muted/40">
                             <Calendar className="w-4 h-4 mr-2" />
                             <SelectValue />
@@ -651,14 +681,39 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
                             <SelectItem value="thisQuarter">This Quarter</SelectItem>
                             <SelectItem value="lastQuarter">Last Quarter</SelectItem>
                             <SelectItem value="ytd">YTD</SelectItem>
+                            {/* 🔽 NEW */}
+                            <SelectItem value="custom">Custom…</SelectItem>
                         </SelectContent>
                     </Select>
+
+                    {/* 🔽 NEW: From/To inputs visible only for Custom */}
+                    {isCustom && (
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="date"
+                                className="h-9 rounded-md border border-border/30 bg-card px-2 text-sm"
+                                value={fromDate ?? ''}
+                                onChange={(e) => setFromDate(e.target.value || null)}
+                                placeholder="From"
+                            />
+                            <span className="text-muted-foreground text-xs">to</span>
+                            <input
+                                type="date"
+                                className="h-9 rounded-md border border-border/30 bg-card px-2 text-sm"
+                                value={toDate ?? ''}
+                                onChange={(e) => setToDate(e.target.value || null)}
+                                placeholder="To"
+                            />
+                        </div>
+                    )}
+
                     <Button
                         onClick={handleExportSnapshot}
                         variant="outline"
                         size="sm"
-                        disabled={loading || ytdLoading}
+                        disabled={loading || ytdLoading || (isCustom && !customValid)}
                         className="bg-card border border-border/30 hover:bg-muted/40"
+                        title={isCustom && !customValid ? 'Select a valid From/To first' : 'Export snapshot'}
                     >
                         <Download className="w-4 h-4 mr-2" />
                         Export
@@ -764,13 +819,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
                                     ? 'last year'
                                     : timeframe === 'thisQuarter' || timeframe === 'lastQuarter'
                                         ? 'last quarter'
-                                        : 'last month'
+                                        : timeframe === 'custom'
+                                            ? 'selected range'
+                                            : 'last month'
                                 }`
                                 : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd'
                                     ? 'last year'
                                     : timeframe === 'thisQuarter' || timeframe === 'lastQuarter'
                                         ? 'last quarter'
-                                        : 'last month'
+                                        : timeframe === 'custom'
+                                            ? 'selected range'
+                                            : 'last month'
                                 }`}
                         </p>
                     </CardHeader>
@@ -883,10 +942,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
             {/* Expense Categories */}
             {isDemo ? (
-                <DemoExpenseCategories timeframe={toApiPeriod(timeframe)} />
+                // For demo, if custom is chosen, we still show a sensible split (use YTD)
+                <DemoExpenseCategories timeframe={toApiPeriod((timeframe === 'custom' ? 'ytd' : timeframe) as Exclude<UiTimeframe, 'custom'>)} />
             ) : (
                 <ExpenseCategories
-                    timeframe={toApiPeriod(timeframe)}
+                    timeframe={toApiPeriod((timeframe === 'custom' ? 'ytd' : timeframe) as Exclude<UiTimeframe, 'custom'>)}
+                    // 🔽 NEW: forward custom range info (current ExpenseCategories can ignore; we'll update it next)
+                    mode={timeframe === 'custom' ? 'custom' : 'preset'}
+                    from_date={timeframe === 'custom' ? fromDate : null}
+                    to_date={timeframe === 'custom' ? toDate : null}
                     {...({ userId: effUserId, realmId: effRealmId } as any)}
                     className="bg-card border border-border/20"
                 />
