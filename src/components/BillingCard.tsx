@@ -68,7 +68,8 @@ export const BillingCard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [invoking, setInvoking] = useState<"checkout" | "portal" | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<Plan>("Iron");
+  // 🔼 Default to Gold ($497)
+  const [selectedPlan, setSelectedPlan] = useState<Plan>("Gold");
 
   const status = profile?.settings?.subscription?.status as SubStatus | undefined;
   const trialEnd = profile?.settings?.subscription?.trial_end ?? null;
@@ -101,9 +102,11 @@ export const BillingCard: React.FC = () => {
         if (error) throw error;
         if (!cancelled) {
           setProfile(data);
-          // default plan select to current plan if valid
+          // If user has a valid saved plan, use it; otherwise default to Gold
           if (data?.plan === "Iron" || data?.plan === "Gold" || data?.plan === "Platinum") {
             setSelectedPlan(data.plan as Plan);
+          } else {
+            setSelectedPlan("Gold");
           }
         }
       } catch (e: any) {
