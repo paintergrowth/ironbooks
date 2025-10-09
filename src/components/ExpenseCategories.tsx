@@ -1,4 +1,3 @@
-// src/components/ExpenseCategories.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,6 +31,21 @@ function changeLabel(period: ApiPeriod) {
     ? 'from last quarter'
     : 'from last month';
 }
+
+const presetLabel = (p: ApiPeriod) =>
+  p === 'this_month' ? 'This Month'
+  : p === 'last_month' ? 'Last Month'
+  : p === 'this_quarter' ? 'This Quarter'
+  : p === 'last_quarter' ? 'Last Quarter'
+  : 'YTD';
+
+const formatHeaderDate = (yyyyMmDd: string) => {
+  const d = new Date(`${yyyyMmDd}T00:00:00Z`);
+  const day = d.getUTCDate();
+  const month = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+  const year = d.getUTCFullYear();
+  return `${day} ${month} ${year}`;
+};
 
 interface CategoryRow {
   name: string;
@@ -76,6 +90,11 @@ export default function ExpenseCategories({
   const [selected, setSelected] = useState<CategoryRow | null>(null);
   const [txns, setTxns] = useState<TxnRow[]>([]);
 
+  // 👉 NEW: keep the actual range used by the edge fn for the modal header
+  const [hdrMode, setHdrMode] = useState<'preset' | 'custom'>(mode);
+  const [hdrFrom, setHdrFrom] = useState<string | null>(fromDate ?? null);
+  const [hdrTo, setHdrTo] = useState<string | null>(toDate ?? null);
+
   useEffect(() => { setPeriod(timeframe); }, [timeframe]);
 
   // ⬇️ categories fetch (impersonation-aware) with custom range passthrough
@@ -88,7 +107,7 @@ export default function ExpenseCategories({
         const body: any = {
           period,
           userId: effUserId ?? null,
-          realmId: effRealmId ?? null,
+          realmId: effUserId ? effRealmId ?? null : null,
           nonce: Date.now(),
         };
         if (mode === 'custom' && fromDate && toDate) {
@@ -128,7 +147,7 @@ export default function ExpenseCategories({
         accountId: row.accountId ?? undefined,
         accountName: row.name,
         userId: effUserId ?? null,
-        realmId: effRealmId ?? null,
+        realmId: effUserId ? effRealmId ?? null : null,
         nonce: Date.now(),
       };
       if (mode === 'custom' && fromDate && toDate) {
@@ -138,25 +157,46 @@ export default function ExpenseCategories({
       }
       const { data, error } = await invokeWithAuth('qbo-expense-transactions', { body });
       if (error) throw error;
+
       const coerced = Array.isArray(data?.transactions)
         ? data.transactions.map((t: TxnRow) => ({ ...t, amount: Number((t as any).amount) || 0 }))
         : [];
       setTxns(coerced);
+
+      // ✅ capture the actual range applied by the edge function for heading
+      if (data?.range) {
+        setHdrMode((data.range.mode === 'custom' ? 'custom' : 'preset'));
+        setHdrFrom(data.range.from ?? null);
+        setHdrTo(data.range.to ?? null);
+      } else {
+        // fallback to current props if edge didn't return range (b/c)
+        setHdrMode(mode);
+        setHdrFrom(fromDate ?? null);
+        setHdrTo(toDate ?? null);
+      }
     } catch (e) {
       console.error('qbo-expense-transactions error:', e);
       setTxns([]);
+      // keep previous hdr range if any
     } finally {
       setLoadingTxns(false);
     }
   };
 
   const closeDetails = () => { setOpen(false); setSelected(null); setTxns([]); };
+
   const txnTotal = useMemo(
     () => txns.reduce((s, t) => s + (typeof t.amount === 'string' ? Number(t.amount) || 0 : (t.amount || 0)), 0),
     [txns]
   );
 
   const periodChangeText = useMemo(() => changeLabel(period), [period]);
+
+  // 🔎 Build modal title suffix: preset text OR "(1 Jan 2025 ~ 10 Jan 2025)" for custom
+  const headingSuffix =
+    hdrMode === 'custom' && hdrFrom && hdrTo
+      ? `(${formatHeaderDate(hdrFrom)} ~ ${formatHeaderDate(hdrTo)})`
+      : presetLabel(period);
 
   return (
     <div className={`space-y-4 ${className || ''}`}>
@@ -209,7 +249,7 @@ export default function ExpenseCategories({
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h4 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {selected?.name} — {period}{mode === 'custom' ? ' (custom)' : ''}
+                  {selected?.name} — {headingSuffix}
                 </h4>
                 <p className="text-sm text-gray-500">
                   {fmt0(txnTotal)} total • {((selected?.share || 0) * 100).toFixed(1)}% of expenses
