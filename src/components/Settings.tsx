@@ -1,6 +1,6 @@
 // src/pages/Settings.tsx
 // update settings.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ViewingAsChip from "@/components/ViewingAsChip";
 import ImpersonateDropdown from "@/components/ImpersonateDropdown";
 import { supabase } from '@/lib/supabase';
@@ -16,20 +16,20 @@ import { useTheme } from '@/components/theme-provider';
 import { useToast } from '@/hooks/use-toast';
 import BillingCard from "@/components/BillingCard";
 
-import { 
-  LogOut, 
-  Key, 
-  HelpCircle, 
+import {
+  LogOut,
+  Key,
+  HelpCircle,
   Moon,
   Sun,
   Shield,
   Bell,
   Database,
   Users,
-  //Globe,
   Smartphone,
   Save,
-  ExternalLink
+  ExternalLink,
+  RotateCcw
 } from 'lucide-react';
 import { useImpersonation } from '@/lib/impersonation';
 
@@ -68,6 +68,17 @@ function buildQboAuthUrl() {
   return url;
 }
 
+type ProfileRow = {
+  full_name?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  designation?: string | null;
+  settings?: any | null;
+  role?: string | null;
+  qbo_connected?: boolean | null;
+  qbo_realm_id?: string | null;
+};
+
 const Settings: React.FC = () => {
   const [notifications, setNotifications] = useState({
     email: true,
@@ -86,16 +97,21 @@ const Settings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // QuickBooks connection state (real user only)
+  // QuickBooks connection state (effective user — self or impersonated)
   const [qboConnected, setQboConnected] = useState(false);
   const [effRealmId, setEffRealmId] = useState<string | null>(null);
-  const [companyName, setCompanyName] = useState<string | null>(null); // NEW
+  const [companyName, setCompanyName] = useState<string | null>(null);
 
   const { toast } = useToast();
 
   // Impersonation state + reset key for dropdown
-  const { isImpersonating } = useImpersonation();
+  const impCtx: any = useImpersonation() as any;
+  const isImpersonating: boolean = !!impCtx?.isImpersonating;
+  const targetUserId: string | null =
+    impCtx?.target?.id ?? impCtx?.target?.user?.id ?? impCtx?.targetUserId ?? null;
+
   const [impersonateKey, setImpersonateKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // When “Back to me” is clicked (inside ViewingAsChip), isImpersonating becomes false.
   // Force-remount the dropdown so it clears to blank.
@@ -103,7 +119,7 @@ const Settings: React.FC = () => {
     if (!isImpersonating) setImpersonateKey(k => k + 1);
   }, [isImpersonating]);
 
-  // -------- Load current user's profile on mount --------
+  // -------- Load logged-in user's profile on mount (base state) --------
   useEffect(() => {
     (async () => {
       try {
@@ -117,7 +133,7 @@ const Settings: React.FC = () => {
           .from('profiles')
           .select('full_name, phone, company, designation, settings, role, qbo_connected, qbo_realm_id')
           .eq('id', user.id)
-          .maybeSingle();
+          .maybeSingle<ProfileRow>();
 
         if (error) throw error;
 
@@ -141,7 +157,7 @@ const Settings: React.FC = () => {
             reports: saved.reports ?? defaults.reports,
           }));
 
-          // QBO status from profile
+          // Base QBO status (self)
           const connected = Boolean(data.qbo_connected) || Boolean(data.qbo_realm_id);
           setQboConnected(connected);
           setEffRealmId(data.qbo_realm_id ?? null);
@@ -151,6 +167,29 @@ const Settings: React.FC = () => {
       }
     })();
   }, []);
+
+  // -------- If impersonating, load impersonated profile to derive effective realm --------
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!isImpersonating || !targetUserId) {
+          // Not impersonating → leave base state as is
+          return;
+        }
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('qbo_connected, qbo_realm_id')
+          .eq('id', targetUserId)
+          .maybeSingle<Pick<ProfileRow, 'qbo_connected' | 'qbo_realm_id'>>();
+        if (error) throw error;
+        const connected = Boolean(data?.qbo_connected) || Boolean(data?.qbo_realm_id);
+        setQboConnected(connected);
+        setEffRealmId(data?.qbo_realm_id ?? null);
+      } catch (e) {
+        console.warn('[Settings] failed to load impersonated profile; falling back to self.', e);
+      }
+    })();
+  }, [isImpersonating, targetUserId]);
 
   // -------- Handle OAuth redirect (?connected=qbo) exactly like CFOAgent --------
   useEffect(() => {
@@ -178,7 +217,7 @@ const Settings: React.FC = () => {
       try {
         const { data: { user: authedUser } } = await supabase.auth.getUser();
         if (!authedUser) {
-          if (code)         { try { sessionStorage.setItem('pending_qbo_code', code); } catch {} }
+          if (code)          { try { sessionStorage.setItem('pending_qbo_code', code); } catch {} }
           if (incomingRealm) { try { sessionStorage.setItem('pending_qbo_realm', incomingRealm); } catch {} }
           try { sessionStorage.setItem('pending_qbo_redirect', QBO_REDIRECT_URI); } catch {}
           finishAndClean();
@@ -214,7 +253,7 @@ const Settings: React.FC = () => {
             setQboConnected(true);
             setEffRealmId(incomingRealm);
             toast({ title: 'QuickBooks', description: 'Connected successfully!' });
-            // kick a full sync
+            // kick a full sync (transactions)
             await supabase.functions.invoke('qbo-sync-transactions', {
               body: { realmId: incomingRealm, userId: authedUser.id, mode: 'full' }
             });
@@ -267,7 +306,7 @@ const Settings: React.FC = () => {
     })();
   }, []);
 
-  // -------- NEW: Fetch company name when connected --------
+  // -------- Fetch company name for the EFFECTIVE realm (self or impersonated) --------
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -333,7 +372,7 @@ const Settings: React.FC = () => {
     alert('Logging out...');
   };
 
-  // ----- QuickBooks connect / reconnect (identical behavior to CFOAgent, but in Settings) -----
+  // ----- QuickBooks connect / reconnect -----
   const handleConnectQuickBooks = () => {
     if (isImpersonating) {
       toast({
@@ -359,9 +398,53 @@ const Settings: React.FC = () => {
     }
   };
 
+  // ----- Refresh QuickBooks Data (delete monthlies, reset queue, trigger PNL sync) -----
+  const handleRefreshQuickBooks = async () => {
+    if (!effRealmId) return;
+    try {
+      setRefreshing(true);
+
+      // 1) Atomic reset on the server (SECURITY DEFINER RPC)
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('reset_realm_pnl_and_queue', {
+        p_realm_id: effRealmId,
+        // Optional custom window:
+        // p_start_date: '2024-01-01',
+        // p_end_date: new Date().toISOString().slice(0,10),
+      });
+      if (rpcErr) {
+        console.error('[Refresh QBO] RPC failed:', rpcErr);
+        toast({ title: 'QuickBooks', description: rpcErr.message || 'Reset failed', variant: 'destructive' });
+        return;
+      }
+
+      // 2) Kick PNL/BS sync for that realm (manual path)
+      const { error: fnErr } = await supabase.functions.invoke('qbo-pnl-sync', {
+        body: { realmId: effRealmId },
+      });
+      if (fnErr) {
+        console.error('[Refresh QBO] qbo-pnl-sync failed:', fnErr);
+        toast({ title: 'QuickBooks', description: 'Reset done, but sync start failed. Try again.', variant: 'destructive' });
+        return;
+      }
+
+      toast({
+        title: 'QuickBooks',
+        description: `Refresh started for ${effRealmId}`,
+      });
+    } catch (e: any) {
+      console.error('[Refresh QBO] unexpected error:', e);
+      toast({ title: 'QuickBooks', description: 'Unexpected error. See console.', variant: 'destructive' });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Show the Refresh tile only when we have an effective connected realm
+  const showRefreshTile = qboConnected && !!effRealmId;
+
   return (
     <div className="h-[100dvh]">
-      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">  
+      <div className="max-w-4xl mx-auto space-y-8 p-6 h-full overflow-y-auto">
         {/* Header: title + Save only */}
         <div className="flex items-center justify-between">
           <div>
@@ -389,18 +472,18 @@ const Settings: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="name">Full Name</Label>
-                <Input 
-                  id="name" 
+                <Input
+                  id="name"
                   value={profile.name}
-                  onChange={(e) => setProfile({...profile, name: e.target.value})}
+                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
                   className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                 />
               </div>
               <div>
                 <Label htmlFor="email">Email Address</Label>
-                <Input 
-                  id="email" 
-                  type="email" 
+                <Input
+                  id="email"
+                  type="email"
                   value={profile.email}
                   disabled
                   className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
@@ -408,19 +491,19 @@ const Settings: React.FC = () => {
               </div>
               <div>
                 <Label htmlFor="phone">Phone Number</Label>
-                <Input 
-                  id="phone" 
+                <Input
+                  id="phone"
                   value={profile.phone}
-                  onChange={(e) => setProfile({...profile, phone: e.target.value})}
+                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                   className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                 />
               </div>
               <div>
                 <Label htmlFor="designation">Designation</Label>
-                <Input 
-                  id="designation" 
+                <Input
+                  id="designation"
                   value={profile.designation}
-                  onChange={(e) => setProfile({...profile, designation: e.target.value})}
+                  onChange={(e) => setProfile({ ...profile, designation: e.target.value })}
                   className="dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                 />
               </div>
@@ -530,6 +613,42 @@ const Settings: React.FC = () => {
           </Card>
         )}
 
+        {/* --- NEW: Refresh QuickBooks Data (below Admin Options main tile) --- */}
+        {showRefreshTile && (
+          <Card className="dark:bg-slate-900/60 dark:border-slate-700">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <RotateCcw className="mr-2 h-5 w-5" />
+                Refresh QuickBooks Data
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
+              <div className="space-y-1">
+                <p className="font-medium">
+                  Realm: <span className="font-mono">{effRealmId}</span>
+                </p>
+                {companyName && (
+                  <p className="text-sm text-gray-600 dark:text-slate-300/90">
+                    {companyName}
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  Clears historical monthlies and re-runs the P&amp;L / Balance Sheet sync.
+                </p>
+              </div>
+              <Button
+                onClick={handleRefreshQuickBooks}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={refreshing}
+                title="Delete monthlies, reset queue, and restart sync"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Notifications */}
         <Card className="dark:bg-slate-900/60 dark:border-slate-700">
           <CardHeader>
@@ -544,9 +663,9 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Email Notifications</p>
                 <p className="text-sm text-gray-600 dark:text-slate-300/90">Receive updates via email</p>
               </div>
-              <Switch 
+              <Switch
                 checked={notifications.email}
-                onCheckedChange={(checked) => setNotifications({...notifications, email: checked})}
+                onCheckedChange={(checked) => setNotifications({ ...notifications, email: checked })}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -554,9 +673,9 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Push Notifications</p>
                 <p className="text-sm text-gray-600 dark:text-slate-300/90">Browser push notifications</p>
               </div>
-              <Switch 
+              <Switch
                 checked={notifications.push}
-                onCheckedChange={(checked) => setNotifications({...notifications, push: checked})}
+                onCheckedChange={(checked) => setNotifications({ ...notifications, push: checked })}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -564,9 +683,9 @@ const Settings: React.FC = () => {
                 <p className="font-medium">Weekly Reports</p>
                 <p className="text-sm text-gray-600 dark:text-slate-300/90">Automated financial summaries</p>
               </div>
-              <Switch 
+              <Switch
                 checked={notifications.reports}
-                onCheckedChange={(checked) => setNotifications({...notifications, reports: checked})}
+                onCheckedChange={(checked) => setNotifications({ ...notifications, reports: checked })}
               />
             </div>
           </CardContent>
@@ -595,7 +714,7 @@ const Settings: React.FC = () => {
               <Key className="mr-2 h-4 w-4" />
               Change Password
             </Button>
-            
+
             <Button variant="outline" className="w-full sm:w-auto">
               <Smartphone className="mr-2 h-4 w-4" />
               Manage Devices
@@ -642,7 +761,7 @@ const Settings: React.FC = () => {
                 <ExternalLink className="h-4 w-4" />
                 {qboConnected ? 'Reconnect' : 'Connect QuickBooks'}
               </Button>
-              
+
             </div>
             <BillingCard />
             {/* Xero (unchanged) Temporarily Disabled
@@ -667,12 +786,12 @@ const Settings: React.FC = () => {
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-4">
-          {/* Temprorarily removing the buttons 
+          {/* Temporarily removing the buttons
           <Button variant="outline">
             <HelpCircle className="mr-2 h-4 w-4" />
             Contact Support
           </Button>
-          
+
           <Button variant="destructive" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
