@@ -70,6 +70,7 @@ function buildQboAuthUrl() {
 
 type ProfileRow = {
   full_name?: string | null;
+  email?: string | null; // NEW (for admin dropdown display)
   phone?: string | null;
   company?: string | null;
   designation?: string | null;
@@ -113,6 +114,10 @@ const Settings: React.FC = () => {
   const [impersonateKey, setImpersonateKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
+  // NEW: Admin dropdown data
+  const [adminOptions, setAdminOptions] = useState<Array<{ realmId: string; display: string }>>([]); // NEW
+  const [adminSelectedRealmId, setAdminSelectedRealmId] = useState<string>(''); // NEW
+
   // When “Back to me” is clicked (inside ViewingAsChip), isImpersonating becomes false.
   // Force-remount the dropdown so it clears to blank.
   useEffect(() => {
@@ -131,7 +136,7 @@ const Settings: React.FC = () => {
 
         const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, phone, company, designation, settings, role, qbo_connected, qbo_realm_id')
+          .select('full_name, email, phone, company, designation, settings, role, qbo_connected, qbo_realm_id') // email added
           .eq('id', user.id)
           .maybeSingle<ProfileRow>();
 
@@ -167,6 +172,35 @@ const Settings: React.FC = () => {
       }
     })();
   }, []);
+
+  // -------- If admin, load connected customers for dropdown (no impact on effRealmId) --------
+  useEffect(() => {
+    (async () => {
+      if (!isAdmin) return;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name,email,qbo_realm_id,qbo_connected')
+          .or('qbo_connected.eq.true,qbo_realm_id.not.is.null')
+          .order('full_name', { ascending: true }) as any;
+
+        if (error) throw error;
+
+        const options: Array<{ realmId: string; display: string }> = (data || [])
+          .filter((r: ProfileRow) => !!r.qbo_realm_id)
+          .map((r: ProfileRow) => ({
+            realmId: r.qbo_realm_id as string,
+            display: `${r.full_name || r.email || 'Unknown'}${r.email ? ` <${r.email}>` : ''}`,
+          }));
+
+        setAdminOptions(options);
+        // Do NOT auto-select; keep existing effRealmId behavior unless admin explicitly picks one
+      } catch (e) {
+        console.warn('[Settings] admin options load failed:', e);
+        setAdminOptions([]);
+      }
+    })();
+  }, [isAdmin]);
 
   // -------- If impersonating, load impersonated profile to derive effective realm --------
   useEffect(() => {
@@ -306,27 +340,33 @@ const Settings: React.FC = () => {
     })();
   }, []);
 
-  // -------- Fetch company name for the EFFECTIVE realm (self or impersonated) --------
+  // -------- Determine which realm the Refresh should target --------
+  const refreshRealmId = useMemo(() => {
+    // If admin picked a realm, use it; else fall back to current effRealmId (so button never disables).
+    return (isAdmin && adminSelectedRealmId) ? adminSelectedRealmId : effRealmId;
+  }, [isAdmin, adminSelectedRealmId, effRealmId]);
+
+  // -------- Fetch company name for the TARGET realm (refreshRealmId) --------
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!qboConnected || !effRealmId) return;
+      if (!refreshRealmId) return;
       try {
         const { data: { user } } = await supabase.auth.getUser();
         const uid = user?.id;
         if (!uid) return;
         const { data, error } = await supabase.functions.invoke('qbo-company', {
-          body: { realmId: effRealmId, userId: uid, nonce: Date.now() },
+          body: { realmId: refreshRealmId, userId: uid, nonce: Date.now() },
         });
         if (!error && !cancelled && (data as any)?.companyName) {
           setCompanyName((data as any).companyName);
         }
       } catch {
-        // ignore; keep badge as "Connected"
+        // ignore
       }
     })();
     return () => { cancelled = true; };
-  }, [qboConnected, effRealmId]);
+  }, [refreshRealmId]);
 
   // -------- Save handler: upsert into public.profiles --------
   const handleSave = async () => {
@@ -400,16 +440,13 @@ const Settings: React.FC = () => {
 
   // ----- Refresh QuickBooks Data (delete monthlies, reset queue, trigger PNL sync) -----
   const handleRefreshQuickBooks = async () => {
-    if (!effRealmId) return;
+    if (!refreshRealmId) return; // remains enabled for effRealmId case
     try {
       setRefreshing(true);
 
       // 1) Atomic reset on the server (SECURITY DEFINER RPC)
       const { data: rpcData, error: rpcErr } = await supabase.rpc('reset_realm_pnl_and_queue', {
-        p_realm_id: effRealmId,
-        // Optional custom window:
-        // p_start_date: '2024-01-01',
-        // p_end_date: new Date().toISOString().slice(0,10),
+        p_realm_id: refreshRealmId,
       });
       if (rpcErr) {
         console.error('[Refresh QBO] RPC failed:', rpcErr);
@@ -419,7 +456,7 @@ const Settings: React.FC = () => {
 
       // 2) Kick PNL/BS sync for that realm (manual path)
       const { error: fnErr } = await supabase.functions.invoke('qbo-pnl-sync', {
-        body: { realmId: effRealmId },
+        body: { realmId: refreshRealmId },
       });
       if (fnErr) {
         console.error('[Refresh QBO] qbo-pnl-sync failed:', fnErr);
@@ -429,7 +466,7 @@ const Settings: React.FC = () => {
 
       toast({
         title: 'QuickBooks',
-        description: `Refresh started for ${effRealmId}`,
+        description: `Refresh started for ${refreshRealmId}`,
       });
     } catch (e: any) {
       console.error('[Refresh QBO] unexpected error:', e);
@@ -622,29 +659,65 @@ const Settings: React.FC = () => {
                 Refresh QuickBooks Data
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex items-center justify-between p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
-              <div className="space-y-1">
-                <p className="font-medium">
-                  Realm: <span className="font-mono">{effRealmId}</span>
-                </p>
-                {companyName && (
-                  <p className="text-sm text-gray-600 dark:text-slate-300/90">
-                    {companyName}
+
+            <CardContent className="space-y-4">
+              {/* NEW: Admin-only small selector inside this card (doesn't affect effRealmId) */}
+              {isAdmin && (
+                <div className="p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
+                  <p className="font-medium mb-2">Select Customer (connected only)</p>
+                  <div className="grid gap-3 md:grid-cols-2 items-center">
+                    <div className="col-span-1">
+                      <Label htmlFor="admin-customer">Customer</Label>
+                      <select
+                        id="admin-customer"
+                        className="mt-1 block w-full rounded-md border border-slate-300 bg-white p-2 text-sm dark:bg-slate-900/60 dark:border-slate-700"
+                        value={adminSelectedRealmId}
+                        onChange={(e) => setAdminSelectedRealmId(e.target.value)}
+                      >
+                        <option value="">— Use current realm —</option>
+                        {adminOptions.map((opt) => (
+                          <option key={opt.realmId} value={opt.realmId}>
+                            {opt.display}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-span-1">
+                      <Label>Target Realm</Label>
+                      <div className="mt-1 text-sm">
+                        <span className="font-mono">
+                          {refreshRealmId || '—'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    Realm: <span className="font-mono">{refreshRealmId || effRealmId}</span>
                   </p>
-                )}
-                <p className="text-xs text-gray-500 dark:text-slate-400">
-                  Clears historical monthlies and re-runs the P&amp;L / Balance Sheet sync.
-                </p>
+                  {companyName && (
+                    <p className="text-sm text-gray-600 dark:text-slate-300/90">
+                      {companyName}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                    Clears historical monthlies and re-runs the P&amp;L / Balance Sheet sync.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleRefreshQuickBooks}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  disabled={refreshing} // unchanged: enabled even if admin hasn't selected (falls back to effRealmId)
+                  title="Delete monthlies, reset queue, and restart sync"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {refreshing ? 'Refreshing…' : 'Refresh'}
+                </Button>
               </div>
-              <Button
-                onClick={handleRefreshQuickBooks}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                disabled={refreshing}
-                title="Delete monthlies, reset queue, and restart sync"
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                {refreshing ? 'Refreshing…' : 'Refresh'}
-              </Button>
             </CardContent>
           </Card>
         )}
