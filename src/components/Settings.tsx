@@ -69,9 +69,7 @@ function buildQboAuthUrl() {
 }
 
 type ProfileRow = {
-  id?: string;
   full_name?: string | null;
-  email?: string | null;
   phone?: string | null;
   company?: string | null;
   designation?: string | null;
@@ -99,32 +97,20 @@ const Settings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Base (self) QuickBooks status
-  const [selfConnected, setSelfConnected] = useState(false);
-  const [selfRealmId, setSelfRealmId] = useState<string | null>(null);
-
-  // Effective (used elsewhere in the page — e.g., Connect tile, previous impersonation logic)
+  // QuickBooks connection state (effective user — self or impersonated)
   const [qboConnected, setQboConnected] = useState(false);
   const [effRealmId, setEffRealmId] = useState<string | null>(null);
-
-  // Company name for the effective realm used in tiles
   const [companyName, setCompanyName] = useState<string | null>(null);
 
   const { toast } = useToast();
 
-  // Impersonation (kept for your existing tiles; not required for the new admin dropdown flow)
+  // Impersonation state + reset key for dropdown
   const impCtx: any = useImpersonation() as any;
   const isImpersonating: boolean = !!impCtx?.isImpersonating;
   const targetUserId: string | null =
     impCtx?.target?.id ?? impCtx?.target?.user?.id ?? impCtx?.targetUserId ?? null;
 
   const [impersonateKey, setImpersonateKey] = useState(0);
-
-  // NEW: Admin dropdown state (customers with connected realms)
-  const [adminOptions, setAdminOptions] = useState<Array<{ userId: string; email: string; name: string; realmId: string }>>([]);
-  const [adminSelectedRealmId, setAdminSelectedRealmId] = useState<string | ''>('');
-  const [adminSelectedDisplay, setAdminSelectedDisplay] = useState<string>(''); // name <email>
-
   const [refreshing, setRefreshing] = useState(false);
 
   // When “Back to me” is clicked (inside ViewingAsChip), isImpersonating becomes false.
@@ -133,7 +119,7 @@ const Settings: React.FC = () => {
     if (!isImpersonating) setImpersonateKey(k => k + 1);
   }, [isImpersonating]);
 
-  // -------- Load current user's profile on mount --------
+  // -------- Load logged-in user's profile on mount (base state) --------
   useEffect(() => {
     (async () => {
       try {
@@ -145,7 +131,7 @@ const Settings: React.FC = () => {
 
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, phone, company, designation, settings, role, qbo_connected, qbo_realm_id')
+          .select('full_name, phone, company, designation, settings, role, qbo_connected, qbo_realm_id')
           .eq('id', user.id)
           .maybeSingle<ProfileRow>();
 
@@ -160,8 +146,7 @@ const Settings: React.FC = () => {
             designation: data.designation ?? '',
           }));
 
-          const admin = data.role === 'admin';
-          setIsAdmin(admin);
+          setIsAdmin(data.role === 'admin');
 
           const defaults = { email: true, push: false, reports: true };
           const saved = (data.settings as any)?.notifications ?? {};
@@ -172,37 +157,10 @@ const Settings: React.FC = () => {
             reports: saved.reports ?? defaults.reports,
           }));
 
+          // Base QBO status (self)
           const connected = Boolean(data.qbo_connected) || Boolean(data.qbo_realm_id);
-          setSelfConnected(connected);
-          setSelfRealmId(data.qbo_realm_id ?? null);
-
-          // Default effective values (can be overridden by impersonation or admin dropdown in Refresh card)
           setQboConnected(connected);
           setEffRealmId(data.qbo_realm_id ?? null);
-
-          // If admin, load connected customers for the dropdown
-          if (admin) {
-            const { data: list, error: listErr } = await supabase
-              .from('profiles')
-              .select('id, full_name, email, qbo_connected, qbo_realm_id')
-              .or('qbo_connected.eq.true,qbo_realm_id.not.is.null')
-              .order('full_name', { ascending: true }) as any;
-
-            if (!listErr && Array.isArray(list)) {
-              const options = list
-                .filter((r: ProfileRow) => r.qbo_realm_id)
-                .map((r: ProfileRow) => ({
-                  userId: r.id as string,
-                  email: r.email || '',
-                  name: r.full_name || r.email || 'Unknown',
-                  realmId: r.qbo_realm_id as string,
-                }));
-              setAdminOptions(options);
-              // No auto-select to avoid accidental refresh — admin picks explicitly
-              setAdminSelectedRealmId('');
-              setAdminSelectedDisplay('');
-            }
-          }
         }
       } catch (e) {
         console.error('[Settings] load failed:', e);
@@ -210,12 +168,12 @@ const Settings: React.FC = () => {
     })();
   }, []);
 
-  // -------- If impersonating, load impersonated profile (kept for legacy parts of the page) --------
+  // -------- If impersonating, load impersonated profile to derive effective realm --------
   useEffect(() => {
     (async () => {
       try {
         if (!isImpersonating || !targetUserId) {
-          // Not impersonating → leave self-based effective state as is
+          // Not impersonating → leave base state as is
           return;
         }
         const { data, error } = await supabase
@@ -292,12 +250,8 @@ const Settings: React.FC = () => {
             console.warn('[QBO] profiles update failed:', error.message);
             toast({ title: 'QuickBooks', description: 'Failed to save connection.', variant: 'destructive' });
           } else {
-            // Update base and effective
-            setSelfConnected(true);
-            setSelfRealmId(incomingRealm);
             setQboConnected(true);
             setEffRealmId(incomingRealm);
-
             toast({ title: 'QuickBooks', description: 'Connected successfully!' });
             // kick a full sync (transactions)
             await supabase.functions.invoke('qbo-sync-transactions', {
@@ -337,12 +291,8 @@ const Settings: React.FC = () => {
           })
           .eq('id', user.id);
         if (!error) {
-          // Update base and effective
-          setSelfConnected(true);
-          setSelfRealmId(pendingRealm);
           setQboConnected(true);
           setEffRealmId(pendingRealm);
-
           await supabase.functions.invoke('qbo-sync-transactions', {
             body: { realmId: pendingRealm, userId: user.id, mode: 'full' }
           });
@@ -356,35 +306,27 @@ const Settings: React.FC = () => {
     })();
   }, []);
 
-  // -------- Compute the realm to use for the REFRESH button --------
-  const refreshRealmId: string | null = useMemo(() => {
-    if (isAdmin && adminSelectedRealmId) return adminSelectedRealmId;
-    // fallback to effective realm (self or impersonated)
-    return effRealmId;
-  }, [isAdmin, adminSelectedRealmId, effRealmId]);
-
-  // -------- Fetch company name for the realm used in display (Refresh or Connect tile) --------
+  // -------- Fetch company name for the EFFECTIVE realm (self or impersonated) --------
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const realmToResolve = refreshRealmId || effRealmId;
-      if (!realmToResolve) return;
+      if (!qboConnected || !effRealmId) return;
       try {
         const { data: { user } } = await supabase.auth.getUser();
         const uid = user?.id;
         if (!uid) return;
         const { data, error } = await supabase.functions.invoke('qbo-company', {
-          body: { realmId: realmToResolve, userId: uid, nonce: Date.now() },
+          body: { realmId: effRealmId, userId: uid, nonce: Date.now() },
         });
         if (!error && !cancelled && (data as any)?.companyName) {
           setCompanyName((data as any).companyName);
         }
       } catch {
-        // ignore; keep whatever we had
+        // ignore; keep badge as "Connected"
       }
     })();
     return () => { cancelled = true; };
-  }, [refreshRealmId, effRealmId]);
+  }, [qboConnected, effRealmId]);
 
   // -------- Save handler: upsert into public.profiles --------
   const handleSave = async () => {
@@ -458,16 +400,16 @@ const Settings: React.FC = () => {
 
   // ----- Refresh QuickBooks Data (delete monthlies, reset queue, trigger PNL sync) -----
   const handleRefreshQuickBooks = async () => {
-    if (!refreshRealmId) {
-      toast({ title: 'QuickBooks', description: 'Select a customer first.', variant: 'destructive' });
-      return;
-    }
+    if (!effRealmId) return;
     try {
       setRefreshing(true);
 
       // 1) Atomic reset on the server (SECURITY DEFINER RPC)
       const { data: rpcData, error: rpcErr } = await supabase.rpc('reset_realm_pnl_and_queue', {
-        p_realm_id: refreshRealmId,
+        p_realm_id: effRealmId,
+        // Optional custom window:
+        // p_start_date: '2024-01-01',
+        // p_end_date: new Date().toISOString().slice(0,10),
       });
       if (rpcErr) {
         console.error('[Refresh QBO] RPC failed:', rpcErr);
@@ -477,7 +419,7 @@ const Settings: React.FC = () => {
 
       // 2) Kick PNL/BS sync for that realm (manual path)
       const { error: fnErr } = await supabase.functions.invoke('qbo-pnl-sync', {
-        body: { realmId: refreshRealmId },
+        body: { realmId: effRealmId },
       });
       if (fnErr) {
         console.error('[Refresh QBO] qbo-pnl-sync failed:', fnErr);
@@ -487,7 +429,7 @@ const Settings: React.FC = () => {
 
       toast({
         title: 'QuickBooks',
-        description: `Refresh started for ${refreshRealmId}`,
+        description: `Refresh started for ${effRealmId}`,
       });
     } catch (e: any) {
       console.error('[Refresh QBO] unexpected error:', e);
@@ -497,11 +439,8 @@ const Settings: React.FC = () => {
     }
   };
 
-  // ---- Visibility for the Refresh tile
-  const showRefreshTile = useMemo(() => {
-    if (isAdmin) return adminOptions.length > 0 || !!selfRealmId; // show if admin has any connected customers (or self realm)
-    return qboConnected && !!effRealmId; // non-admin
-  }, [isAdmin, adminOptions.length, selfRealmId, qboConnected, effRealmId]);
+  // Show the Refresh tile only when we have an effective connected realm
+  const showRefreshTile = qboConnected && !!effRealmId;
 
   return (
     <div className="h-[100dvh]">
@@ -683,74 +622,29 @@ const Settings: React.FC = () => {
                 Refresh QuickBooks Data
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Admin-only subcard: pick customer (only those with connected realms) */}
-              {isAdmin && (
-                <div className="p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
-                  <p className="font-medium mb-2">Select Customer (connected only)</p>
-                  <div className="grid gap-3 md:grid-cols-2 items-center">
-                    <div className="col-span-1">
-                      <Label htmlFor="admin-customer">Customer</Label>
-                      <select
-                        id="admin-customer"
-                        className="mt-1 block w-full rounded-md border border-slate-300 bg-white p-2 text-sm dark:bg-slate-900/60 dark:border-slate-700"
-                        value={adminSelectedRealmId}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setAdminSelectedRealmId(val);
-                          const hit = adminOptions.find(o => o.realmId === val);
-                          setAdminSelectedDisplay(hit ? `${hit.name} <${hit.email}>` : '');
-                        }}
-                      >
-                        <option value="">-- Select a connected customer --</option>
-                        {adminOptions.map((opt) => (
-                          <option key={opt.realmId} value={opt.realmId}>
-                            {opt.name} &lt;{opt.email}&gt;
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-span-1">
-                      <Label>Selected Realm</Label>
-                      <div className="mt-1 text-sm">
-                        <span className="font-mono">{adminSelectedRealmId || '—'}</span>
-                        {adminSelectedDisplay ? (
-                          <span className="ml-2 text-gray-600 dark:text-slate-300/80">{adminSelectedDisplay}</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Summary + Refresh action */}
-              <div className="flex items-center justify-between p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
-                <div className="space-y-1">
-                  <p className="font-medium">
-                    Realm:{' '}
-                    <span className="font-mono">
-                      {refreshRealmId || '—'}
-                    </span>
+            <CardContent className="flex items-center justify-between p-4 border rounded-lg dark:border-slate-700 dark:bg-slate-900/40">
+              <div className="space-y-1">
+                <p className="font-medium">
+                  Realm: <span className="font-mono">{effRealmId}</span>
+                </p>
+                {companyName && (
+                  <p className="text-sm text-gray-600 dark:text-slate-300/90">
+                    {companyName}
                   </p>
-                  {companyName && (
-                    <p className="text-sm text-gray-600 dark:text-slate-300/90">
-                      {companyName}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500 dark:text-slate-400">
-                    Clears historical monthlies and re-runs the P&amp;L / Balance Sheet sync.
-                  </p>
-                </div>
-                <Button
-                  onClick={handleRefreshQuickBooks}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                  disabled={refreshing || (isAdmin && !adminSelectedRealmId)}
-                  title="Delete monthlies, reset queue, and restart sync"
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  {refreshing ? 'Refreshing…' : 'Refresh'}
-                </Button>
+                )}
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  Clears historical monthlies and re-runs the P&amp;L / Balance Sheet sync.
+                </p>
               </div>
+              <Button
+                onClick={handleRefreshQuickBooks}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={refreshing}
+                title="Delete monthlies, reset queue, and restart sync"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </Button>
             </CardContent>
           </Card>
         )}
