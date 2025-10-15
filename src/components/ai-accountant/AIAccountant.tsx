@@ -37,7 +37,7 @@ interface AIAccountantProps {
 }
 
 const AUTO_SEND_ON_END = true;           // Voice input: auto-send transcript when speech ends
-const AUTO_READ_NEW_RESPONSES = false;   // TTS: auto-read assistant replies when they finish streaming
+const AUTO_READ_NEW_RESPONSES = true;   // TTS: auto-read assistant replies when they finish streaming
 const TTS_RATE = 1.0;                    // 0.1 - 10
 const TTS_PITCH = 1.0;                   // 0 - 2
 const TTS_LANG = 'en-US';                // preferred language for voice selection
