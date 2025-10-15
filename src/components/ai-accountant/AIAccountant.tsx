@@ -1,3 +1,4 @@
+
 // src/components/ai-accountant/AIAccountant.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,12 @@ import { supabase, invokeWithAuthSafe, fetchSSEWithAuth } from '@/lib/supabase';
 import { useImpersonation } from '@/lib/impersonation';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 
+// NEW: charting libs for rich rendering
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend,
+  BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell
+} from 'recharts';
+
 interface Message {
   id: string;
   content: string;
@@ -42,6 +49,206 @@ const TTS_RATE = 1.0;                    // 0.1 - 10
 const TTS_PITCH = 1.0;                   // 0 - 2
 const TTS_LANG = 'en-US';                // preferred language for voice selection
 
+// ---------- Rich rendering helpers ----------
+type ChartConfig =
+  | { type: 'line' | 'area' | 'bar'; x: string; y: string[]; data: any[]; stacked?: boolean; yLabel?: string }
+  | { type: 'pie'; nameKey: string; valueKey: string; data: any[] };
+
+type TableConfig = { columns?: { key: string; label?: string }[]; rows?: any[]; data?: any[] };
+type KPIConfig = { label: string; value: string; delta?: string; color?: 'green'|'red'|'amber'|'blue'|'slate' };
+
+const parseFencedBlocks = (text: string) => {
+  const blocks: Array<{ kind: 'chart'|'table'|'kpi'|'text'; payload: any | string }> = [];
+  const regex = /```(\w+)\s*([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const [full, tag, body] = match;
+    if (match.index > lastIndex) {
+      const before = text.slice(lastIndex, match.index).trim();
+      if (before) blocks.push({ kind: 'text', payload: before });
+    }
+    const lower = tag.toLowerCase();
+    if (['chart', 'table', 'kpi'].includes(lower)) {
+      try {
+        const json = JSON.parse(body.trim());
+        blocks.push({ kind: lower as any, payload: json });
+      } catch {
+        // If JSON parse fails, keep as plain text
+        blocks.push({ kind: 'text', payload: full });
+      }
+    } else {
+      // Unknown block -> keep as plain
+      blocks.push({ kind: 'text', payload: full });
+    }
+    lastIndex = match.index + full.length;
+  }
+  const remaining = text.slice(lastIndex).trim();
+  if (remaining) blocks.push({ kind: 'text', payload: remaining });
+  return blocks;
+};
+
+const KPI: React.FC<{ config: KPIConfig }> = ({ config }) => {
+  const colorMap: Record<string, string> = {
+    green: 'text-green-700 bg-green-50 dark:text-green-200 dark:bg-green-900/20',
+    red: 'text-red-700 bg-red-50 dark:text-red-200 dark:bg-red-900/20',
+    amber: 'text-amber-700 bg-amber-50 dark:text-amber-200 dark:bg-amber-900/20',
+    blue: 'text-blue-700 bg-blue-50 dark:text-blue-200 dark:bg-blue-900/20',
+    slate: 'text-slate-700 bg-slate-50 dark:text-slate-200 dark:bg-slate-800/40',
+  };
+  const badge = colorMap[config.color || 'slate'];
+  return (
+    <Card className="p-4 border-0 shadow-sm dark:bg-slate-900/60">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{config.label}</div>
+      <div className="text-3xl font-semibold">{config.value}</div>
+      {config.delta && (
+        <div className={`inline-block mt-2 px-2 py-0.5 rounded-md text-xs ${badge}`}>
+          {config.delta}
+        </div>
+      )}
+    </Card>
+  );
+};
+
+const SmartTable: React.FC<{ config: TableConfig }> = ({ config }) => {
+  const rows = config.rows || config.data || [];
+  const cols = config.columns && config.columns.length
+    ? config.columns
+    : (rows[0] ? Object.keys(rows[0]).map(k => ({ key: k, label: k })) : []);
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b dark:border-slate-700">
+            {cols.map(c => (
+              <th key={c.key} className="text-left py-2 pr-4 font-medium text-muted-foreground">{c.label || c.key}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r: any, i: number) => (
+            <tr key={i} className="border-b last:border-0 dark:border-slate-800">
+              {cols.map(c => (
+                <td key={c.key} className="py-2 pr-4">
+                  {String(r[c.key] ?? '')}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const SmartChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
+  const cardCls = "p-3 border-0 shadow-sm dark:bg-slate-900/60";
+  if (config.type === 'pie') {
+    const { data, nameKey, valueKey } = config;
+    return (
+      <Card className={cardCls}>
+        <div className="w-full h-72">
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={data} nameKey={nameKey} dataKey={valueKey} outerRadius={110} label />
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+    );
+  }
+
+  const { type, x, y, data, stacked, yLabel } = config as Extract<ChartConfig, { type: 'line'|'area'|'bar' }>;
+  const commonAxes = (
+    <>
+      <XAxis dataKey={x} />
+      <YAxis label={yLabel ? { value: yLabel, angle: -90, position: 'insideLeft' } : undefined} />
+      <Tooltip />
+      <Legend />
+    </>
+  );
+
+  return (
+    <Card className={cardCls}>
+      <div className="w-full h-80">
+        <ResponsiveContainer>
+          {type === 'line' && (
+            <LineChart data={data}>
+              {commonAxes}
+              {y.map((k, i) => (
+                <Line key={k} type="monotone" dataKey={k} dot={false} strokeWidth={2} />
+              ))}
+            </LineChart>
+          )}
+          {type === 'area' && (
+            <AreaChart data={data}>
+              {commonAxes}
+              {y.map((k) => (
+                <Area key={k} type="monotone" dataKey={k} stackId={stacked ? 'a' : undefined} strokeWidth={2} fillOpacity={0.3} />
+              ))}
+            </AreaChart>
+          )}
+          {type === 'bar' && (
+            <BarChart data={data}>
+              {commonAxes}
+              {y.map((k) => (
+                <Bar key={k} dataKey={k} stackId={stacked ? 'a' : undefined} />
+              ))}
+            </BarChart>
+          )}
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  );
+};
+
+const RichMessage: React.FC<{ content: string }> = ({ content }) => {
+  const blocks = parseFencedBlocks(content);
+
+  // If everything is plain text, fall back to your existing <Response/>
+  const hasRich = blocks.some(b => b.kind !== 'text');
+  if (!hasRich) {
+    return (
+      <div className="prose prose-sm max-w-none dark:prose-invert">
+        <Response>{content}</Response>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {blocks.map((b, idx) => {
+        if (b.kind === 'text') {
+          return (
+            <div key={idx} className="prose prose-sm max-w-none dark:prose-invert">
+              <Response>{b.payload as string}</Response>
+            </div>
+          );
+        }
+        if (b.kind === 'kpi') {
+          return <KPI key={idx} config={b.payload as KPIConfig} />;
+        }
+        if (b.kind === 'table') {
+          return (
+            <Card key={idx} className="p-3 border-0 shadow-sm dark:bg-slate-900/60">
+              <SmartTable config={b.payload as TableConfig} />
+            </Card>
+          );
+        }
+        if (b.kind === 'chart') {
+          return <SmartChart key={idx} config={b.payload as ChartConfig} />;
+        }
+        return null;
+      })}
+    </div>
+  );
+};
+
+// ---------- Component ----------
 const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const { user } = useAppContext();
   const { toast } = useToast();
@@ -92,7 +299,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     if (SpeechRecognition) {
       setHasSpeechSupport(true);
       const rec = new SpeechRecognition();
-      rec.lang = 'en-US'; // you can make this user-configurable
+      rec.lang = 'en-US';
       rec.continuous = true;
       rec.interimResults = true;
 
@@ -121,11 +328,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         let finalChunk = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const res = event.results[i];
-          if (res.isFinal) {
-            finalChunk += res[0].transcript;
-          } else {
-            interimText += res[0].transcript;
-          }
+          if (res.isFinal) finalChunk += res[0].transcript;
+          else interimText += res[0].transcript;
         }
         if (finalChunk) setInputValue((prev) => (prev ? prev + ' ' : '') + finalChunk.trim());
         setInterim(interimText);
@@ -158,15 +362,14 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [ttsSupported, setTtsSupported] = useState<boolean>(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null); // currently playing message id
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  // --- TTS unlock/ready handling ---
+  // TTS ready unlock for auto-read consistency
   const [ttsReady, setTtsReady] = useState(false);
   const unlockTTS = React.useCallback(() => {
     const s = window.speechSynthesis;
     if (!s || ttsReady) return;
-    // Fire a silent utterance to "warm" engines that stall on first speak()
     const u = new SpeechSynthesisUtterance(' ');
     u.volume = 0;
     u.rate = 1;
@@ -174,13 +377,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       try { s.resume(); } catch {}
       setTtsReady(true);
     };
-    try {
-      s.cancel();
-      s.speak(u);
-    } catch {}
+    try { s.cancel(); s.speak(u); } catch {}
   }, [ttsReady]);
-
-  // Attach unlock on first user gesture
   useEffect(() => {
     const handler = () => unlockTTS();
     window.addEventListener('click', handler, { once: true, capture: true });
@@ -193,7 +391,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     };
   }, [unlockTTS]);
 
-  // Load voices (some browsers load async)
+  // Load voices
   useEffect(() => {
     const synth = synthRef.current;
     if (!synth) return;
@@ -210,9 +408,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   }, []);
 
   const stopTTS = () => {
-    try {
-      synthRef.current?.cancel();
-    } finally {
+    try { synthRef.current?.cancel(); }
+    finally {
       setIsSpeaking(false);
       setSpeakingMessageId(null);
       utteranceRef.current = null;
@@ -220,7 +417,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   };
 
   const pickVoice = () => {
-    // Prefer matching language, then a common high-quality voice
     const byLang = voices.filter(v => (v.lang || '').toLowerCase().startsWith(TTS_LANG.toLowerCase()));
     const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Aria Online (Natural) - English (United States)'];
     const preferred = byLang.find(v => preferredNames.includes(v.name)) || byLang[0] || voices[0] || null;
@@ -237,26 +433,20 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     const s = speechSynthesis;
 
     const trySpeak = () => {
-      stopTTS(); // cancel any current speech first
-
+      stopTTS();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = TTS_RATE;
       u.pitch = TTS_PITCH;
-
-      // (Re)pick in case voices arrived late
       const voice = pickVoice();
       if (voice) { u.voice = voice; u.lang = voice.lang || TTS_LANG; } else { u.lang = TTS_LANG; }
-
       u.onstart = () => { setIsSpeaking(true); setSpeakingMessageId(messageId); };
       u.onend = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
       u.onerror = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
-
       utteranceRef.current = u;
       try { s.resume(); } catch {}
       s.speak(u);
     };
 
-    // If not ready or voices empty, wait until voiceschanged or a short timeout
     if (!ttsReady || voices.length === 0) {
       const onVoices = () => {
         setTimeout(() => {
@@ -265,7 +455,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         }, 0);
       };
       try { speechSynthesis.onvoiceschanged = onVoices; } catch {}
-      setTimeout(onVoices, 250); // fallback in case voiceschanged never fires
+      setTimeout(onVoices, 250);
     } else {
       trySpeak();
     }
@@ -281,11 +471,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       role: msg.role,
       timestamp: new Date(msg.created_at)
     }));
-
     const newStreamingMessages = streamingMessages.filter(streamMsg =>
       !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
     );
-
     return [...dbMessages, ...newStreamingMessages].sort((a, b) =>
       a.timestamp.getTime() - b.timestamp.getTime()
     );
@@ -294,7 +482,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // Clear streaming messages when session changes
   React.useEffect(() => {
     setStreamingMessages([]);
-    stopTTS(); // stop any speech when switching sessions
+    stopTTS();
   }, [currentSession?.id]);
 
   // ---- Impersonation / Effective identity ----
@@ -489,7 +677,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
           try {
             await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
-            // Auto-read once the final content is in state (microtask ensures latest state)
             if (AUTO_READ_NEW_RESPONSES) {
               queueMicrotask(() => {
                 const msg = getMsgById(messageId);
@@ -752,13 +939,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                       </div>
                     </div>
                   ) : (
-                    // AI messages - unbubbled with Response component
+                    // AI messages — now rendered via RichMessage (tables/charts/KPIs supported)
                     <div className="group space-y-3">
-                      <div className="prose prose-sm max-w-none dark:prose-invert">
-                        <Response>
-                          {message.content}
-                        </Response>
-                      </div>
+                      <RichMessage content={message.content} />
 
                       {/* Action buttons for AI responses (includes TTS play/stop) */}
                       <Actions className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -889,10 +1072,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               </div>
             </div>
 
-            {/* Small caption to guide user about mic / speaker */}
+            {/* Caption (kept simple; you can switch to auto-read text if preferred) */}
             <div className="mt-2 text-xs text-muted-foreground">
               {hasSpeechSupport
-                ? (isRecording ? 'Listening… speak now. Click the mic to stop.' : 'Tip: Click the mic and start talking. Click the speaker on any reply to hear it.')
+                ? (isRecording ? 'Listening… speak now. Click the mic to stop.' : (AUTO_READ_NEW_RESPONSES ? 'Tip: Tap the mic and start talking. I’ll read replies aloud automatically. Use the speaker to replay/pause.' : 'Tip: Tap the mic and start talking. Click the speaker on any reply to hear it.'))
                 : 'Voice input is not supported in this browser.'}
             </div>
           </div>
@@ -1335,7 +1518,12 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         </Card>
                       ))}
                       {sessionGroups.week.length > displayLimits.week && (
-                        <Button variant="ghost" size="sm" className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90" onClick={() => loadMoreSessions('week')}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
+                          onClick={() => loadMoreSessions('week')}
+                        >
                           Show more from this week
                         </Button>
                       )}
