@@ -161,6 +161,38 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null); // currently playing message id
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // --- TTS unlock/ready handling ---
+  const [ttsReady, setTtsReady] = useState(false);
+  const unlockTTS = React.useCallback(() => {
+    const s = window.speechSynthesis;
+    if (!s || ttsReady) return;
+    // Fire a silent utterance to "warm" engines that stall on first speak()
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    u.rate = 1;
+    u.onend = () => {
+      try { s.resume(); } catch {}
+      setTtsReady(true);
+    };
+    try {
+      s.cancel();
+      s.speak(u);
+    } catch {}
+  }, [ttsReady]);
+
+  // Attach unlock on first user gesture
+  useEffect(() => {
+    const handler = () => unlockTTS();
+    window.addEventListener('click', handler, { once: true, capture: true });
+    window.addEventListener('keydown', handler, { once: true, capture: true });
+    window.addEventListener('touchstart', handler, { once: true, capture: true });
+    return () => {
+      window.removeEventListener('click', handler as any, { capture: true } as any);
+      window.removeEventListener('keydown', handler as any, { capture: true } as any);
+      window.removeEventListener('touchstart', handler as any, { capture: true } as any);
+    };
+  }, [unlockTTS]);
+
   // Load voices (some browsers load async)
   useEffect(() => {
     const synth = synthRef.current;
@@ -193,7 +225,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Aria Online (Natural) - English (United States)'];
     const preferred = byLang.find(v => preferredNames.includes(v.name)) || byLang[0] || voices[0] || null;
     return preferred || null;
-    };
+  };
 
   const speakText = (text: string, messageId: string) => {
     if (!('speechSynthesis' in window)) {
@@ -202,20 +234,41 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     }
     if (!text?.trim()) return;
 
-    stopTTS(); // cancel any current speech first
+    const s = speechSynthesis;
 
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = TTS_RATE;
-    u.pitch = TTS_PITCH;
-    const voice = pickVoice();
-    if (voice) { u.voice = voice; u.lang = voice.lang || TTS_LANG; } else { u.lang = TTS_LANG; }
+    const trySpeak = () => {
+      stopTTS(); // cancel any current speech first
 
-    u.onstart = () => { setIsSpeaking(true); setSpeakingMessageId(messageId); };
-    u.onend = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
-    u.onerror = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = TTS_RATE;
+      u.pitch = TTS_PITCH;
 
-    utteranceRef.current = u;
-    synthRef.current?.speak(u);
+      // (Re)pick in case voices arrived late
+      const voice = pickVoice();
+      if (voice) { u.voice = voice; u.lang = voice.lang || TTS_LANG; } else { u.lang = TTS_LANG; }
+
+      u.onstart = () => { setIsSpeaking(true); setSpeakingMessageId(messageId); };
+      u.onend = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
+      u.onerror = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
+
+      utteranceRef.current = u;
+      try { s.resume(); } catch {}
+      s.speak(u);
+    };
+
+    // If not ready or voices empty, wait until voiceschanged or a short timeout
+    if (!ttsReady || voices.length === 0) {
+      const onVoices = () => {
+        setTimeout(() => {
+          try { speechSynthesis.onvoiceschanged = null as any; } catch {}
+          trySpeak();
+        }, 0);
+      };
+      try { speechSynthesis.onvoiceschanged = onVoices; } catch {}
+      setTimeout(onVoices, 250); // fallback in case voiceschanged never fires
+    } else {
+      trySpeak();
+    }
   };
 
   useEffect(() => () => stopTTS(), []); // stop speech on unmount
@@ -436,10 +489,12 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
           try {
             await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
-            // if streaming completed successfully, auto-read the full content if enabled
+            // Auto-read once the final content is in state (microtask ensures latest state)
             if (AUTO_READ_NEW_RESPONSES) {
-              const msg = getMsgById(messageId);
-              if (msg?.content) speakText(msg.content, messageId);
+              queueMicrotask(() => {
+                const msg = getMsgById(messageId);
+                if (msg?.content) speakText(msg.content, messageId);
+              });
             }
           } catch (e) {
             console.warn('Streaming failed, falling back:', e);
@@ -460,7 +515,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               }
               await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
               setIsTyping(false);
-              if (AUTO_READ_NEW_RESPONSES) speakText(finalResponse, messageId);
+              if (AUTO_READ_NEW_RESPONSES) {
+                queueMicrotask(() => speakText(finalResponse, messageId));
+              }
             } catch (e2) {
               console.error('AI query error:', e2);
 
@@ -478,7 +535,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               ));
               await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
               setIsTyping(false);
-              if (AUTO_READ_NEW_RESPONSES) speakText(fallbackResponse, messageId);
+              if (AUTO_READ_NEW_RESPONSES) {
+                queueMicrotask(() => speakText(fallbackResponse, messageId));
+              }
             }
           }
         }, 500);
