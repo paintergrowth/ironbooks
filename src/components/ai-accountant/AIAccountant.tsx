@@ -1,5 +1,5 @@
 // src/components/ai-accountant/AIAccountant.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Send, Plus, Search, Settings2, Sparkles, BarChart3, FileText, Calculator,
   RotateCcw, ThumbsUp, ThumbsDown, Copy, Trash2, CheckCircle, XCircle,
-  ExternalLink, AlertCircle, X, Loader2, Volume2 // 👈 NEW
+  ExternalLink, AlertCircle, X, Loader2, Mic, MicOff
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Response } from '@/components/ai-elements/response';
@@ -35,6 +35,8 @@ interface AIAccountantProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }
+
+const AUTO_SEND_ON_END = true; // set to false if you want transcript to stay in the box until user hits Send
 
 const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const { user } = useAppContext();
@@ -73,40 +75,91 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // Local streaming messages (separate from database-backed chat history)
   const [streamingMessages, setStreamingMessages] = useState<Message[]>([]);
 
-  // 👇 NEW: TTS state
-  const [ttsActiveId, setTtsActiveId] = useState<string | null>(null);
-  const supportsSpeech = () =>
-    typeof window !== 'undefined' &&
-    'speechSynthesis' in window &&
-    typeof window.SpeechSynthesisUtterance !== 'undefined';
+  // ==== Voice (Speech-to-Text) ====
+  const recognitionRef = useRef<any | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
+  const [interim, setInterim] = useState('');
 
-  const speakText = (id: string, text: string) => {
-    if (!supportsSpeech()) {
-      toast({ title: 'Voice', description: 'Speech not supported in this browser.', variant: 'destructive' });
+  // Init Web Speech API
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setHasSpeechSupport(true);
+      const rec = new SpeechRecognition();
+      rec.lang = 'en-US'; // you can make this user-configurable
+      rec.continuous = true; // keep listening until user stops
+      rec.interimResults = true; // show partial text while talking
+
+      rec.onstart = () => setIsRecording(true);
+      rec.onend = () => {
+        setIsRecording(false);
+        // if we stopped because of silence and auto-send is on:
+        if (AUTO_SEND_ON_END && !isTyping) {
+          const text = (inputValue + ' ' + interim).trim();
+          if (text.length) {
+            setInputValue(text);
+            setInterim('');
+            // slight delay so the UI updates before send
+            setTimeout(() => handleSendMessage(), 10);
+          }
+        }
+      };
+      rec.onerror = (e: any) => {
+        setIsRecording(false);
+        // Common: not-allowed (permission), no-speech, aborted
+        if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
+          toast({ title: 'Microphone access denied', description: 'Enable mic permissions in your browser settings and try again.', variant: 'destructive' });
+        } else if (e?.error !== 'aborted') {
+          toast({ title: 'Voice error', description: 'Unable to transcribe speech right now.', variant: 'destructive' });
+        }
+      };
+      rec.onresult = (event: any) => {
+        let interimText = '';
+        let finalChunk = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res.isFinal) {
+            finalChunk += res[0].transcript;
+          } else {
+            interimText += res[0].transcript;
+          }
+        }
+        if (finalChunk) {
+          setInputValue((prev) => (prev ? prev + ' ' : '') + finalChunk.trim());
+        }
+        setInterim(interimText);
+      };
+
+      recognitionRef.current = rec;
+    } else {
+      setHasSpeechSupport(false);
+    }
+
+    return () => {
+      try { recognitionRef.current?.stop?.(); } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startMic = async () => {
+    if (!hasSpeechSupport) {
+      toast({ title: 'Voice not supported', description: 'Your browser does not support speech recognition.', variant: 'destructive' });
       return;
     }
+    if (isRecording) return;
     try {
-      window.speechSynthesis.cancel(); // stop anything already speaking
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onend = () => setTtsActiveId(null);
-      utterance.onerror = () => setTtsActiveId(null);
-      setTtsActiveId(id);
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      toast({ title: 'Voice', description: 'Unable to start speech.', variant: 'destructive' });
+      setInterim('');
+      recognitionRef.current?.start();
+    } catch (e) {
+      // starting twice throws; ignore
     }
   };
 
-  const stopSpeaking = () => {
-    try { window.speechSynthesis?.cancel(); } finally { setTtsActiveId(null); }
+  const stopMic = () => {
+    try { recognitionRef.current?.stop(); } catch {}
   };
-
-  // Cancel speech on unmount
-  useEffect(() => {
-    return () => {
-      try { window.speechSynthesis?.cancel(); } catch {}
-    };
-  }, []);
 
   // Combine database messages with streaming messages for display
   const allMessages = React.useMemo(() => {
@@ -241,6 +294,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !user) return;
 
+    // stop mic if currently recording (so we don't append more transcript)
+    if (isRecording) stopMic();
+
     // Resolve identity *fresh* at send-time to avoid momentary nulls
     const { data: authUserData } = await supabase.auth.getUser();
     const sendUserId = isImpersonating
@@ -261,8 +317,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       return;
     }
 
-    const messageContent = inputValue;
+    const messageContent = inputValue.trim();
     setInputValue('');
+    setInterim('');
 
     // Create new session if none exists
     let session = currentSession;
@@ -326,9 +383,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           setCurrentReasoning([]);
 
           try {
-            // Stop any ongoing speech when a new assistant message starts
-            stopSpeaking();
-
             // Auth-safe SSE (auto retries on 401/403)
             await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
           } catch (e) {
@@ -603,17 +657,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         <Action tooltip="Bad response" onClick={() => handleThumbsDown(message.id)}>
                           <ThumbsDown size={16} />
                         </Action>
-                        {/* 👇 NEW: Speak/Stop voice */}
-                        <Action
-                          tooltip={ttsActiveId === message.id ? 'Stop voice' : 'Play voice'}
-                          onClick={() =>
-                            ttsActiveId === message.id
-                              ? stopSpeaking()
-                              : speakText(message.id, message.content)
-                          }
-                        >
-                          <Volume2 size={16} />
-                        </Action>
                       </Actions>
                     </div>
                   )}
@@ -675,21 +718,49 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             <div className="flex gap-2">
               <div className="flex-1 relative">
                 <Input
-                  value={inputValue}
+                  value={inputValue + (interim ? (inputValue ? ' ' : '') + interim : '')}
                   onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Type your message here..."
-                  className="pr-12 dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder={isRecording ? "Listening..." : "Type your message here..."}
+                  className={`pr-24 dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400 ${isRecording ? 'ring-2 ring-primary/50' : ''}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
                 />
+
+                {/* Mic button */}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isRecording ? 'default' : 'outline'}
+                  className={`absolute right-10 top-1 h-8 w-8 p-0 ${isRecording ? 'animate-pulse' : ''}`}
+                  onClick={() => (isRecording ? stopMic() : startMic())}
+                  title={hasSpeechSupport ? (isRecording ? 'Stop' : 'Speak') : 'Voice not supported'}
+                  disabled={!hasSpeechSupport}
+                >
+                  {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+                </Button>
+
+                {/* Send button */}
                 <Button
                   size="sm"
                   className="absolute right-1 top-1 h-8 w-8 p-0"
                   onClick={handleSendMessage}
-                  disabled={!inputValue.trim()}
+                  disabled={!inputValue.trim() && !interim.trim()}
+                  title="Send"
                 >
                   <Send size={14} />
                 </Button>
               </div>
+            </div>
+
+            {/* Small caption to guide user about mic */}
+            <div className="mt-2 text-xs text-muted-foreground">
+              {hasSpeechSupport
+                ? (isRecording ? 'Listening… speak now. Click the mic to stop.' : 'Tip: Click the mic and start talking.')
+                : 'Voice input is not supported in this browser.'}
             </div>
           </div>
         </div>
@@ -1131,13 +1202,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         </Card>
                       ))}
                       {sessionGroups.week.length > displayLimits.week && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
-                          onClick={() => loadMoreSessions('week')}
-                        >
-                          Load {Math.min(10, groups.week.length - displayLimits.week)} more from this week
+                        <Button variant="ghost" size="sm" className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90" onClick={() => loadMoreSessions('week')}>
+                          Show more from this week
                         </Button>
                       )}
                     </>
