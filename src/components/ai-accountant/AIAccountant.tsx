@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Send, Plus, Search, Settings2, Sparkles, BarChart3, FileText, Calculator,
   RotateCcw, ThumbsUp, ThumbsDown, Copy, Trash2, CheckCircle, XCircle,
-  ExternalLink, AlertCircle, X, Loader2, Mic, MicOff
+  ExternalLink, AlertCircle, X, Loader2, Mic, MicOff, Volume2, VolumeX
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Response } from '@/components/ai-elements/response';
@@ -36,7 +36,11 @@ interface AIAccountantProps {
   setSidebarOpen: (open: boolean) => void;
 }
 
-const AUTO_SEND_ON_END = true; // set to false if you want transcript to stay in the box until user hits Send
+const AUTO_SEND_ON_END = true;           // Voice input: auto-send transcript when speech ends
+const AUTO_READ_NEW_RESPONSES = false;   // TTS: auto-read assistant replies when they finish streaming
+const TTS_RATE = 1.0;                    // 0.1 - 10
+const TTS_PITCH = 1.0;                   // 0 - 2
+const TTS_LANG = 'en-US';                // preferred language for voice selection
 
 const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const { user } = useAppContext();
@@ -81,7 +85,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
   const [interim, setInterim] = useState('');
 
-  // Init Web Speech API
+  // Init Web Speech API (STT)
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -89,26 +93,23 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       setHasSpeechSupport(true);
       const rec = new SpeechRecognition();
       rec.lang = 'en-US'; // you can make this user-configurable
-      rec.continuous = true; // keep listening until user stops
-      rec.interimResults = true; // show partial text while talking
+      rec.continuous = true;
+      rec.interimResults = true;
 
       rec.onstart = () => setIsRecording(true);
       rec.onend = () => {
         setIsRecording(false);
-        // if we stopped because of silence and auto-send is on:
         if (AUTO_SEND_ON_END && !isTyping) {
           const text = (inputValue + ' ' + interim).trim();
           if (text.length) {
             setInputValue(text);
             setInterim('');
-            // slight delay so the UI updates before send
             setTimeout(() => handleSendMessage(), 10);
           }
         }
       };
       rec.onerror = (e: any) => {
         setIsRecording(false);
-        // Common: not-allowed (permission), no-speech, aborted
         if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
           toast({ title: 'Microphone access denied', description: 'Enable mic permissions in your browser settings and try again.', variant: 'destructive' });
         } else if (e?.error !== 'aborted') {
@@ -126,9 +127,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             interimText += res[0].transcript;
           }
         }
-        if (finalChunk) {
-          setInputValue((prev) => (prev ? prev + ' ' : '') + finalChunk.trim());
-        }
+        if (finalChunk) setInputValue((prev) => (prev ? prev + ' ' : '') + finalChunk.trim());
         setInterim(interimText);
       };
 
@@ -137,9 +136,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       setHasSpeechSupport(false);
     }
 
-    return () => {
-      try { recognitionRef.current?.stop?.(); } catch {}
-    };
+    return () => { try { recognitionRef.current?.stop?.(); } catch {} };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,14 +149,76 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     try {
       setInterim('');
       recognitionRef.current?.start();
-    } catch (e) {
-      // starting twice throws; ignore
+    } catch {}
+  };
+  const stopMic = () => { try { recognitionRef.current?.stop(); } catch {} };
+
+  // ==== Text-to-Speech (TTS) ====
+  const synthRef = useRef<SpeechSynthesis | null>(typeof window !== 'undefined' ? window.speechSynthesis : null);
+  const [ttsSupported, setTtsSupported] = useState<boolean>(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null); // currently playing message id
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Load voices (some browsers load async)
+  useEffect(() => {
+    const synth = synthRef.current;
+    if (!synth) return;
+    const loadVoices = () => {
+      const v = synth.getVoices ? synth.getVoices() : [];
+      setVoices(v);
+      setTtsSupported(!!v.length || 'speechSynthesis' in window);
+    };
+    loadVoices();
+    if (typeof synth.onvoiceschanged !== 'undefined') {
+      synth.onvoiceschanged = loadVoices;
+    }
+    return () => { if (synth) synth.onvoiceschanged = null as any; };
+  }, []);
+
+  const stopTTS = () => {
+    try {
+      synthRef.current?.cancel();
+    } finally {
+      setIsSpeaking(false);
+      setSpeakingMessageId(null);
+      utteranceRef.current = null;
     }
   };
 
-  const stopMic = () => {
-    try { recognitionRef.current?.stop(); } catch {}
+  const pickVoice = () => {
+    // Prefer matching language, then a common high-quality voice
+    const byLang = voices.filter(v => (v.lang || '').toLowerCase().startsWith(TTS_LANG.toLowerCase()));
+    const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Aria Online (Natural) - English (United States)'];
+    const preferred = byLang.find(v => preferredNames.includes(v.name)) || byLang[0] || voices[0] || null;
+    return preferred || null;
+    };
+
+  const speakText = (text: string, messageId: string) => {
+    if (!('speechSynthesis' in window)) {
+      toast({ title: 'Playback not supported', description: 'Your browser does not support text-to-speech.', variant: 'destructive' });
+      return;
+    }
+    if (!text?.trim()) return;
+
+    stopTTS(); // cancel any current speech first
+
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = TTS_RATE;
+    u.pitch = TTS_PITCH;
+    const voice = pickVoice();
+    if (voice) { u.voice = voice; u.lang = voice.lang || TTS_LANG; } else { u.lang = TTS_LANG; }
+
+    u.onstart = () => { setIsSpeaking(true); setSpeakingMessageId(messageId); };
+    u.onend = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
+    u.onerror = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
+
+    utteranceRef.current = u;
+    synthRef.current?.speak(u);
   };
+
+  useEffect(() => () => stopTTS(), []); // stop speech on unmount
 
   // Combine database messages with streaming messages for display
   const allMessages = React.useMemo(() => {
@@ -182,6 +241,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // Clear streaming messages when session changes
   React.useEffect(() => {
     setStreamingMessages([]);
+    stopTTS(); // stop any speech when switching sessions
   }, [currentSession?.id]);
 
   // ---- Impersonation / Effective identity ----
@@ -189,7 +249,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [realRealmId, setRealRealmId] = useState<string | null>(null);
   const [fullName, setFullName] = useState<string | null>(null);
   const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
-  // Prefer qboStatus.realm_id (stable source used by the Connected banner) to avoid brief nulls
   const effRealmId = isImpersonating
     ? (target?.realmId ?? null)
     : (realRealmId ?? qboStatus?.realm_id ?? null);
@@ -224,9 +283,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
         if (!error && !cancelled && data?.companyName) {
           setCompanyName(data.companyName);
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     })();
     return () => { cancelled = true; };
   }, [effUserId, effRealmId]);
@@ -242,7 +299,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     try {
       localStorage.setItem('qbo_oauth_state', state);
       localStorage.setItem('qbo_postAuthReturn', window.location.pathname + window.location.search + window.location.hash);
-    } catch { }
+    } catch {}
     return `${QBO_AUTHORIZE_URL}?client_id=${encodeURIComponent(QBO_CLIENT_ID)}&redirect_uri=${encodeURIComponent(QBO_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(QBO_SCOPES)}&state=${encodeURIComponent(state)}&prompt=consent`;
   };
 
@@ -256,7 +313,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   };
 
   const handleSyncTransactions = async () => {
-    // keep existing behavior (uses qboStatus + real user)
     if (!qboStatus.connected || !qboStatus.realm_id || !user?.id) {
       toast({ title: 'Sync Error', description: 'QuickBooks not connected or missing info.', variant: 'destructive' });
       return;
@@ -294,19 +350,18 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !user) return;
 
-    // stop mic if currently recording (so we don't append more transcript)
     if (isRecording) stopMic();
+    stopTTS(); // stop reading if the user sends something new
 
     // Resolve identity *fresh* at send-time to avoid momentary nulls
     const { data: authUserData } = await supabase.auth.getUser();
     const sendUserId = isImpersonating
       ? (target?.userId ?? null)
-      : (authUserData?.user?.id ?? user?.id ?? null); // prefer live auth, then context
+      : (authUserData?.user?.id ?? user?.id ?? null);
     const sendRealmId = isImpersonating
       ? (target?.realmId ?? null)
-      : (qboStatus?.realm_id ?? realRealmId ?? null); // prefer qboStatus, then profile
+      : (qboStatus?.realm_id ?? realRealmId ?? null);
 
-    // Guard using the freshly resolved IDs
     if (!sendUserId || !sendRealmId) {
       toast({
         title: 'Connect QuickBooks',
@@ -328,7 +383,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       if (!session) return;
     }
 
-    // Save user message to database
+    // Save user message
     await saveMessage('user', messageContent, 0, 0, 0, session.id);
 
     // Add user message to streaming state for immediate display
@@ -340,10 +395,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     };
     setStreamingMessages(prev => [...prev, userMessage]);
 
-    // Ensure we have selected session
-    if (!currentSession) {
-      selectSession(session);
-    }
+    if (!currentSession) selectSession(session);
 
     // Auto title
     if (session.title === 'New Chat' && allMessages.length === 0) {
@@ -383,11 +435,14 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           setCurrentReasoning([]);
 
           try {
-            // Auth-safe SSE (auto retries on 401/403)
             await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
+            // if streaming completed successfully, auto-read the full content if enabled
+            if (AUTO_READ_NEW_RESPONSES) {
+              const msg = getMsgById(messageId);
+              if (msg?.content) speakText(msg.content, messageId);
+            }
           } catch (e) {
             console.warn('Streaming failed, falling back:', e);
-            // Fallback: one-shot -> simulate tokens
             try {
               const finalResponse = await callAgentOnce(messageContent, sendUserId, sendRealmId);
               const words = finalResponse.split(' ');
@@ -400,13 +455,12 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     : msg
                 ));
                 if (i < words.length - 1) {
-                  // eslint-disable-next-line no-await-in-loop
                   await new Promise(resolve => setTimeout(resolve, 30));
                 }
               }
-              // Save final message to database
               await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
               setIsTyping(false);
+              if (AUTO_READ_NEW_RESPONSES) speakText(finalResponse, messageId);
             } catch (e2) {
               console.error('AI query error:', e2);
 
@@ -424,11 +478,19 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               ));
               await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
               setIsTyping(false);
+              if (AUTO_READ_NEW_RESPONSES) speakText(fallbackResponse, messageId);
             }
           }
         }, 500);
       }
     }, 1250);
+  };
+
+  const getMsgById = (id: string) => {
+    const all = [...streamingMessages, ...chatMessages.map(m => ({
+      id: m.id, content: m.content, role: m.role as 'user'|'assistant', timestamp: new Date(m.created_at)
+    }))];
+    return all.find(m => m.id === id);
   };
 
   const handleCopyMessage = (content: string) => {
@@ -449,9 +511,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
   const handleNewChat = async () => {
     const newSession = await createSession('New Chat');
-    if (newSession) {
-      selectSession(newSession);
-    }
+    if (newSession) selectSession(newSession);
+    stopTTS();
   };
 
   const filteredSessions = sessions.filter(session =>
@@ -529,7 +590,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     userId: string,
     realmId: string
   ) => {
-    // Use the shared helper that auto-includes apikey + Authorization and retries after refresh
     await new Promise<void>((resolve, reject) => {
       let accumulatedText = '';
 
@@ -552,9 +612,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           setIsTyping(false);
           resolve();
         },
-        (err) => {
-          reject(err);
-        }
+        (err) => { reject(err); }
       );
     });
   };
@@ -643,8 +701,24 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         </Response>
                       </div>
 
-                      {/* Action buttons for AI responses */}
+                      {/* Action buttons for AI responses (includes TTS play/stop) */}
                       <Actions className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <Action
+                          tooltip={speakingMessageId === message.id && isSpeaking ? 'Stop reading' : 'Read aloud'}
+                          onClick={() => {
+                            if (!ttsSupported) {
+                              toast({ title: 'Playback not supported', description: 'Your browser does not support text-to-speech.', variant: 'destructive' });
+                              return;
+                            }
+                            if (speakingMessageId === message.id && isSpeaking) {
+                              stopTTS();
+                            } else {
+                              speakText(message.content, message.id);
+                            }
+                          }}
+                        >
+                          {speakingMessageId === message.id && isSpeaking ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                        </Action>
                         <Action tooltip="Regenerate response" onClick={() => handleRegenerateResponse(message.id)}>
                           <RotateCcw size={16} />
                         </Action>
@@ -756,10 +830,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               </div>
             </div>
 
-            {/* Small caption to guide user about mic */}
+            {/* Small caption to guide user about mic / speaker */}
             <div className="mt-2 text-xs text-muted-foreground">
               {hasSpeechSupport
-                ? (isRecording ? 'Listening… speak now. Click the mic to stop.' : 'Tip: Click the mic and start talking.')
+                ? (isRecording ? 'Listening… speak now. Click the mic to stop.' : 'Tip: Click the mic and start talking. Click the speaker on any reply to hear it.')
                 : 'Voice input is not supported in this browser.'}
             </div>
           </div>
@@ -780,7 +854,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   <p className="text-amber-700 dark:text-amber-200 text-xs">Connect to access financial data</p>
                 </div>
               </div>
-              <Button size="sm" className="w-full">
+              <Button size="sm" className="w-full" onClick={handleConnectQuickBooks}>
                 <ExternalLink size={14} className="mr-2" />
                 Connect QuickBooks
               </Button>
@@ -1239,7 +1313,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                       ))}
                       {sessionGroups.older.length > displayLimits.older && (
                         <Button variant="ghost" size="sm" className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90" onClick={() => loadMoreSessions('older')}>
-                          Show more
+                          Load more
                         </Button>
                       )}
                     </>
