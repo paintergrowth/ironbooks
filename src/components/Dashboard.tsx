@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { TrendingDownIcon, TrendingUpIcon, Calendar, Download } from 'lucide-react';
+import { TrendingDownIcon, TrendingUpIcon, Calendar, Download, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -247,7 +247,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
   const [timeframe, setTimeframe] = useState<UiTimeframe>('lastMonth');
 
-  // 🔽 NEW: custom range state (YYYY-MM-DD)
+  // custom range state (YYYY-MM-DD)
   const [fromDate, setFromDate] = useState<string | null>(null);
   const [toDate, setToDate] = useState<string | null>(null);
 
@@ -268,6 +268,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
   const [ytdChartData, setYtdChartData] = useState(fallbackChartData);
   const [ytdLoading, setYtdLoading] = useState(false);
+
+  // NEW: dashboard-level refresh state + handler
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefreshQuickBooks = async () => {
+    if (!effRealmId) {
+      toast({ title: 'QuickBooks', description: 'No connected realm to refresh.', variant: 'destructive' });
+      return;
+    }
+    try {
+      setRefreshing(true);
+
+      // 1) Reset monthlies + queue (SECURITY DEFINER RPC)
+      const { error: rpcErr } = await supabase.rpc('reset_realm_pnl_and_queue', {
+        p_realm_id: effRealmId,
+      });
+      if (rpcErr) {
+        console.error('[Dashboard Refresh] RPC failed:', rpcErr);
+        toast({ title: 'QuickBooks', description: rpcErr.message || 'Reset failed', variant: 'destructive' });
+        return;
+      }
+
+      // 2) Kick P&L / BS sync
+      const { error: fnErr } = await supabase.functions.invoke('qbo-pnl-sync', {
+        body: { realmId: effRealmId },
+      });
+      if (fnErr) {
+        console.error('[Dashboard Refresh] qbo-pnl-sync failed:', fnErr);
+        toast({ title: 'QuickBooks', description: 'Reset done, but sync start failed. Try again.', variant: 'destructive' });
+        return;
+      }
+
+      toast({ title: 'QuickBooks', description: `Refresh started for ${effRealmId}` });
+    } catch (e) {
+      console.error('[Dashboard Refresh] unexpected error:', e);
+      toast({ title: 'QuickBooks', description: 'Unexpected error. See console.', variant: 'destructive' });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const revPct = useMemo(() => pctChange(revCurr, revPrev), [revCurr, revPrev]);
   const expPct = useMemo(() => pctChange(expCurr, expPrev), [expCurr, expPrev]);
@@ -499,7 +538,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     return () => { isCancelled = true; };
   }, [timeframe, fromDate, toDate, effUserId, effRealmId, isDemo]);
 
-  // YTD chart (unchanged)
+  // YTD chart
   useEffect(() => {
     let isCancelled = false;
     const loadYtd = async () => {
@@ -648,6 +687,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
               </Badge>
             )}
           </div>
+
+          {/* Refresh button before "Last synced" (hidden in demo) */}
+          {effRealmId && (
+            <div className="mt-2">
+              <Button
+                onClick={handleRefreshQuickBooks}
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={refreshing}
+                title="Delete monthlies, reset queue, and restart sync for this realm"
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </div>
+          )}
+
           <p className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
             Last synced{' '}
             {lastSync
@@ -679,12 +735,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
               <SelectItem value="thisQuarter">This Quarter</SelectItem>
               <SelectItem value="lastQuarter">Last Quarter</SelectItem>
               <SelectItem value="ytd">YTD</SelectItem>
-              {/* NEW */}
               <SelectItem value="custom">Custom…</SelectItem>
             </SelectContent>
           </Select>
 
-          {/* NEW: From/To inputs only for Custom */}
+          {/* From/To inputs only for Custom */}
           {isCustom && (
             <div className="flex items-center gap-2">
               <input
@@ -940,12 +995,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
       {/* Expense Categories */}
       {isDemo ? (
-        // For demo, if custom is chosen, we still show a sensible split (use YTD)
         <DemoExpenseCategories timeframe={toApiPeriod((timeframe === 'custom' ? 'ytd' : timeframe) as Exclude<UiTimeframe, 'custom'>)} />
       ) : (
         <ExpenseCategories
           timeframe={toApiPeriod((timeframe === 'custom' ? 'ytd' : timeframe) as Exclude<UiTimeframe, 'custom'>)}
-          // Forward custom range info (the component will send it to edge functions)
           mode={timeframe === 'custom' ? 'custom' : 'preset'}
           fromDate={timeframe === 'custom' ? fromDate || undefined : undefined}
           toDate={timeframe === 'custom' ? toDate || undefined : undefined}
