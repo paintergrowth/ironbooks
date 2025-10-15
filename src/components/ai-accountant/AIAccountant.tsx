@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Send, Plus, Search, Settings2, Sparkles, BarChart3, FileText, Calculator,
   RotateCcw, ThumbsUp, ThumbsDown, Copy, Trash2, CheckCircle, XCircle,
-  ExternalLink, AlertCircle, X, Loader2
+  ExternalLink, AlertCircle, X, Loader2, Volume2 // 👈 NEW
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Response } from '@/components/ai-elements/response';
@@ -72,6 +72,41 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
   // Local streaming messages (separate from database-backed chat history)
   const [streamingMessages, setStreamingMessages] = useState<Message[]>([]);
+
+  // 👇 NEW: TTS state
+  const [ttsActiveId, setTtsActiveId] = useState<string | null>(null);
+  const supportsSpeech = () =>
+    typeof window !== 'undefined' &&
+    'speechSynthesis' in window &&
+    typeof window.SpeechSynthesisUtterance !== 'undefined';
+
+  const speakText = (id: string, text: string) => {
+    if (!supportsSpeech()) {
+      toast({ title: 'Voice', description: 'Speech not supported in this browser.', variant: 'destructive' });
+      return;
+    }
+    try {
+      window.speechSynthesis.cancel(); // stop anything already speaking
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.onend = () => setTtsActiveId(null);
+      utterance.onerror = () => setTtsActiveId(null);
+      setTtsActiveId(id);
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      toast({ title: 'Voice', description: 'Unable to start speech.', variant: 'destructive' });
+    }
+  };
+
+  const stopSpeaking = () => {
+    try { window.speechSynthesis?.cancel(); } finally { setTtsActiveId(null); }
+  };
+
+  // Cancel speech on unmount
+  useEffect(() => {
+    return () => {
+      try { window.speechSynthesis?.cancel(); } catch {}
+    };
+  }, []);
 
   // Combine database messages with streaming messages for display
   const allMessages = React.useMemo(() => {
@@ -291,6 +326,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           setCurrentReasoning([]);
 
           try {
+            // Stop any ongoing speech when a new assistant message starts
+            stopSpeaking();
+
             // Auth-safe SSE (auto retries on 401/403)
             await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
           } catch (e) {
@@ -564,6 +602,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         </Action>
                         <Action tooltip="Bad response" onClick={() => handleThumbsDown(message.id)}>
                           <ThumbsDown size={16} />
+                        </Action>
+                        {/* 👇 NEW: Speak/Stop voice */}
+                        <Action
+                          tooltip={ttsActiveId === message.id ? 'Stop voice' : 'Play voice'}
+                          onClick={() =>
+                            ttsActiveId === message.id
+                              ? stopSpeaking()
+                              : speakText(message.id, message.content)
+                          }
+                        >
+                          <Volume2 size={16} />
                         </Action>
                       </Actions>
                     </div>
@@ -1082,8 +1131,13 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         </Card>
                       ))}
                       {sessionGroups.week.length > displayLimits.week && (
-                        <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('week')}>
-                          Show more from this week
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
+                          onClick={() => loadMoreSessions('week')}
+                        >
+                          Load {Math.min(10, groups.week.length - displayLimits.week)} more from this week
                         </Button>
                       )}
                     </>
@@ -1092,7 +1146,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   {/* Older */}
                   {sessionGroups.older.length > 0 && (
                     <>
-                      <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">Older</div>
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4 dark:text-slate-300/90">Older</div>
                       {sessionGroups.older.slice(0, displayLimits.older).map((session) => (
                         <Card
                           key={session.id}
@@ -1118,7 +1172,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                         </Card>
                       ))}
                       {sessionGroups.older.length > displayLimits.older && (
-                        <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('older')}>
+                        <Button variant="ghost" size="sm" className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90" onClick={() => loadMoreSessions('older')}>
                           Show more
                         </Button>
                       )}
