@@ -11,30 +11,22 @@ export async function runAdHocReport(args: {
 }) {
   const { realmId, reportName, params, format = 'json' } = args;
 
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbo-run-report`;
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // if you want RLS-protected “who is calling” context, forward the anon JWT:
-      'Authorization': `Bearer ${supabase.auth.getSession ? (await supabase.auth.getSession()).data.session?.access_token ?? '' : ''}`,
-    },
-    body: JSON.stringify({ realmId, reportName, params, format }),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Edge error ${resp.status}: ${text}`);
-  }
-
   if (format === 'json') {
-    return await resp.json(); // { raw, normalized }
+    const { data, error } = await supabase.functions.invoke('qbo-run-report', {
+      body: { realmId, reportName, params, format: 'json' },
+    });
+    if (error) throw new Error(error.message || 'Edge error');
+    return data; // { raw, normalized }
   }
 
-  // CSV/PDF: return Blob so caller can download
-  const blob = await resp.blob();
-  return blob;
+  // CSV or PDF -> request a Blob back
+  const { data, error } = await supabase.functions.invoke('qbo-run-report', {
+    body: { realmId, reportName, params, format },
+    // supabase-js v2 supports responseType for invoke
+    responseType: 'blob',
+  } as any);
+  if (error) throw new Error(error.message || 'Edge error');
+  return data as Blob;
 }
 
 export function downloadBlob(blob: Blob, filename: string) {
