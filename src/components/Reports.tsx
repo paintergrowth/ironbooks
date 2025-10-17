@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { FileText, Download, Play, Calendar, Filter, X } from 'lucide-react';
 import { useEffectiveIdentity } from '@/lib/impersonation'; // 👈 honor impersonation
 import { AdHocReportsPanel } from '@/components/reports/AdHocReportsPanel';
-
+import { runAdHocReport, downloadBlob } from '@/lib/qboReports';
+import { ReportPreview } from '@/components/reports/ReportPreview';
 
 interface ReportsProps {
   initialFilter?: string;
@@ -212,6 +213,9 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
       default: return 'This Month';
     }
   };
+  const [adhocPreview, setAdhocPreview] = useState<{ headers: string[]; rows: string[][] } | null>(null);
+  const [adhocLoading, setAdhocLoading] = useState(false);
+  const [adhocError, setAdhocError] = useState<string | null>(null);
 
   return (
     <div className="space-y-8 p-6">
@@ -258,16 +262,34 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
         <AdHocReportsPanel
           realmId={effRealmId}
           defaultReport="ProfitAndLoss"
-          onRun={(payload) => {
-            // For now: preview in console. Later: render a table under the panel.
-            console.log('[AdHocReportsPanel] RUN', payload);
+          onRun={async ({ realmId, reportName, params }) => {
+            try {
+              setAdhocError(null);
+              setAdhocLoading(true);
+              const res = await runAdHocReport({ realmId, reportName, params, format: 'json' });
+              setAdhocPreview(res?.normalized ?? null);
+            } catch (e: any) {
+              setAdhocError(e?.message || 'Failed to run report');
+              setAdhocPreview(null);
+            } finally {
+              setAdhocLoading(false);
+            }
           }}
-          onDownload={(payload, fmt) => {
-            // For now: log. Later: call your edge function and stream/save file.
-            console.log('[AdHocReportsPanel] DOWNLOAD', fmt, payload);
+          onDownload={async ({ realmId, reportName, params }, fmt) => {
+            try {
+              const blob = await runAdHocReport({ realmId, reportName, params, format: fmt });
+              downloadBlob(blob, `${reportName}.${fmt === 'csv' ? 'csv' : 'pdf'}`);
+            } catch (e: any) {
+              alert(e?.message || 'Download failed');
+            }
           }}
-        />  
-      
+        />
+        {/* ⬇️ Place THIS block here */}
+        {adhocLoading && <div className="text-sm text-gray-600">Running ad-hoc report…</div>}
+        {adhocError && <div className="text-sm text-red-600">{adhocError}</div>}
+        {adhocPreview && (
+          <ReportPreview title="Preview (normalized)" data={adhocPreview} />
+        )}
       {/* Errors / Loading */}
       {errorMsg && (
         <div className="text-sm text-red-600">{errorMsg}</div>
