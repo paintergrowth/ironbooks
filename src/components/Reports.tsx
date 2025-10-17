@@ -285,7 +285,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           }}
         />
         {/* ⬇️ Place THIS block here */}
-        {adhocLoading && <div className="text-sm text-gray-600">Running ad-hoc report…</div>}
+        {adhocLoading && <div className="text-sm text-gray-600">Running finance report…</div>}
         {adhocError && <div className="text-sm text-red-600">{adhocError}</div>}
         {adhocPreview && (
           <ReportPreview title="Preview (normalized)" data={adhocPreview} />
