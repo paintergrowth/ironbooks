@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileText, Download, Play, Calendar, Filter, X } from 'lucide-react';
 import { useEffectiveIdentity } from '@/lib/impersonation'; // 👈 honor impersonation
+import { AdHocReportsPanel } from '@/components/reports/AdHocReportsPanel';
+
 
 interface ReportsProps {
   initialFilter?: string;
@@ -252,7 +254,20 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           </Select>
         </div>
       </div>
-
+       {/* ⬇️ NEW: Ad-hoc QBO Reports panel */}
+        <AdHocReportsPanel
+          realmId={effRealmId}
+          defaultReport="ProfitAndLoss"
+          onRun={(payload) => {
+            // For now: preview in console. Later: render a table under the panel.
+            console.log('[AdHocReportsPanel] RUN', payload);
+          }}
+          onDownload={(payload, fmt) => {
+            // For now: log. Later: call your edge function and stream/save file.
+            console.log('[AdHocReportsPanel] DOWNLOAD', fmt, payload);
+          }}
+        />  
+      
       {/* Errors / Loading */}
       {errorMsg && (
         <div className="text-sm text-red-600">{errorMsg}</div>
