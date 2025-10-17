@@ -3,24 +3,30 @@ import { supabase } from '@/lib/supabase';
 
 type Format = 'json' | 'csv' | 'pdf';
 
-function getSupabaseUrl(): string {
-  // Prefer env; your logs show it's set (url present? true)
+function getSupabaseBaseUrl(): string {
+  // 1) Prefer env if present
   const envUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL;
   if (typeof envUrl === 'string' && envUrl.length > 0) return envUrl;
-  // Fallback (very unlikely needed)
-  // @ts-ignore
-  const internal = (supabase as any)?._settings?.url || (supabase as any)?._supabaseUrl;
-  if (internal) return internal;
+
+  // 2) Derive from functions client (supabase-js v2 keeps full URL here)
+  const fnUrl: string | undefined = (supabase as any)?.functions?.url;
+  if (fnUrl && fnUrl.includes('/functions/')) {
+    // fnUrl looks like: https://<ref>.supabase.co/functions/v1
+    return fnUrl.split('/functions/')[0];
+  }
+
+  // 3) Try internal client settings (best-effort fallback)
+  const maybe = (supabase as any)?._settings?.url || (supabase as any)?._supabaseUrl;
+  if (typeof maybe === 'string' && maybe.length > 0) return maybe;
+
   throw new Error('Supabase URL not configured');
 }
 
 async function getAuthHeader(): Promise<string> {
-  // Use user session token if present, else anon key
   const { data } = await supabase.auth.getSession();
   const userJwt = data.session?.access_token;
-  // @ts-ignore
-  const anon = (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY;
-  return `Bearer ${userJwt || anon || ''}`;
+  const anon = (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '';
+  return `Bearer ${userJwt || anon}`;
 }
 
 export async function runAdHocReport(args: {
@@ -32,7 +38,7 @@ export async function runAdHocReport(args: {
   const { realmId, reportName, params, format = 'json' } = args;
 
   if (format === 'json') {
-    // JSON preview: invoke is fine and returns parsed JSON directly
+    // JSON preview through invoke (parsed JSON)
     const { data, error } = await supabase.functions.invoke('qbo-run-report', {
       body: { realmId, reportName, params, format: 'json' },
     });
@@ -40,15 +46,15 @@ export async function runAdHocReport(args: {
     return data; // { raw, normalized }
   }
 
-  // CSV / PDF: use fetch so we can read the error body
-  const base = getSupabaseUrl();
+  // CSV / PDF through fetch so we can read the error body verbatim
+  const base = getSupabaseBaseUrl();
   const url = `${base}/functions/v1/qbo-run-report`;
   const auth = await getAuthHeader();
 
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': auth,
+      Authorization: auth,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ realmId, reportName, params, format }),
@@ -59,9 +65,7 @@ export async function runAdHocReport(args: {
     throw new Error(text || `HTTP_${resp.status}`);
   }
 
-  // Ok → Blob (CSV or PDF)
-  const blob = await resp.blob();
-  return blob;
+  return await resp.blob();
 }
 
 export function downloadBlob(blob: Blob, filename: string) {
