@@ -8,19 +8,34 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar, Filter, Download, Play } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { REPORT_PARAM_CONFIG, type ParamDef } from '@/config/qboReportParams';
+import { ReportPreview } from './ReportPreview';
+
+type PreviewTable = { headers: string[]; rows: any[][] };
 
 type Props = {
   realmId: string | null;
   defaultReport?: keyof typeof REPORT_PARAM_CONFIG;
   onRun: (payload: { realmId: string; reportName: string; params: Record<string, any> }) => void;
   onDownload: (payload: { realmId: string; reportName: string; params: Record<string, any> }, format: 'csv'|'pdf') => void;
+
+  /** NEW (optional): pass the normalized table returned by the function to show the preview */
+  previewData?: PreviewTable | null;
+
+  /** NEW (optional): branding + formatting */
+  logoUrl?: string;                 // defaults to your provided Ironbooks logo
+  companyCurrencyCode?: string;     // e.g. "USD"
+  locale?: string;                  // e.g. "en-US"
+
+  /** NEW (optional): if parent wants to show exactly what was sent to the function */
+  lastUsedParams?: Record<string, any>;
+  reportDisplayName?: string;       // if you want a friendly name different from the key
 };
 
 // Simple helpers
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const lastMonthRange = () => {
   const d = new Date();
-  d.setDate(1); // first of this month
+  d.setDate(1);
   d.setMonth(d.getMonth() - 1);
   const start = new Date(d.getFullYear(), d.getMonth(), 1);
   const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
@@ -33,6 +48,14 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   defaultReport = 'ProfitAndLoss',
   onRun,
   onDownload,
+
+  // NEW optional props
+  previewData = null,
+  logoUrl = 'https://storage.googleapis.com/msgsndr/q5zr0f78ypFEU0IUcq40/media/68f6948ec1945b0db8bc9a06.png',
+  companyCurrencyCode,
+  locale = 'en-US',
+  lastUsedParams,
+  reportDisplayName,
 }) => {
   const [reportName, setReportName] = useState<string>(String(defaultReport));
   const paramDefs: ParamDef[] = useMemo(() => REPORT_PARAM_CONFIG[reportName] ?? [], [reportName]);
@@ -51,7 +74,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   };
   const [values, setValues] = useState<Record<string, any>>(baseDefaults);
   useEffect(() => {
-    // Reset relevant defaults when report changes
     setValues(baseDefaults);
   }, [reportName]);
 
@@ -64,7 +86,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
     async function load(source: ParamDef['source']) {
       if (!source || !realmId) return;
 
-      // Map source -> query to your synced QBO tables (adjust table names/fields to yours)
       const cfg: Record<string, { table: string; label: string; value: string; realmCol?: string }> = {
         customers:   { table: 'qbo_customers',   label: 'display_name', value: 'id', realmCol: 'realm_id' },
         vendors:     { table: 'qbo_vendors',     label: 'display_name', value: 'id', realmCol: 'realm_id' },
@@ -77,7 +98,10 @@ export const AdHocReportsPanel: React.FC<Props> = ({
       const meta = cfg[source];
       if (!meta) return;
 
-      const q = supabase.from(meta.table).select(`${meta.value}, ${meta.label}`).eq(meta.realmCol || 'realm_id', realmId).limit(500);
+      const q = supabase.from(meta.table)
+        .select(`${meta.value}, ${meta.label}`)
+        .eq(meta.realmCol || 'realm_id', realmId)
+        .limit(500);
       const { data, error } = await q;
       if (error || !data) return;
 
@@ -87,7 +111,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
       }
     }
 
-    // gather unique sources used by current report
     const sources = Array.from(new Set(paramDefs.map(p => p.source).filter(Boolean))) as NonNullable<ParamDef['source']>[];
     sources.forEach(load);
 
@@ -95,7 +118,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   }, [paramDefs, realmId]);
 
   const visibleDefs = paramDefs.filter(d => !d.showIf || d.showIf(values));
-
   const set = (id: string, val: any) => setValues(v => ({ ...v, [id]: val }));
 
   function renderField(def: ParamDef) {
@@ -105,22 +127,14 @@ export const AdHocReportsPanel: React.FC<Props> = ({
         return (
           <div key={def.id} className="space-y-1">
             <label className="text-sm text-gray-600 dark:text-gray-300">{def.label}</label>
-            <Input
-              type="date"
-              value={v}
-              onChange={e => set(def.id, e.target.value)}
-            />
+            <Input type="date" value={v} onChange={e => set(def.id, e.target.value)} />
           </div>
         );
       case 'number':
         return (
           <div key={def.id} className="space-y-1">
             <label className="text-sm text-gray-600 dark:text-gray-300">{def.label}</label>
-            <Input
-              type="number"
-              value={v}
-              onChange={e => set(def.id, e.target.value)}
-            />
+            <Input type="number" value={v} onChange={e => set(def.id, e.target.value)} />
           </div>
         );
       case 'select':
@@ -143,7 +157,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
         return (
           <div key={def.id} className="space-y-1">
             <label className="text-sm text-gray-600 dark:text-gray-300">{def.label}</label>
-            {/* simple tag-style multiselect using a list; swap for your preferred component */}
             <div className="border rounded-md p-2 max-h-48 overflow-auto">
               {opts.length === 0 && <div className="text-xs text-gray-500">Loading…</div>}
               {opts.map(o => {
@@ -186,6 +199,16 @@ export const AdHocReportsPanel: React.FC<Props> = ({
     return out;
   }, [paramDefs, values]);
 
+  // Build meta for the preview (uses parent-provided values when present)
+  const previewMeta = useMemo(() => ({
+    logoUrl,
+    reportName: reportDisplayName || reportName,
+    currency: companyCurrencyCode,
+    locale,
+    // if parent passed lastUsedParams, prefer that; otherwise reflect current form
+    paramsUsed: lastUsedParams ?? normalizedParams,
+  }), [logoUrl, reportDisplayName, reportName, companyCurrencyCode, locale, lastUsedParams, normalizedParams]);
+
   return (
     <Card className="border-2 shadow-lg dark:border-gray-700">
       <CardHeader className="pb-3">
@@ -200,7 +223,8 @@ export const AdHocReportsPanel: React.FC<Props> = ({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+
+      <CardContent className="space-y-6">
         {/* Report selector */}
         <div className="grid md:grid-cols-3 gap-4">
           <div className="space-y-1 md:col-span-1">
@@ -215,8 +239,8 @@ export const AdHocReportsPanel: React.FC<Props> = ({
             </Select>
           </div>
 
-          {/* Quick presets (optional) */}
-          <div className="space-y-1">
+          {/* Quick presets */}
+          <div className="space-y-1 md:col-span-2">
             <label className="text-sm text-gray-600 dark:text-gray-300">Quick Preset</label>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => setValues(v => ({ ...v, ...baseDefaults }))}>Last Month</Button>
@@ -268,6 +292,15 @@ export const AdHocReportsPanel: React.FC<Props> = ({
           <div className="text-xs text-amber-600">
             No realm selected. Choose a company (or impersonate) to run a report.
           </div>
+        )}
+
+        {/* NEW: Branded Preview (renders only when data exists) */}
+        {previewData && (
+          <ReportPreview
+            title="Preview (normalized)"
+            data={previewData}
+            meta={previewMeta}
+          />
         )}
       </CardContent>
     </Card>
