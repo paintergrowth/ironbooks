@@ -1,3 +1,4 @@
+// src/components/reports/ReportPreview.tsx
 import React from 'react';
 
 type PlainCell = string | number | null | undefined;
@@ -46,7 +47,6 @@ function formatAmountForUI(s: string, locale = 'en-US', currency?: string) {
   if (!isNumericString(s)) return s;
   const num = Number(s.replace(/,/g, ''));
   if (!isFinite(num)) return s;
-  // If currency provided, show currency style; else plain number with grouping
   try {
     return currency
       ? new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 2 }).format(num)
@@ -54,6 +54,11 @@ function formatAmountForUI(s: string, locale = 'en-US', currency?: string) {
   } catch {
     return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);
   }
+}
+
+// ── NEW: detect “total/subtotal/net/grand” rows by first cell text
+function looksLikeTotal(label: string) {
+  return /\b(total|subtotal|net|grand)\b/i.test(label.trim());
 }
 
 const Pill: React.FC<{label: string; value?: string}> = ({ label, value }) => {
@@ -70,7 +75,7 @@ const Pill: React.FC<{label: string; value?: string}> = ({ label, value }) => {
 export const ReportPreview: React.FC<{
   title: string;
   data?: TableLike | null;
-  meta?: Meta; // optional; pass when available
+  meta?: Meta;
 }> = ({ title, data, meta }) => {
   if (!data) return null;
   const { headers, rows } = data;
@@ -78,7 +83,7 @@ export const ReportPreview: React.FC<{
   const logoUrl = meta?.logoUrl ?? '/ironbooks-logo.svg';
   const reportName = meta?.reportName ?? title;
   const locale = meta?.locale ?? 'en-US';
-  const currency = meta?.currency; // optional
+  const currency = meta?.currency;
 
   // Precompute row decorations
   const rowDecor = rows.map((r: AnyCell[]) => {
@@ -116,7 +121,6 @@ export const ReportPreview: React.FC<{
           <div className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">Parameters</div>
           <div>
             {Object.entries(meta.paramsUsed).map(([k, v]) => {
-              // nice labels: snake_case → Title Case
               const label = k.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
               const value = Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v));
               return <Pill key={k} label={label} value={value} />;
@@ -141,11 +145,15 @@ export const ReportPreview: React.FC<{
           <tbody>
             {rows.slice(0, 400).map((r: AnyCell[], i: number) => {
               const { ruleAbove, ruleBelow, anyBold } = rowDecor[i];
+
+              // ── NEW: whole-row bold if heading (anyBold) OR looks like total/subtotal/etc.
+              const firstText = cellText(r[0] ?? '');
+              const rowBold = anyBold || looksLikeTotal(firstText);
+
               return (
                 <tr
                   key={i}
                   className={[
-                    'border-b',
                     ruleBelow ? 'border-b-2' : 'border-b',
                     ruleAbove ? 'border-t-2' : '',
                     'border-slate-200 dark:border-slate-700',
@@ -157,11 +165,11 @@ export const ReportPreview: React.FC<{
                     const rich = isRichCell(c) ? c : undefined;
                     const rawText = cellText(c);
                     const indent = rich?.indent ? rich.indent : 0;
-                    const isBold = anyBold || !!rich?.bold;
+
                     const inferredAlign = isNumericString(rawText) ? 'right' : 'left';
                     const align = rich?.align || inferredAlign;
 
-                    // UI-only amount formatting (numbers → currency/grouping); CSV remains raw elsewhere
+                    // UI-only amount formatting (numbers → currency/grouping); CSV stays raw via backend
                     const display = (align === 'right')
                       ? formatAmountForUI(rawText, locale, currency)
                       : rawText;
@@ -172,7 +180,7 @@ export const ReportPreview: React.FC<{
                         className="px-4 py-2 whitespace-nowrap align-top text-slate-900 dark:text-slate-100"
                         style={{
                           textAlign: align as any,
-                          fontWeight: isBold ? 700 as any : 400 as any,
+                          fontWeight: rowBold ? (700 as any) : (400 as any),
                         }}
                       >
                         <div
