@@ -213,10 +213,14 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
       default: return 'This Month';
     }
   };
-  const [adhocPreview, setAdhocPreview] = useState<{ headers: string[]; rows: string[][] } | null>(null);
+  const [adhocPreview, setAdhocPreview] = useState<{ headers: string[]; rows: any[][] } | null>(null);
+  const [lastUsedParams, setLastUsedParams] = useState<Record<string, any> | null>(null);
+  const [lastReportName, setLastReportName] = useState<string>('ProfitAndLoss');
+
   const [adhocLoading, setAdhocLoading] = useState(false);
   const [adhocError, setAdhocError] = useState<string | null>(null);
-
+  // OPTIONAL: prettier label (turns "ProfitAndLoss" → "Profit And Loss")
+  const prettyReport = (k: string) => k.replace(/([A-Z])/g, ' $1').trim();
   return (
     <div className="space-y-8 p-6">
       <div className="flex justify-between items-start">
@@ -262,11 +266,24 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
         <AdHocReportsPanel
           realmId={effRealmId}
           defaultReport="ProfitAndLoss"
+        
+          // NEW: pass the preview + branding/meta
+          previewData={adhocPreview}
+          logoUrl="https://storage.googleapis.com/msgsndr/q5zr0f78ypFEU0IUcq40/media/68f6948ec1945b0db8bc9a06.png"
+          companyCurrencyCode={companyCurrencyCode}   // if you have it; else omit
+          locale="en-US"
+          lastUsedParams={lastUsedParams || undefined}
+          reportDisplayName={prettyReport(lastReportName)}
+        
           onRun={async ({ realmId, reportName, params }) => {
             try {
               setAdhocError(null);
               setAdhocLoading(true);
+              setLastReportName(reportName);        // track which report was run
+              setLastUsedParams(params);            // track the exact params used
+        
               const res = await runAdHocReport({ realmId, reportName, params, format: 'json' });
+              // your function returns an object that includes .normalized
               setAdhocPreview(res?.normalized ?? null);
             } catch (e: any) {
               setAdhocError(e?.message || 'Failed to run report');
@@ -275,8 +292,13 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
               setAdhocLoading(false);
             }
           }}
+        
           onDownload={async ({ realmId, reportName, params }, fmt) => {
             try {
+              // keep last-used context aligned with downloads too (optional)
+              setLastReportName(reportName);
+              setLastUsedParams(params);
+        
               const blob = await runAdHocReport({ realmId, reportName, params, format: fmt });
               downloadBlob(blob, `${reportName}.${fmt === 'csv' ? 'csv' : 'pdf'}`);
             } catch (e: any) {
@@ -284,6 +306,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
             }
           }}
         />
+
         {/* ⬇️ Place THIS block here */}
         {adhocLoading && <div className="text-sm text-gray-600">Running finance report…</div>}
         {adhocError && <div className="text-sm text-red-600">{adhocError}</div>}
