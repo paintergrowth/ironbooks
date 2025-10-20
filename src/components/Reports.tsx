@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileText, Download, Play, Calendar, Filter, X } from 'lucide-react';
-import { useEffectiveIdentity } from '@/lib/impersonation'; // 👈 honor impersonation
+import { useEffectiveIdentity } from '@/lib/impersonation';
 import { AdHocReportsPanel } from '@/components/reports/AdHocReportsPanel';
 import { runAdHocReport, downloadBlob } from '@/lib/qboReports';
 import { ReportPreview } from '@/components/reports/ReportPreview';
@@ -75,7 +75,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
         // 0) resolve realm (effective)
         let realmId = effRealmId;
 
-        // Fallback for older flows (should be rare): if no effRealmId yet, try profile of auth user.
+        // Fallback for older flows: if no effRealmId yet, try profile of auth user.
         if (!realmId) {
           const { data: auth } = await supabase.auth.getUser();
           const uid = auth.user?.id;
@@ -191,10 +191,9 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
       }
     }
 
-    // run whenever the effective realm changes
     load();
     return () => { cancelled = true; };
-  }, [effRealmId]); // 👈 key change: refetch when impersonation changes
+  }, [effRealmId]);
 
   const getFilterLabel = (filter: string) => {
     switch (filter) {
@@ -213,14 +212,28 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
       default: return 'This Month';
     }
   };
+
+  // ---------- Ad-hoc preview state ----------
   const [adhocPreview, setAdhocPreview] = useState<{ headers: string[]; rows: any[][] } | null>(null);
   const [lastUsedParams, setLastUsedParams] = useState<Record<string, any> | null>(null);
   const [lastReportName, setLastReportName] = useState<string>('ProfitAndLoss');
-
   const [adhocLoading, setAdhocLoading] = useState(false);
   const [adhocError, setAdhocError] = useState<string | null>(null);
+
+  // NEW: meta from the edge function (company name, currency, params actually used, run timestamp, etc.)
+  const [adhocMeta, setAdhocMeta] = useState<{
+    companyName?: string;
+    currency?: string;
+    realmId?: string;
+    reportName?: string;
+    paramsUsed?: Record<string, any>;
+    runAt?: string;
+    locale?: string;
+  } | null>(null);
+
   // OPTIONAL: prettier label (turns "ProfitAndLoss" → "Profit And Loss")
   const prettyReport = (k: string) => k.replace(/([A-Z])/g, ' $1').trim();
+
   return (
     <div className="space-y-8 p-6">
       <div className="flex justify-between items-start">
@@ -262,64 +275,68 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           </Select>
         </div>
       </div>
-       {/* ⬇️ NEW: Ad-hoc QBO Reports panel */}
-        <AdHocReportsPanel
-          realmId={effRealmId}
-          defaultReport="ProfitAndLoss"
-        
-          // NEW: pass the preview + branding/meta
-          previewData={adhocPreview}
-          logoUrl="https://storage.googleapis.com/msgsndr/q5zr0f78ypFEU0IUcq40/media/68f6948ec1945b0db8bc9a06.png"
-          companyCurrencyCode={companyCurrencyCode}   // if you have it; else omit
-          locale="en-US"
-          lastUsedParams={lastUsedParams || undefined}
-          reportDisplayName={prettyReport(lastReportName)}
-        
-          onRun={async ({ realmId, reportName, params }) => {
-            try {
-              setAdhocError(null);
-              setAdhocLoading(true);
-              setLastReportName(reportName);        // track which report was run
-              setLastUsedParams(params);            // track the exact params used
-        
-              const res = await runAdHocReport({ realmId, reportName, params, format: 'json' });
-              // your function returns an object that includes .normalized
-              setAdhocPreview(res?.normalized ?? null);
-            } catch (e: any) {
-              setAdhocError(e?.message || 'Failed to run report');
-              setAdhocPreview(null);
-            } finally {
-              setAdhocLoading(false);
-            }
-          }}
-        
-          onDownload={async ({ realmId, reportName, params }, fmt) => {
-            try {
-              // keep last-used context aligned with downloads too (optional)
-              setLastReportName(reportName);
-              setLastUsedParams(params);
-        
-              const blob = await runAdHocReport({ realmId, reportName, params, format: fmt });
-              downloadBlob(blob, `${reportName}.${fmt === 'csv' ? 'csv' : 'pdf'}`);
-            } catch (e: any) {
-              alert(e?.message || 'Download failed');
-            }
+
+      {/* ⬇️ Ad-hoc QBO Reports panel (unchanged API) */}
+      <AdHocReportsPanel
+        realmId={effRealmId}
+        defaultReport="ProfitAndLoss"
+        onRun={async ({ realmId, reportName, params }) => {
+          try {
+            setAdhocError(null);
+            setAdhocLoading(true);
+
+            const res = await runAdHocReport({ realmId, reportName, params, format: 'json' });
+
+            // Keep UI aligned with what the edge function actually used/returned
+            setLastReportName(res?.meta?.reportName ?? reportName);
+            setLastUsedParams(res?.meta?.paramsUsed ?? params);
+
+            setAdhocPreview(res?.normalized ?? null);
+            setAdhocMeta(res?.meta ?? null); // capture companyName, currency, runAt, etc.
+          } catch (e: any) {
+            setAdhocError(e?.message || 'Failed to run report');
+            setAdhocPreview(null);
+            setAdhocMeta(null);
+          } finally {
+            setAdhocLoading(false);
+          }
+        }}
+        onDownload={async ({ realmId, reportName, params }, fmt) => {
+          try {
+            // keep last-used context aligned with downloads (optional)
+            setLastReportName(reportName);
+            setLastUsedParams(params);
+
+            const blob = await runAdHocReport({ realmId, reportName, params, format: fmt });
+            downloadBlob(blob, `${reportName}.${fmt === 'csv' ? 'csv' : 'pdf'}`);
+          } catch (e: any) {
+            alert(e?.message || 'Download failed');
+          }
+        }}
+      />
+
+      {/* Live preview + errors */}
+      {adhocLoading && <div className="text-sm text-gray-600">Running finance report…</div>}
+      {adhocError && <div className="text-sm text-red-600">{adhocError}</div>}
+      {adhocPreview && (
+        <ReportPreview
+          title={prettyReport(adhocMeta?.reportName || lastReportName)}
+          data={adhocPreview}
+          meta={{
+            logoUrl: 'https://storage.googleapis.com/msgsndr/q5zr0f78ypFEU0IUcq40/media/68f6948ec1945b0db8bc9a06.png',
+            reportName: prettyReport(adhocMeta?.reportName || lastReportName),
+            companyName: adhocMeta?.companyName,
+            currency: adhocMeta?.currency,   // e.g., "USD" from QBO
+            locale: adhocMeta?.locale ?? 'en-US',
+            paramsUsed: adhocMeta?.paramsUsed ?? lastUsedParams ?? undefined,
+            runAt: adhocMeta?.runAt,
           }}
         />
+      )}
 
-        {/* ⬇️ Place THIS block here */}
-        {adhocLoading && <div className="text-sm text-gray-600">Running finance report…</div>}
-        {adhocError && <div className="text-sm text-red-600">{adhocError}</div>}
-        {adhocPreview && (
-          <ReportPreview title="Preview (normalized)" data={adhocPreview} />
-        )}
-      {/* Errors / Loading */}
-      {errorMsg && (
-        <div className="text-sm text-red-600">{errorMsg}</div>
-      )}
-      {loading && (
-        <div className="text-sm text-gray-600">Loading…</div>
-      )}
+      {/* Errors / Loading for monthly artifacts */}
+      {errorMsg && <div className="text-sm text-red-600">{errorMsg}</div>}
+      {loading && <div className="text-sm text-gray-600">Loading…</div>}
 
       <div className="grid gap-6">
         {!loading && reports.map((report) => (
