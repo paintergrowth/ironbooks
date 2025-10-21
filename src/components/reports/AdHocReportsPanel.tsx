@@ -18,30 +18,33 @@ type Props = {
   onRun: (payload: { realmId: string; reportName: string; params: Record<string, any> }) => void;
   onDownload: (payload: { realmId: string; reportName: string; params: Record<string, any> }, format: 'csv'|'pdf') => void;
 
-  /** NEW (optional): pass the normalized table returned by the function to show the preview */
   previewData?: PreviewTable | null;
 
-  /** NEW (optional): branding + formatting */
-  logoUrl?: string;                 // defaults to your provided Ironbooks logo
-  companyCurrencyCode?: string;     // e.g. "USD"
-  locale?: string;                  // e.g. "en-US"
+  logoUrl?: string;
+  companyCurrencyCode?: string;
+  locale?: string;
 
-  /** NEW (optional): if parent wants to show exactly what was sent to the function */
   lastUsedParams?: Record<string, any>;
-  reportDisplayName?: string;       // if you want a friendly name different from the key
+  reportDisplayName?: string;
 };
 
-// Simple helpers
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const lastMonthRange = () => {
+/* ------------------ helpers ------------------ */
+const toISO = (dt: Date) => dt.toISOString().slice(0, 10);
+const todayISO = () => toISO(new Date());
+
+function lastMonthStartEnd() {
   const d = new Date();
-  d.setDate(1);
+  d.setDate(1);             // go to first of this month
   d.setMonth(d.getMonth() - 1);
   const start = new Date(d.getFullYear(), d.getMonth(), 1);
   const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  const toISO = (dt: Date) => dt.toISOString().slice(0, 10);
   return { start: toISO(start), end: toISO(end) };
-};
+}
+
+function ytdStart() {
+  const now = new Date();
+  return `${now.getFullYear()}-01-01`;
+}
 
 export const AdHocReportsPanel: React.FC<Props> = ({
   realmId,
@@ -49,7 +52,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   onRun,
   onDownload,
 
-  // NEW optional props
   previewData = null,
   logoUrl = 'https://storage.googleapis.com/msgsndr/q5zr0f78ypFEU0IUcq40/media/68f6948ec1945b0db8bc9a06.png',
   companyCurrencyCode,
@@ -60,8 +62,8 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   const [reportName, setReportName] = useState<string>(String(defaultReport));
   const paramDefs: ParamDef[] = useMemo(() => REPORT_PARAM_CONFIG[reportName] ?? [], [reportName]);
 
-  // Form values (seed smart defaults)
-  const lm = lastMonthRange();
+  // smart defaults (last month range, as_of today)
+  const lm = lastMonthStartEnd();
   const baseDefaults: Record<string, any> = {
     start_date: lm.start,
     end_date: lm.end,
@@ -72,17 +74,20 @@ export const AdHocReportsPanel: React.FC<Props> = ({
     columns: 'TotalOnly',
     days: '30',
   };
+
   const [values, setValues] = useState<Record<string, any>>(baseDefaults);
   useEffect(() => {
+    // Reset relevant defaults when report changes
     setValues(baseDefaults);
   }, [reportName]);
 
-  // Async options for entity pickers
+  /* -------- async options for entity pickers -------- */
   type Opt = { label: string; value: string };
   const [entityOptions, setEntityOptions] = useState<Record<string, Opt[]>>({});
 
   useEffect(() => {
     let cancelled = false;
+
     async function load(source: ParamDef['source']) {
       if (!source || !realmId) return;
 
@@ -98,17 +103,16 @@ export const AdHocReportsPanel: React.FC<Props> = ({
       const meta = cfg[source];
       if (!meta) return;
 
-      const q = supabase.from(meta.table)
+      const { data, error } = await supabase
+        .from(meta.table)
         .select(`${meta.value}, ${meta.label}`)
         .eq(meta.realmCol || 'realm_id', realmId)
         .limit(500);
-      const { data, error } = await q;
+
       if (error || !data) return;
 
       const opts: Opt[] = (data as any[]).map(r => ({ value: String(r[meta.value]), label: String(r[meta.label]) }));
-      if (!cancelled) {
-        setEntityOptions(prev => ({ ...prev, [source]: opts }));
-      }
+      if (!cancelled) setEntityOptions(prev => ({ ...prev, [source]: opts }));
     }
 
     const sources = Array.from(new Set(paramDefs.map(p => p.source).filter(Boolean))) as NonNullable<ParamDef['source']>[];
@@ -187,7 +191,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
 
   const canRun = !!realmId && reportName in REPORT_PARAM_CONFIG;
 
-  // Transform values → query params (comma-join arrays)
+  // values → query params (comma-join arrays)
   const normalizedParams = useMemo(() => {
     const out: Record<string, any> = {};
     for (const def of paramDefs) {
@@ -199,15 +203,49 @@ export const AdHocReportsPanel: React.FC<Props> = ({
     return out;
   }, [paramDefs, values]);
 
-  // Build meta for the preview (uses parent-provided values when present)
+  // Preview meta: prefer lastUsedParams (exactly what was sent)
   const previewMeta = useMemo(() => ({
     logoUrl,
     reportName: reportDisplayName || reportName,
     currency: companyCurrencyCode,
     locale,
-    // if parent passed lastUsedParams, prefer that; otherwise reflect current form
     paramsUsed: lastUsedParams ?? normalizedParams,
   }), [logoUrl, reportDisplayName, reportName, companyCurrencyCode, locale, lastUsedParams, normalizedParams]);
+
+  /* ------------------ preset handlers (fixed) ------------------ */
+  const handlePresetLastMonth = () => {
+    const lm = lastMonthStartEnd();
+    setValues((v) => ({
+      ...v,
+      start_date: lm.start,
+      end_date: lm.end,
+      as_of_date: lm.end,    // ← last day of last month
+      date_macro: '',        // ensure range takes precedence
+    }));
+  };
+
+  const handlePresetTodayOnly = () => {
+    const t = todayISO();
+    setValues((v) => ({
+      ...v,
+      start_date: t,
+      end_date: t,
+      as_of_date: t,         // ← today
+      date_macro: '',        // ensure range takes precedence
+    }));
+  };
+
+  const handlePresetYTD = () => {
+    const start = ytdStart();
+    const t = todayISO();
+    setValues((v) => ({
+      ...v,
+      start_date: start,
+      end_date: t,
+      as_of_date: t,         // ← today
+      date_macro: '',        // ensure range takes precedence
+    }));
+  };
 
   return (
     <Card className="border-2 shadow-lg dark:border-gray-700">
@@ -227,7 +265,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
       <CardContent className="space-y-6">
         {/* Report selector */}
         <div className="grid md:grid-cols-3 gap-4">
-          <div className="space-y-1 md:col-span-1">
+          <div className="space-y-1 md:grid-cols-1">
             <label className="text-sm text-gray-600 dark:text-gray-300">Report Type</label>
             <Select value={reportName} onValueChange={setReportName}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -239,16 +277,13 @@ export const AdHocReportsPanel: React.FC<Props> = ({
             </Select>
           </div>
 
-          {/* Quick presets */}
+          {/* Presets */}
           <div className="space-y-1 md:col-span-2">
             <label className="text-sm text-gray-600 dark:text-gray-300">Quick Preset</label>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setValues(v => ({ ...v, ...baseDefaults }))}>Last Month</Button>
-              <Button variant="outline" size="sm" onClick={() => setValues(v => ({ ...v, start_date: todayISO(), end_date: todayISO() }))}>Today Only</Button>
-              <Button variant="outline" size="sm" onClick={() => {
-                const year = new Date().getFullYear();
-                setValues(v => ({ ...v, start_date: `${year}-01-01`, end_date: todayISO() }));
-              }}>YTD</Button>
+              <Button variant="outline" size="sm" onClick={handlePresetLastMonth}>Last Month</Button>
+              <Button variant="outline" size="sm" onClick={handlePresetTodayOnly}>Today Only</Button>
+              <Button variant="outline" size="sm" onClick={handlePresetYTD}>YTD</Button>
             </div>
           </div>
         </div>
@@ -294,7 +329,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
           </div>
         )}
 
-        {/* NEW: Branded Preview (renders only when data exists) */}
+        {/* Branded Preview */}
         {previewData && (
           <ReportPreview
             title="Preview (normalized)"
