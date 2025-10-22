@@ -318,15 +318,17 @@ const handlePresetYTD = () => {
             <Download className="mr-2 h-4 w-4" />
             Download CSV
           </Button>
-          <Button
-            className="flex-1"
-            variant="outline"
-            disabled={!canRun}
-            onClick={() => canRun && realmId && onDownload({ realmId, reportName, params: normalizedParams }, 'pdf')}
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Download PDF
-          </Button>
+          {/*
+            <Button
+              className="flex-1"
+              variant="outline"
+              disabled={!canRun}
+              onClick={() => canRun && realmId && onDownload({ realmId, reportName, params: normalizedParams }, 'pdf')}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download PDF
+            </Button>
+          */}
         </div>
 
         {!realmId && (
