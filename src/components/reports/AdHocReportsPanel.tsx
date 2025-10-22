@@ -213,39 +213,45 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   }), [logoUrl, reportDisplayName, reportName, companyCurrencyCode, locale, lastUsedParams, normalizedParams]);
 
   /* ------------------ preset handlers (fixed) ------------------ */
-  const handlePresetLastMonth = () => {
-    const lm = lastMonthStartEnd();
-    setValues((v) => ({
-      ...v,
-      start_date: lm.start,
-      end_date: lm.end,
-      as_of_date: lm.end,    // ← last day of last month
-      date_macro: '',        // ensure range takes precedence
-    }));
-  };
+// In AdHocReportsPanel.tsx (your existing handlers)
+// Add date_mode: 'range' and drop date_macro
 
-  const handlePresetTodayOnly = () => {
-    const t = todayISO();
-    setValues((v) => ({
-      ...v,
-      start_date: t,
-      end_date: t,
-      as_of_date: t,         // ← today
-      date_macro: '',        // ensure range takes precedence
-    }));
-  };
+const handlePresetLastMonth = () => {
+  const lm = lastMonthStartEnd();
+  setValues(v => ({
+    ...v,
+    date_mode: 'range',
+    start_date: lm.start,
+    end_date: lm.end,
+    as_of_date: lm.end,
+    date_macro: undefined, // ensure no macro competes
+  }));
+};
 
-  const handlePresetYTD = () => {
-    const start = ytdStart();
-    const t = todayISO();
-    setValues((v) => ({
-      ...v,
-      start_date: start,
-      end_date: t,
-      as_of_date: t,         // ← today
-      date_macro: '',        // ensure range takes precedence
-    }));
-  };
+const handlePresetTodayOnly = () => {
+  const t = todayISO();
+  setValues(v => ({
+    ...v,
+    date_mode: 'range',
+    start_date: t,
+    end_date: t,
+    as_of_date: t,
+    date_macro: undefined,
+  }));
+};
+
+const handlePresetYTD = () => {
+  const start = ytdStart();
+  const t = todayISO();
+  setValues(v => ({
+    ...v,
+    date_mode: 'range',
+    start_date: start,
+    end_date: t,
+    as_of_date: t,
+    date_macro: undefined,
+  }));
+};
 
   return (
     <Card className="border-2 shadow-lg dark:border-gray-700">
