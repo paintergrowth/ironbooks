@@ -1,0 +1,10 @@
+/* Make the calendar icon white in dark mode for WebKit/Chromium browsers */
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.4) contrast(1.1);
+  opacity: 0.95;
+}
+
+/* Ensures the internal controls match dark backgrounds */
+.dark input[type="date"] {
+  color-scheme: dark;
+}
