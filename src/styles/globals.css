@@ -1,10 +1,28 @@
-/* Make the calendar icon white in dark mode for WebKit/Chromium browsers */
-.dark input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1.4) contrast(1.1);
-  opacity: 0.95;
+/* Make the calendar icon white in dark mode (WebKit/Chromium/Safari) */
+html.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.35) contrast(1.05) !important;
+  opacity: 0.95 !important;
 }
 
-/* Ensures the internal controls match dark backgrounds */
-.dark input[type="date"] {
+/* Ensure native control uses dark palette (also helps Firefox) */
+html.dark input[type="date"] {
   color-scheme: dark;
+  background-color: transparent; /* avoid gray fill on some UAs */
+}
+
+/* If a reset hides the picker button, force it back */
+html.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  display: inline-block !important;
+}
+
+/* Optional: give the icon some click room if your input has tight padding */
+input[type="date"] {
+  padding-right: 2.25rem; /* adjust to your Input padding */
+}
+
+/* (Optional) Apply same treatment to other date-like inputs */
+html.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+html.dark input[type="month"]::-webkit-calendar-picker-indicator,
+html.dark input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.35) contrast(1.05) !important;
 }
