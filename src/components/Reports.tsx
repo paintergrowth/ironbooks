@@ -250,6 +250,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           )}
         </div>
         <div className="flex items-center space-x-4">
+          {/*
           <Select value={activeFilter} onValueChange={setActiveFilter}>
             <SelectTrigger className="w-48">
               <Filter className="w-4 h-4 mr-2" />
@@ -273,6 +274,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
               <SelectItem value="ytd">YTD</SelectItem>
             </SelectContent>
           </Select>
+         */}
         </div>
       </div>
 
