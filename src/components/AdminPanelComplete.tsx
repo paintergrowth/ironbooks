@@ -25,7 +25,7 @@ const AdminPanelComplete: React.FC = () => {
   const [showUserDrawer, setShowUserDrawer] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  const [timeframe, setTimeframe] = useState('This Month');
+  const [timeframe, setTimeframe] = useState('Last Month');
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' as 'asc' | 'desc' });
   const [users, setUsers] = useState<any[]>([]);
   const [baseUsers, setBaseUsers] = useState<any[]>([]);
@@ -344,7 +344,8 @@ const AdminPanelComplete: React.FC = () => {
     enrichWithPnL();
   }, [timeframe, baseUsers]);
 
-  const pnlLabel = timeframe === 'YTD' ? 'YTD' : timeframe === 'This Month' ? 'MTD' : 'Last Month';
+  const pnlLabel = timeframe === 'YTD' ? 'YTD' : timeframe === 'This Month' ? 'MTD' : 'LM';
+
 
   return (
     <div
@@ -463,8 +464,9 @@ const AdminPanelComplete: React.FC = () => {
                     onClick={() => handleSort('netMargin')}
                   >
                     <div className="flex items-center justify-center text-muted-foreground uppercase tracking-wide text-xs">
-                      Net Margin (%) <ArrowUpDown className="ml-1 h-3 w-3" />
+                      Net Margin ({pnlLabel}) <ArrowUpDown className="ml-1 h-3 w-3" />
                     </div>
+
                   </th>
                   <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Actions</th>
                 </tr>
