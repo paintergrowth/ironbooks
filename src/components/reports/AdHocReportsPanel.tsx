@@ -301,7 +301,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
             onClick={() => canRun && realmId && onRun({ realmId, reportName, params: normalizedParams })}
           >
             <Play className="mr-2 h-4 w-4" />
-            Run (Preview JSON/Table)
+            Run (Preview)
           </Button>
           <Button
             className="flex-1"
