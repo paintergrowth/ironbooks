@@ -14,34 +14,73 @@ export type ParamDef = {
 
 export const REPORT_PARAM_CONFIG: Record<string, ParamDef[]> = {
   ProfitAndLoss: [
-    { id: 'date_mode', label: 'Date Mode', type: 'select',
-      options: [{label:'Range',value:'range'},{label:'Single Month',value:'single'}], default: 'range' },
+    {
+      id: 'date_mode', label: 'Date Mode', type: 'select',
+      options: [
+        { label: 'Range', value: 'range' },
+        { label: 'Single Month', value: 'single' },
+      ],
+      default: 'range'
+    },
+
+    // RANGE inputs (shown only when date_mode = range)
     { id: 'start_date', label: 'Start date', type: 'date', showIf: v => v.date_mode === 'range' },
     { id: 'end_date',   label: 'End date',   type: 'date', showIf: v => v.date_mode === 'range' },
-    { id: 'as_of_date', label: 'As of',      type: 'date', showIf: v => v.date_mode === 'single' },
-    { id: 'accounting_method', label: 'Accounting Method', type: 'select',
-      options: [{label:'Accrual',value:'Accrual'},{label:'Cash',value:'Cash'}], default: 'Accrual' },
-    { id: 'summarize_column_by', label: 'Summarize By', type: 'select',
-      options: [{label:'Month',value:'Month'},{label:'Quarter',value:'Quarter'},{label:'Year',value:'Year'}], default: 'Month' },
-    { id: 'columns', label: 'Columns', type: 'select',
+
+    // SINGLE-MONTH inputs
+    { id: 'as_of_date', label: 'As of', type: 'date', showIf: v => v.date_mode === 'single' },
+
+    // (New) Optional QuickBooks macro when in single mode (lets edge use canonical macros)
+    {
+      id: 'date_macro', label: 'Date Macro', type: 'select',
       options: [
-        {label:'Total Only',value:'TotalOnly'},
-        {label:'Customers', value:'Customers'},
-        {label:'Classes',   value:'Classes'},
-        {label:'Departments',value:'Departments'}
+        { label: 'Today', value: 'Today' },
+        { label: 'This Month', value: 'This Month' },
+        { label: 'Last Month', value: 'Last Month' },
+        { label: 'This Quarter', value: 'This Quarter' },
+        { label: 'This Year-to-date', value: 'This Year-to-date' },
+      ],
+      showIf: v => v.date_mode === 'single'
+    },
+
+    {
+      id: 'accounting_method', label: 'Accounting Method', type: 'select',
+      options: [{ label:'Accrual', value:'Accrual' }, { label:'Cash', value:'Cash' }],
+      default: 'Accrual'
+    },
+    {
+      id: 'summarize_column_by', label: 'Summarize By', type: 'select',
+      options: [
+        { label:'Month', value:'Month' },
+        { label:'Quarter', value:'Quarter' },
+        { label:'Year', value:'Year' }
+      ],
+      default: 'Month'
+    },
+    {
+      id: 'columns', label: 'Columns', type: 'select',
+      options: [
+        { label:'Total Only',   value:'TotalOnly' },
+        { label:'Customers',    value:'Customers' },
+        { label:'Classes',      value:'Classes' },
+        { label:'Departments',  value:'Departments' }
       ],
       default: 'TotalOnly'
     },
+
     // entity filters (optional)
-    { id: 'customer',   label: 'Customers',   type: 'multiselect', source: 'customers', showIf: v => v.columns==='Customers' },
-    { id: 'class',      label: 'Classes',     type: 'multiselect', source: 'classes',   showIf: v => v.columns==='Classes' },
-    { id: 'department', label: 'Departments', type: 'multiselect', source: 'departments', showIf: v => v.columns==='Departments' },
+    { id: 'customer',   label: 'Customers',   type: 'multiselect', source: 'customers',   showIf: v => v.columns === 'Customers' },
+    { id: 'class',      label: 'Classes',     type: 'multiselect', source: 'classes',     showIf: v => v.columns === 'Classes' },
+    { id: 'department', label: 'Departments', type: 'multiselect', source: 'departments', showIf: v => v.columns === 'Departments' },
   ],
 
   BalanceSheet: [
     { id: 'as_of_date', label: 'As of', type: 'date' },
-    { id: 'accounting_method', label: 'Accounting Method', type: 'select',
-      options: [{label:'Accrual',value:'Accrual'},{label:'Cash',value:'Cash'}], default: 'Accrual' },
+    {
+      id: 'accounting_method', label: 'Accounting Method', type: 'select',
+      options: [{ label:'Accrual', value:'Accrual' }, { label:'Cash', value:'Cash' }],
+      default: 'Accrual'
+    },
   ],
 
   TrialBalance: [
@@ -56,25 +95,38 @@ export const REPORT_PARAM_CONFIG: Record<string, ParamDef[]> = {
 
   AgedReceivables: [
     { id: 'report_date', label: 'As of', type: 'date' },
-    { id: 'days',        label: 'Aging Days (30/60/90)', type: 'select',
-      options: [{label:'30',value:'30'},{label:'60',value:'60'},{label:'90',value:'90'}], default: '30' },
-    { id: 'customer',    label: 'Customers', type: 'multiselect', source: 'customers' },
+    {
+      id: 'days', label: 'Aging Days (30/60/90)', type: 'select',
+      options: [{ label:'30', value:'30' }, { label:'60', value:'60' }, { label:'90', value:'90' }],
+      default: '30'
+    },
+    { id: 'customer', label: 'Customers', type: 'multiselect', source: 'customers' },
   ],
 
   AgedPayables: [
     { id: 'report_date', label: 'As of', type: 'date' },
-    { id: 'days',        label: 'Aging Days (30/60/90)', type: 'select',
-      options: [{label:'30',value:'30'},{label:'60',value:'60'},{label:'90',value:'90'}], default: '30' },
-    { id: 'vendor',      label: 'Vendors', type: 'multiselect', source: 'vendors' },
+    {
+      id: 'days', label: 'Aging Days (30/60/90)', type: 'select',
+      options: [{ label:'30', value:'30' }, { label:'60', value:'60' }, { label:'90', value:'90' }],
+      default: '30'
+    },
+    { id: 'vendor', label: 'Vendors', type: 'multiselect', source: 'vendors' },
   ],
 
   CustomerSales: [
     { id: 'start_date', label: 'Start date', type: 'date' },
     { id: 'end_date',   label: 'End date',   type: 'date' },
-    { id: 'summarize_column_by', label: 'Summarize By', type: 'select',
-      options: [{label:'Month',value:'Month'},{label:'Quarter',value:'Quarter'},{label:'Year',value:'Year'}], default: 'Month' },
-    { id: 'customer', label: 'Customers', type: 'multiselect', source: 'customers' },
-    { id: 'class',    label: 'Classes',   type: 'multiselect', source: 'classes' },
+    {
+      id: 'summarize_column_by', label: 'Summarize By', type: 'select',
+      options: [
+        { label:'Month', value:'Month' },
+        { label:'Quarter', value:'Quarter' },
+        { label:'Year', value:'Year' }
+      ],
+      default: 'Month'
+    },
+    { id: 'customer',   label: 'Customers',   type: 'multiselect', source: 'customers' },
+    { id: 'class',      label: 'Classes',     type: 'multiselect', source: 'classes' },
     { id: 'department', label: 'Departments', type: 'multiselect', source: 'departments' },
   ],
 
