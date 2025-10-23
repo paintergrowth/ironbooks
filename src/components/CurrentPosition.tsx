@@ -118,7 +118,7 @@ const CurrentPosition: React.FC<Props> = ({ realmId, className }) => {
 
   return (
     <Card className={clsx('bg-card border border-border/20 shadow-sm', className)}>
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-1">
         <CardTitle className="text-lg font-bold text-foreground">Current Position</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
