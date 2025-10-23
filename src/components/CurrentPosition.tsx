@@ -42,14 +42,14 @@ useEffect(() => {
       if (!realmId && !effectiveRealmId) throw new Error("No realm selected.");
       const finalRealm = effectiveRealmId ?? realmId!;
 
-      // 👉 Call the Edge Function via supabase.functions.invoke (POST)
+      // IMPORTANT: use supabase.functions.invoke (not invokeWithAuthSafe(() => fetch(...)))
       const { data, error } = await supabase.functions.invoke("qbo-current-position", {
         headers: {
           "Content-Type": "application/json",
           "x-ib-act-as-user": effectiveUserId ?? "",
           "x-ib-act-as-realm": finalRealm,
         },
-        body: { realmId: finalRealm }, // POST body
+        body: { realmId: finalRealm }, // JSON body must be present (so content_length != 0)
       });
 
       if (error) throw error;
@@ -64,11 +64,8 @@ useEffect(() => {
       if (mounted) setLoading(false);
     }
   })();
-  return () => {
-    mounted = false;
-  };
+  return () => { mounted = false; };
 }, [realmId, effectiveUserId, effectiveRealmId]);
-
 
 
   const fmt = (n?: number) =>
