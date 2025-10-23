@@ -33,43 +33,38 @@ export default function CurrentPosition({
   const [data, setData] = useState<CurrPos | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        if (!realmId && !effectiveRealmId) throw new Error("No realm selected.");
-        const finalRealm = effectiveRealmId ?? realmId!;
+  // src/components/CurrentPosition.tsx (replace the effect that fetches data)
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    try {
+      if (!realmId && !effectiveRealmId) throw new Error("No realm selected.");
+      const finalRealm = effectiveRealmId ?? realmId!;
 
-        const url = `${supabase.functionsUrl}/qbo-current-position?realmId=${encodeURIComponent(
-          finalRealm
-        )}`;
+      const { data, error } = await supabase.functions.invoke("qbo-current-position", {
+        headers: {
+          "Content-Type": "application/json",
+          "x-ib-act-as-user": effectiveUserId ?? "",
+          "x-ib-act-as-realm": finalRealm,
+        },
+        body: { realmId: finalRealm }, // POST body (see server fix below)
+      });
 
-        const { data, error } = await invokeWithAuthSafe(() =>
-          fetch(url, {
-            headers: {
-              "Content-Type": "application/json",
-              "x-ib-act-as-user": effectiveUserId ?? "",
-              "x-ib-act-as-realm": effectiveRealmId ?? finalRealm,
-            },
-          }).then((r) => r.json())
-        );
+      if (error) throw error;
+      if (mounted) setData(data as CurrPos);
+    } catch (e: any) {
+      toast({
+        title: "Couldn’t load Current Position",
+        description: e?.message ?? String(e),
+        variant: "destructive",
+      });
+    } finally {
+      if (mounted) setLoading(false);
+    }
+  })();
+  return () => { mounted = false; };
+}, [realmId, effectiveUserId, effectiveRealmId]);
 
-        if (error) throw error;
-        if (mounted) setData(data as CurrPos);
-      } catch (e: any) {
-        toast({
-          title: "Couldn’t load Current Position",
-          description: e?.message ?? String(e),
-          variant: "destructive",
-        });
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [realmId, effectiveUserId, effectiveRealmId]);
 
   const fmt = (n?: number) =>
     typeof n === "number"
