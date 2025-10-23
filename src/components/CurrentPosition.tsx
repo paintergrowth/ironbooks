@@ -133,22 +133,26 @@ const CurrentPosition: React.FC<Props> = ({ realmId, className }) => {
           </div>
         )}
 
-        {!err && (data ? (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-md border border-border/30 bg-muted/40 p-3">
-              <p className="text-xs text-muted-foreground mb-1">Bank</p>
-              <p className="text-lg font-semibold">{formatCurrency(Number(data.bank || 0))}</p>
-            </div>
-            <div className="rounded-md border border-border/30 bg-muted/40 p-3">
-              <p className="text-xs text-muted-foreground mb-1">Cash on Hand</p>
-              <p className="text-lg font-semibold">{formatCurrency(Number(data.cash || 0))}</p>
-            </div>
-            <div className="rounded-md border border-border/30 bg-muted/40 p-3">
-              <p className="text-xs text-muted-foreground mb-1">Receivables</p>
-              <p className="text-lg font-semibold">{formatCurrency(Number(data.receivables || 0))}</p>
-            </div>
-          </div>
-        ) : (
+{!err && (data ? (
+  <div className="grid gap-4 sm:grid-cols-3">
+    <StatTile
+      label="Bank"
+      value={formatCurrency(Number(data.bank || 0))}
+      icon={<Building2 className="h-5 w-5 text-primary" />}
+    />
+    <StatTile
+      label="Cash on Hand"
+      value={formatCurrency(Number(data.cash || 0))}
+      icon={<Wallet2 className="h-5 w-5 text-primary" />}
+    />
+    <StatTile
+      label="Receivables"
+      value={formatCurrency(Number(data.receivables || 0))}
+      icon={<Receipt className="h-5 w-5 text-primary" />}
+    />
+  </div>
+) : (
+
           !loading && <div className="text-sm text-muted-foreground">No data yet.</div>
         ))}
 
