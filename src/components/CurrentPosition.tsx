@@ -1,154 +1,117 @@
 // src/components/CurrentPosition.tsx
-// Displays "Current Position" with three tiles: Bank, Cash on Hand, Receivables.
-// Fetches from supabase edge function /qbo-current-position
-// Sends impersonation headers so the server scopes to logged-in or impersonated realm.
+import React, { useEffect, useState } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+import { invokeWithAuthSafe } from '@/lib/supabase';
+import { useEffectiveIdentity } from '@/lib/impersonation';
+import clsx from 'clsx';
 
-import React, { useEffect, useState } from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
-
-import { useEffectiveIdentity } from "@/lib/impersonation";
-import { Banknote, Wallet, ReceiptText } from "lucide-react";
-
-type CurrPos = {
-  bankTotal: number;
-  cashOnHandTotal: number;
-  receivablesTotal: number;
-  asOf: string;
-  realmId?: string;
-  actAsUser?: string;
+type Props = {
+  realmId: string;
+  className?: string;
 };
 
-export default function CurrentPosition({
-  realmId,
-  className = "",
-}: {
-  realmId: string | null;
-  className?: string;
-}) {
+type CurrentPositionPayload = {
+  bank?: number;
+  cash?: number;
+  receivables?: number;
+  asOf?: string | null;
+  companyName?: string | null;
+};
+
+const formatCurrency = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
+
+const CurrentPosition: React.FC<Props> = ({ realmId, className }) => {
   const { toast } = useToast();
-  const { effectiveUserId, effectiveRealmId } = useEffectiveIdentity();
+  const { userId: effUserId } = useEffectiveIdentity();
 
-  const [data, setData] = useState<CurrPos | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [data, setData] = useState<CurrentPositionPayload | null>(null);
 
-  // src/components/CurrentPosition.tsx (replace the effect that fetches data)
-useEffect(() => {
-  let mounted = true;
-  (async () => {
-    try {
-      if (!realmId && !effectiveRealmId) throw new Error("No realm selected.");
-      const finalRealm = effectiveRealmId ?? realmId!;
+  useEffect(() => {
+    let cancelled = false;
 
-      // IMPORTANT: use supabase.functions.invoke (not invokeWithAuthSafe(() => fetch(...)))
-      const { data, error } = await supabase.functions.invoke("qbo-current-position", {
-        headers: {
-          "Content-Type": "application/json",
-          "x-ib-act-as-user": effectiveUserId ?? "",
-          "x-ib-act-as-realm": finalRealm,
-        },
-        body: { realmId: finalRealm }, // JSON body must be present (so content_length != 0)
-      });
+    const run = async () => {
+      setErr(null);
+      setData(null);
 
-      if (error) throw error;
-      if (mounted) setData(data as CurrPos);
-    } catch (e: any) {
-      toast({
-        title: "Couldn’t load Current Position",
-        description: e?.message ?? String(e),
-        variant: "destructive",
-      });
-    } finally {
-      if (mounted) setLoading(false);
-    }
-  })();
-  return () => { mounted = false; };
-}, [realmId, effectiveUserId, effectiveRealmId]);
+      // 🔒 Don’t call until we have both IDs
+      if (!realmId || !effUserId) return;
 
+      setLoading(true);
+      try {
+        const { data, error } = await invokeWithAuthSafe<CurrentPositionPayload>('qbo-current-position', {
+          body: { realmId, userId: effUserId, nonce: Date.now() }, // ✅ non-empty body
+        });
 
-  const fmt = (n?: number) =>
-    typeof n === "number"
-      ? n.toLocaleString(undefined, {
-          style: "currency",
-          currency: "USD",
-          maximumFractionDigits: 0,
-        })
-      : "—";
+        if (error) {
+          if (!cancelled) {
+            setErr(error.message || 'Failed to fetch current position.');
+            // Optional: toast for visibility
+            // toast({ title: 'Current Position', description: error.message || 'Unauthorized', variant: 'destructive' });
+          }
+          return;
+        }
 
-  if (loading) {
-    return (
-      <Card className={className}>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-xl">Current Position</CardTitle>
-          <Badge variant="secondary">Current</Badge>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="rounded-2xl border p-4">
-                <div className="h-4 w-28 bg-muted animate-pulse rounded mb-3" />
-                <div className="h-8 w-40 bg-muted animate-pulse rounded" />
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+        if (!cancelled) setData(data ?? null);
+      } catch (e: any) {
+        if (!cancelled) {
+          setErr(e?.message || 'Unexpected error');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [realmId, effUserId]);
 
   return (
-    <Card className={className}>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-xl">Current Position</CardTitle>
-        <Badge variant="secondary">Current</Badge>
+    <Card className={clsx('bg-card border border-border/20 shadow-sm', className)}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg font-bold text-foreground">Current Position</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Tile
-            title="Bank"
-            value={fmt(data?.bankTotal)}
-            icon={<Banknote className="h-5 w-5" aria-hidden />}
-            sub={data?.asOf ? `As of ${new Date(data.asOf).toLocaleString()}` : "—"}
-          />
-          <Tile
-            title="Cash on Hand"
-            value={fmt(data?.cashOnHandTotal)}
-            icon={<Wallet className="h-5 w-5" aria-hidden />}
-            sub={data?.asOf ? `As of ${new Date(data.asOf).toLocaleString()}` : "—"}
-          />
-          <Tile
-            title="Receivables"
-            value={fmt(data?.receivablesTotal)}
-            icon={<ReceiptText className="h-5 w-5" aria-hidden />}
-            sub={data?.asOf ? `As of ${new Date(data.asOf).toLocaleString()}` : "—"}
-          />
-        </div>
+      <CardContent className="space-y-3">
+        {loading && <div className="text-sm text-muted-foreground">Loading current balances…</div>}
+
+        {!loading && err && (
+          <div className="text-sm text-red-600">
+            {err.includes('401') ? 'Unauthorized — please reconnect QuickBooks.' : err}
+          </div>
+        )}
+
+        {!loading && !err && data && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-md border border-border/30 bg-muted/40 p-3">
+              <p className="text-xs text-muted-foreground mb-1">Bank</p>
+              <p className="text-lg font-semibold">{formatCurrency(Number(data.bank || 0))}</p>
+            </div>
+            <div className="rounded-md border border-border/30 bg-muted/40 p-3">
+              <p className="text-xs text-muted-foreground mb-1">Cash on Hand</p>
+              <p className="text-lg font-semibold">{formatCurrency(Number(data.cash || 0))}</p>
+            </div>
+            <div className="rounded-md border border-border/30 bg-muted/40 p-3">
+              <p className="text-xs text-muted-foreground mb-1">Receivables</p>
+              <p className="text-lg font-semibold">{formatCurrency(Number(data.receivables || 0))}</p>
+            </div>
+          </div>
+        )}
+
+        {!loading && !err && !data && (
+          <div className="text-sm text-muted-foreground">No data yet.</div>
+        )}
+
+        {!loading && data?.asOf && (
+          <p className="text-xs text-muted-foreground">As of {new Date(data.asOf).toLocaleString()}</p>
+        )}
       </CardContent>
     </Card>
   );
-}
+};
 
-function Tile({
-  title,
-  value,
-  icon,
-  sub,
-}: {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-  sub?: string;
-}) {
-  return (
-    <div className="rounded-2xl border p-4 bg-background">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <span className="text-sm">{title}</span>
-      </div>
-      <div className="mt-2 text-2xl font-semibold leading-tight">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
-    </div>
-  );
-}
+export default CurrentPosition;
