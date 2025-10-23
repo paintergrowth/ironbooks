@@ -1,5 +1,5 @@
 // src/components/CurrentPosition.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { invokeWithAuthSafe } from '@/lib/supabase';
@@ -30,45 +30,57 @@ const CurrentPosition: React.FC<Props> = ({ realmId, className }) => {
   const [err, setErr] = useState<string | null>(null);
   const [data, setData] = useState<CurrentPositionPayload | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const triedOnce = useRef(false);
 
-    const run = async () => {
-      setErr(null);
-      setData(null);
+  const fetchPosition = async () => {
+    setErr(null);
+    // Do not wipe previous good data while loading, keeps UI stable
+    if (!realmId || !effUserId) return;
 
-      // 🔒 Don’t call until we have both IDs
-      if (!realmId || !effUserId) return;
-
-      setLoading(true);
-      try {
-        const { data, error } = await invokeWithAuthSafe<CurrentPositionPayload>('qbo-current-position', {
-          body: { realmId, userId: effUserId, nonce: Date.now() }, // ✅ non-empty body
+    setLoading(true);
+    try {
+      const { data, error }: { data?: CurrentPositionPayload | null; error?: any } =
+        await invokeWithAuthSafe<CurrentPositionPayload>('qbo-current-position', {
+          body: { realmId, userId: effUserId, nonce: Date.now() },
+          headers: {
+            // help the function resolve identity/realm deterministically
+            'x-ib-act-as-user': effUserId,
+            'x-ib-act-as-realm': realmId,
+            'content-type': 'application/json',
+          },
         });
 
-        if (error) {
-          if (!cancelled) {
-            setErr(error.message || 'Failed to fetch current position.');
-            // Optional: toast for visibility
-            // toast({ title: 'Current Position', description: error.message || 'Unauthorized', variant: 'destructive' });
-          }
-          return;
-        }
-
-        if (!cancelled) setData(data ?? null);
-      } catch (e: any) {
-        if (!cancelled) {
-          setErr(e?.message || 'Unexpected error');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+      if (error) {
+        // Surface status/message if present
+        const msg = error?.message || error?.error || 'Failed to fetch current position.';
+        const status = error?.status ?? error?.statusCode ?? '';
+        const text = status ? `${msg} (HTTP ${status})` : msg;
+        setErr(text);
+        console.warn('[CurrentPosition] invoke error:', error);
+        return;
       }
-    };
 
-    run();
-    return () => {
-      cancelled = true;
-    };
+      setData(data ?? null);
+    } catch (e: any) {
+      console.error('[CurrentPosition] unexpected:', e);
+      setErr(e?.message || 'Unexpected error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // run once when both IDs are available
+    if (!realmId || !effUserId) return;
+    fetchPosition().then(async () => {
+      // quick one-time retry (helps just-after-login / just-after-impersonation)
+      if (!triedOnce.current && (err || !data)) {
+        triedOnce.current = true;
+        await new Promise((r) => setTimeout(r, 600));
+        await fetchPosition();
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realmId, effUserId]);
 
   return (
@@ -81,11 +93,14 @@ const CurrentPosition: React.FC<Props> = ({ realmId, className }) => {
 
         {!loading && err && (
           <div className="text-sm text-red-600">
-            {err.includes('401') ? 'Unauthorized — please reconnect QuickBooks.' : err}
+            {/* normalize common 401s */}
+            {/\b401\b|unauthor/i.test(err)
+              ? 'Unauthorized — please reconnect QuickBooks (or token missing for this realm).'
+              : err}
           </div>
         )}
 
-        {!loading && !err && data && (
+        {!err && (data ? (
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-md border border-border/30 bg-muted/40 p-3">
               <p className="text-xs text-muted-foreground mb-1">Bank</p>
@@ -100,11 +115,9 @@ const CurrentPosition: React.FC<Props> = ({ realmId, className }) => {
               <p className="text-lg font-semibold">{formatCurrency(Number(data.receivables || 0))}</p>
             </div>
           </div>
-        )}
-
-        {!loading && !err && !data && (
-          <div className="text-sm text-muted-foreground">No data yet.</div>
-        )}
+        ) : (
+          !loading && <div className="text-sm text-muted-foreground">No data yet.</div>
+        ))}
 
         {!loading && data?.asOf && (
           <p className="text-xs text-muted-foreground">As of {new Date(data.asOf).toLocaleString()}</p>
