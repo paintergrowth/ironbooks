@@ -19,8 +19,7 @@ import { useAppContext } from '@/contexts/AppContext';
 import { useEffectiveIdentity } from '@/lib/impersonation';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
-// src/components/DashboardNew.tsx
-import CurrentPosition from "@/components/CurrentPosition"; // ⬅️ add this
+import CurrentPosition from "@/components/CurrentPosition"; // ⬅️ (unchanged)
 
 type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd' | 'custom';
 type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'ytd';
@@ -271,6 +270,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   const [ytdChartData, setYtdChartData] = useState(fallbackChartData);
   const [ytdLoading, setYtdLoading] = useState(false);
 
+  // ✅ NEW: readiness flag so CurrentPosition waits until KPIs are loaded for a real realm
+  const [kpisReady, setKpisReady] = useState(false);
+
   // NEW: dashboard-level refresh state + handler
   const [refreshing, setRefreshing] = useState(false);
   const handleRefreshQuickBooks = async () => {
@@ -464,6 +466,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   // Data fetches (effective identity)
   // ===============================
 
+  // 🔁 Reset KPIs readiness whenever identity or time window changes
+  useEffect(() => {
+    setKpisReady(false);
+  }, [effRealmId, effUserId, timeframe, fromDate, toDate]);
+
   // Metrics
   useEffect(() => {
     let isCancelled = false;
@@ -493,6 +500,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           setNetPrev(demo.netProfit.previous as number);
           setCompanyName(prev => prev ?? 'Demo Company');
           setLastSync(null);
+          // NOTE: do not set kpisReady in demo mode
         }
         return;
       }
@@ -529,6 +537,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           setNetPrev(np);
           setLastSync(payload?.lastSyncAt ?? new Date().toISOString());
           if (payload?.companyName) setCompanyName(payload.companyName);
+
+          // ✅ KPIs have loaded for a real realm — allow CurrentPosition to render
+          if (effRealmId) setKpisReady(true);
         }
       } catch (e) {
         console.error('qbo-dashboard fetch failed:', e);
@@ -890,8 +901,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           </CardHeader>
         </Card>
       </div>
-      {/* Current Position (Bank, Cash on Hand, Receivables) */}
-      {effRealmId && (
+
+      {/* Current Position (Bank, Cash on Hand, Receivables)
+          ⛔️ Defer until KPIs resolve with a real effRealmId */}
+      {effRealmId && kpisReady && (
         <CurrentPosition
           realmId={effRealmId}
           className="bg-card border border-border/20 shadow-sm"
