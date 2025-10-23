@@ -19,6 +19,8 @@ import { useAppContext } from '@/contexts/AppContext';
 import { useEffectiveIdentity } from '@/lib/impersonation';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
+// src/components/DashboardNew.tsx
+import CurrentPosition from "@/components/CurrentPosition"; // ⬅️ add this
 
 type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd' | 'custom';
 type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'ytd';
@@ -888,6 +890,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           </CardHeader>
         </Card>
       </div>
+      {/* Current Position (Bank, Cash on Hand, Receivables) */}
+      {effRealmId && (
+        <CurrentPosition
+          realmId={effRealmId}
+          className="bg-card border border-border/20 shadow-sm"
+        />
+      )}
 
       {/* Business Health */}
       <Card className="bg-card border border-border/20">
