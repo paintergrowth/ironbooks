@@ -4,6 +4,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { invokeWithAuthSafe } from '@/lib/supabase';
 import { useEffectiveIdentity } from '@/lib/impersonation';
+import { Building2, Wallet2, Receipt } from 'lucide-react';
+
 import clsx from 'clsx';
 
 type Props = {
@@ -21,6 +23,37 @@ type CurrentPositionPayload = {
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
+const StatTile: React.FC<{
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}> = ({ label, value, icon }) => (
+  <div
+    className={clsx(
+      // container
+      'group relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-b from-card/70 to-muted/40',
+      'shadow-sm hover:shadow-md transition-shadow'
+    )}
+  >
+    {/* soft vignette / accent blur */}
+    <div className="pointer-events-none absolute -top-6 -right-6 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+    <div className="flex items-start justify-between p-4 md:p-5">
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-2xl font-semibold tabular-nums text-foreground">{value}</p>
+      </div>
+      <div
+        className={clsx(
+          'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+          'bg-primary/10 ring-1 ring-primary/20 group-hover:bg-primary/15 transition-colors'
+        )}
+        aria-hidden
+      >
+        {icon}
+      </div>
+    </div>
+  </div>
+);
 
 const CurrentPosition: React.FC<Props> = ({ realmId, className }) => {
   const { toast } = useToast();
