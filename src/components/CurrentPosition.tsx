@@ -7,7 +7,8 @@ import React, { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { supabase, invokeWithAuthSafe } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
+
 import { useEffectiveIdentity } from "@/lib/impersonation";
 import { Banknote, Wallet, ReceiptText } from "lucide-react";
 
@@ -41,13 +42,14 @@ useEffect(() => {
       if (!realmId && !effectiveRealmId) throw new Error("No realm selected.");
       const finalRealm = effectiveRealmId ?? realmId!;
 
+      // 👉 Call the Edge Function via supabase.functions.invoke (POST)
       const { data, error } = await supabase.functions.invoke("qbo-current-position", {
         headers: {
           "Content-Type": "application/json",
           "x-ib-act-as-user": effectiveUserId ?? "",
           "x-ib-act-as-realm": finalRealm,
         },
-        body: { realmId: finalRealm }, // POST body (see server fix below)
+        body: { realmId: finalRealm }, // POST body
       });
 
       if (error) throw error;
@@ -62,8 +64,11 @@ useEffect(() => {
       if (mounted) setLoading(false);
     }
   })();
-  return () => { mounted = false; };
+  return () => {
+    mounted = false;
+  };
 }, [realmId, effectiveUserId, effectiveRealmId]);
+
 
 
   const fmt = (n?: number) =>
