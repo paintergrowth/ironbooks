@@ -6,9 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, Filter, Download, Play } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { REPORT_PARAM_CONFIG, type ParamDef } from '@/config/qboReportParams';
 import { ReportPreview } from './ReportPreview';
+
+/** If you use the Supabase client elsewhere, you do NOT need it here.
+ * We call an edge function directly with fetch to avoid PostgREST table coupling.
+ */
+// import { supabase } from '@/lib/supabase';
 
 type PreviewTable = { headers: string[]; rows: any[][] };
 
@@ -46,6 +50,25 @@ function ytdStart() {
   return `${now.getFullYear()}-01-01`;
 }
 
+/** Pretty labels for report selector (value remains the internal key) */
+const REPORT_LABELS: Record<string, string> = {
+  ProfitAndLoss: 'Profit & Loss',
+  BalanceSheet: 'Balance Sheet',
+  TrialBalance: 'Trial Balance',
+  CashFlow: 'Cash Flow',
+  AgedReceivables: 'Aged Receivables',
+  AgedPayables: 'Aged Payables',
+  CustomerSales: 'Customer Sales',
+  ItemSales: 'Item Sales',
+  InventoryValuationSummary: 'Inventory Valuation Summary',
+  GeneralLedger: 'General Ledger',
+};
+const prettyReportName = (k: string) =>
+  REPORT_LABELS[k] || k.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+
+/** Edge function URL for live, realm-scoped picklists */
+const PICKLISTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbo-picklists`;
+
 export const AdHocReportsPanel: React.FC<Props> = ({
   realmId,
   defaultReport = 'ProfitAndLoss',
@@ -81,7 +104,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
     setValues(baseDefaults);
   }, [reportName]);
 
-  /* -------- async options for entity pickers -------- */
+  /* -------- async options for entity pickers (live from QBO via edge function) -------- */
   type Opt = { label: string; value: string };
   const [entityOptions, setEntityOptions] = useState<Record<string, Opt[]>>({});
   const [entityLoading, setEntityLoading] = useState<Record<string, boolean>>({});
@@ -90,55 +113,81 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   useEffect(() => {
     let cancelled = false;
 
-    async function load(source: ParamDef['source']) {
-      if (!source || !realmId) return;
-
-      const cfg: Record<string, { table: string; label: string; value: string; realmCol?: string }> = {
-        customers:   { table: 'qbo_customers',   label: 'display_name', value: 'id', realmCol: 'realm_id' },
-        vendors:     { table: 'qbo_vendors',     label: 'display_name', value: 'id', realmCol: 'realm_id' },
-        items:       { table: 'qbo_items',       label: 'name',         value: 'id', realmCol: 'realm_id' },
-        accounts:    { table: 'qbo_accounts',    label: 'name',         value: 'id', realmCol: 'realm_id' },
-        classes:     { table: 'qbo_classes',     label: 'name',         value: 'id', realmCol: 'realm_id' },
-        departments: { table: 'qbo_departments', label: 'name',         value: 'id', realmCol: 'realm_id' },
-      };
-
-      const meta = cfg[source];
-      if (!meta) return;
-
-      setEntityLoading(prev => ({ ...prev, [source]: true }));
-      setEntityError(prev => ({ ...prev, [source]: null }));
-
-      const { data, error } = await supabase
-        .from(meta.table)
-        .select(`${meta.value}, ${meta.label}`)
-        .eq(meta.realmCol || 'realm_id', realmId)
-        .limit(500);
-
-      if (cancelled) return;
-
-      if (error) {
-        console.warn('[AdHocReportsPanel] entity load error', source, error);
-        setEntityError(prev => ({ ...prev, [source]: error.message || 'Load failed' }));
-        setEntityLoading(prev => ({ ...prev, [source]: false }));
-        return;
-      }
-
-      const rows = (data as any[]) || [];
-      const opts: Opt[] = rows.map(r => ({ value: String(r[meta.value]), label: String(r[meta.label]) }));
-
-      setEntityOptions(prev => ({ ...prev, [source]: opts }));
-      setEntityLoading(prev => ({ ...prev, [source]: false }));
+    if (!realmId) {
+      // If no realm, clear any previous picklists
+      setEntityOptions({});
+      setEntityLoading({});
+      setEntityError({});
+      return;
     }
 
-    // unique sources from the currently visible paramDefs
-    const sources = Array.from(new Set(paramDefs.map(p => p.source).filter(Boolean))) as NonNullable<ParamDef['source']>[];
+    // Which picklists does this report need?
+    const sources = Array.from(
+      new Set(
+        (paramDefs.map(p => p.source).filter(Boolean) as NonNullable<ParamDef['source']>[])
+          .filter(s => ['customers','vendors','items','accounts','classes','departments'].includes(s))
+      )
+    );
 
-    // clear caches on report/realm change to avoid stale lists
-    setEntityOptions({});
-    setEntityLoading({});
+    if (sources.length === 0) {
+      setEntityOptions({});
+      setEntityLoading({});
+      setEntityError({});
+      return;
+    }
+
+    // mark loading for each needed source
+    const loadingFlags: Record<string, boolean> = {};
+    sources.forEach(s => { loadingFlags[s] = true; });
+    setEntityLoading(loadingFlags);
     setEntityError({});
+    setEntityOptions({});
 
-    sources.forEach(load);
+    (async () => {
+      try {
+        const resp = await fetch(PICKLISTS_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // If your edge func requires anon key, uncomment:
+            // 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            // Optionally include impersonation headers for observability (server ignores for auth):
+            'x-ib-act-as-realm': String(realmId),
+          },
+          body: JSON.stringify({ realmId, sources }),
+        });
+
+        const json = await resp.json();
+        if (cancelled) return;
+
+        if (!resp.ok) {
+          console.warn('[AdHocReportsPanel] picklists error', json);
+          const errs: Record<string, string> = {};
+          sources.forEach(s => { errs[s] = json?.error || `HTTP ${resp.status}`; });
+          setEntityError(errs);
+          setEntityLoading({});
+          return;
+        }
+
+        const data = json?.data || {};
+        const opts: Record<string, Opt[]> = {};
+        sources.forEach((s: string) => {
+          const arr = Array.isArray(data[s]) ? data[s] : [];
+          opts[s] = arr as Opt[];
+        });
+
+        setEntityOptions(opts);
+        setEntityLoading({});
+        setEntityError({});
+      } catch (e: any) {
+        if (cancelled) return;
+        console.warn('[AdHocReportsPanel] picklists fetch failed', e);
+        const errs: Record<string, string> = {};
+        sources.forEach(s => { errs[s] = e?.message || 'Network error'; });
+        setEntityError(errs);
+        setEntityLoading({});
+      }
+    })();
 
     return () => { cancelled = true; };
   }, [paramDefs, realmId]);
@@ -164,7 +213,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
           </div>
         );
       case 'select': {
-        // NEW: support dynamic options when def.source is provided
+        // Supports dynamic options when def.source is provided
         const src = def.source;
         const loading = src ? !!entityLoading[src] : false;
         const err = src ? entityError[src] : null;
@@ -251,18 +300,22 @@ export const AdHocReportsPanel: React.FC<Props> = ({
     return out;
   }, [paramDefs, values]);
 
+  // Pretty report label while keeping internal key
+  const reportOptions = useMemo(
+    () => Object.keys(REPORT_PARAM_CONFIG).map(k => ({ value: k, label: prettyReportName(k) })),
+    []
+  );
+
   // Preview meta: prefer lastUsedParams (exactly what was sent)
   const previewMeta = useMemo(() => ({
     logoUrl,
-    reportName: reportDisplayName || reportName,
+    reportName: reportDisplayName || prettyReportName(reportName),
     currency: companyCurrencyCode,
     locale,
     paramsUsed: lastUsedParams ?? normalizedParams,
   }), [logoUrl, reportDisplayName, reportName, companyCurrencyCode, locale, lastUsedParams, normalizedParams]);
 
   /* ------------------ preset handlers (fixed) ------------------ */
-  // Add date_mode: 'range' and drop date_macro to avoid conflicts
-
   const handlePresetLastMonth = () => {
     const lm = lastMonthStartEnd();
     setValues(v => ({
@@ -323,8 +376,8 @@ export const AdHocReportsPanel: React.FC<Props> = ({
             <Select value={reportName} onValueChange={setReportName}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.keys(REPORT_PARAM_CONFIG).map(k => (
-                  <SelectItem key={k} value={k}>{k}</SelectItem>
+                {reportOptions.map(o => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
