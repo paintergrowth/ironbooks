@@ -143,7 +143,7 @@ export const REPORT_PARAM_CONFIG: Record<string, ParamDef[]> = {
     { id: 'item',       label: 'Items', type: 'multiselect', source: 'items' },
   ],
 
-  GeneralLedgerDetail: [
+  GeneralLedger: [
     { id: 'start_date', label: 'Start date', type: 'date' },
     { id: 'end_date',   label: 'End date',   type: 'date' },
     { id: 'account',    label: 'Accounts',   type: 'multiselect', source: 'accounts' },
