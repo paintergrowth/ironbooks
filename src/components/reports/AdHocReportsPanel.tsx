@@ -84,6 +84,8 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   /* -------- async options for entity pickers -------- */
   type Opt = { label: string; value: string };
   const [entityOptions, setEntityOptions] = useState<Record<string, Opt[]>>({});
+  const [entityLoading, setEntityLoading] = useState<Record<string, boolean>>({});
+  const [entityError, setEntityError] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -103,19 +105,39 @@ export const AdHocReportsPanel: React.FC<Props> = ({
       const meta = cfg[source];
       if (!meta) return;
 
+      setEntityLoading(prev => ({ ...prev, [source]: true }));
+      setEntityError(prev => ({ ...prev, [source]: null }));
+
       const { data, error } = await supabase
         .from(meta.table)
         .select(`${meta.value}, ${meta.label}`)
         .eq(meta.realmCol || 'realm_id', realmId)
         .limit(500);
 
-      if (error || !data) return;
+      if (cancelled) return;
 
-      const opts: Opt[] = (data as any[]).map(r => ({ value: String(r[meta.value]), label: String(r[meta.label]) }));
-      if (!cancelled) setEntityOptions(prev => ({ ...prev, [source]: opts }));
+      if (error) {
+        console.warn('[AdHocReportsPanel] entity load error', source, error);
+        setEntityError(prev => ({ ...prev, [source]: error.message || 'Load failed' }));
+        setEntityLoading(prev => ({ ...prev, [source]: false }));
+        return;
+      }
+
+      const rows = (data as any[]) || [];
+      const opts: Opt[] = rows.map(r => ({ value: String(r[meta.value]), label: String(r[meta.label]) }));
+
+      setEntityOptions(prev => ({ ...prev, [source]: opts }));
+      setEntityLoading(prev => ({ ...prev, [source]: false }));
     }
 
+    // unique sources from the currently visible paramDefs
     const sources = Array.from(new Set(paramDefs.map(p => p.source).filter(Boolean))) as NonNullable<ParamDef['source']>[];
+
+    // clear caches on report/realm change to avoid stale lists
+    setEntityOptions({});
+    setEntityLoading({});
+    setEntityError({});
+
     sources.forEach(load);
 
     return () => { cancelled = true; };
@@ -141,28 +163,54 @@ export const AdHocReportsPanel: React.FC<Props> = ({
             <Input type="number" value={v} onChange={e => set(def.id, e.target.value)} />
           </div>
         );
-      case 'select':
+      case 'select': {
+        // NEW: support dynamic options when def.source is provided
+        const src = def.source;
+        const loading = src ? !!entityLoading[src] : false;
+        const err = src ? entityError[src] : null;
+        const opts = src ? (entityOptions[src] || []) : (def.options || []);
+
         return (
           <div key={def.id} className="space-y-1">
             <label className="text-sm text-gray-600 dark:text-gray-300">{def.label}</label>
             <Select value={String(v)} onValueChange={(val) => set(def.id, val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {(def.options || []).map(o => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
+                {src ? (
+                  loading ? (
+                    <SelectItem disabled value="__loading">Loading…</SelectItem>
+                  ) : err ? (
+                    <SelectItem disabled value="__error">Couldn’t load ({err})</SelectItem>
+                  ) : opts.length === 0 ? (
+                    <SelectItem disabled value="__empty">No options found</SelectItem>
+                  ) : (
+                    opts.map(o => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))
+                  )
+                ) : (
+                  (def.options || []).map(o => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
         );
+      }
       case 'multiselect': {
         const src = def.source!;
         const opts = entityOptions[src] || [];
+        const loading = !!entityLoading[src];
+        const err = entityError[src];
+
         return (
           <div key={def.id} className="space-y-1">
             <label className="text-sm text-gray-600 dark:text-gray-300">{def.label}</label>
             <div className="border rounded-md p-2 max-h-48 overflow-auto">
-              {opts.length === 0 && <div className="text-xs text-gray-500">Loading…</div>}
+              {loading && <div className="text-xs text-gray-500">Loading…</div>}
+              {!loading && err && <div className="text-xs text-red-500">Couldn’t load: {err}</div>}
+              {!loading && !err && opts.length === 0 && <div className="text-xs text-gray-500">No options found</div>}
               {opts.map(o => {
                 const selected: string[] = values[def.id] || [];
                 const isSel = selected.includes(o.value);
@@ -213,45 +261,44 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   }), [logoUrl, reportDisplayName, reportName, companyCurrencyCode, locale, lastUsedParams, normalizedParams]);
 
   /* ------------------ preset handlers (fixed) ------------------ */
-// In AdHocReportsPanel.tsx (your existing handlers)
-// Add date_mode: 'range' and drop date_macro
+  // Add date_mode: 'range' and drop date_macro to avoid conflicts
 
-const handlePresetLastMonth = () => {
-  const lm = lastMonthStartEnd();
-  setValues(v => ({
-    ...v,
-    date_mode: 'range',
-    start_date: lm.start,
-    end_date: lm.end,
-    as_of_date: lm.end,
-    date_macro: undefined, // ensure no macro competes
-  }));
-};
+  const handlePresetLastMonth = () => {
+    const lm = lastMonthStartEnd();
+    setValues(v => ({
+      ...v,
+      date_mode: 'range',
+      start_date: lm.start,
+      end_date: lm.end,
+      as_of_date: lm.end,
+      date_macro: undefined,
+    }));
+  };
 
-const handlePresetTodayOnly = () => {
-  const t = todayISO();
-  setValues(v => ({
-    ...v,
-    date_mode: 'range',
-    start_date: t,
-    end_date: t,
-    as_of_date: t,
-    date_macro: undefined,
-  }));
-};
+  const handlePresetTodayOnly = () => {
+    const t = todayISO();
+    setValues(v => ({
+      ...v,
+      date_mode: 'range',
+      start_date: t,
+      end_date: t,
+      as_of_date: t,
+      date_macro: undefined,
+    }));
+  };
 
-const handlePresetYTD = () => {
-  const start = ytdStart();
-  const t = todayISO();
-  setValues(v => ({
-    ...v,
-    date_mode: 'range',
-    start_date: start,
-    end_date: t,
-    as_of_date: t,
-    date_macro: undefined,
-  }));
-};
+  const handlePresetYTD = () => {
+    const start = ytdStart();
+    const t = todayISO();
+    setValues(v => ({
+      ...v,
+      date_mode: 'range',
+      start_date: start,
+      end_date: t,
+      as_of_date: t,
+      date_macro: undefined,
+    }));
+  };
 
   return (
     <Card className="border-2 shadow-lg dark:border-gray-700">
