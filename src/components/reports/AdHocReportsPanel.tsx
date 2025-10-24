@@ -6,13 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, Filter, Download, Play } from 'lucide-react';
+import { supabase } from '@/lib/supabase';               // ⬅️ USE supabase client here
 import { REPORT_PARAM_CONFIG, type ParamDef } from '@/config/qboReportParams';
 import { ReportPreview } from './ReportPreview';
-
-/** If you use the Supabase client elsewhere, you do NOT need it here.
- * We call an edge function directly with fetch to avoid PostgREST table coupling.
- */
-// import { supabase } from '@/lib/supabase';
 
 type PreviewTable = { headers: string[]; rows: any[][] };
 
@@ -38,7 +34,7 @@ const todayISO = () => toISO(new Date());
 
 function lastMonthStartEnd() {
   const d = new Date();
-  d.setDate(1);             // go to first of this month
+  d.setDate(1);
   d.setMonth(d.getMonth() - 1);
   const start = new Date(d.getFullYear(), d.getMonth(), 1);
   const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
@@ -65,9 +61,6 @@ const REPORT_LABELS: Record<string, string> = {
 };
 const prettyReportName = (k: string) =>
   REPORT_LABELS[k] || k.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
-
-/** Edge function URL for live, realm-scoped picklists */
-const PICKLISTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbo-picklists`;
 
 export const AdHocReportsPanel: React.FC<Props> = ({
   realmId,
@@ -100,7 +93,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
 
   const [values, setValues] = useState<Record<string, any>>(baseDefaults);
   useEffect(() => {
-    // Reset relevant defaults when report changes
     setValues(baseDefaults);
   }, [reportName]);
 
@@ -114,7 +106,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
     let cancelled = false;
 
     if (!realmId) {
-      // If no realm, clear any previous picklists
       setEntityOptions({});
       setEntityLoading({});
       setEntityError({});
@@ -136,43 +127,39 @@ export const AdHocReportsPanel: React.FC<Props> = ({
       return;
     }
 
-    // mark loading for each needed source
-    const loadingFlags: Record<string, boolean> = {};
-    sources.forEach(s => { loadingFlags[s] = true; });
-    setEntityLoading(loadingFlags);
+    // mark loading
+    const flags: Record<string, boolean> = {};
+    sources.forEach(s => { flags[s] = true; });
+    setEntityLoading(flags);
     setEntityError({});
     setEntityOptions({});
 
     (async () => {
       try {
-        const resp = await fetch(PICKLISTS_URL, {
-          method: 'POST',
+        // ✅ Use supabase.functions.invoke so base URL & auth are handled for you
+        const { data, error } = await supabase.functions.invoke('qbo-picklists', {
+          body: { realmId, sources },
           headers: {
-            'Content-Type': 'application/json',
-            // If your edge func requires anon key, uncomment:
-            // 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-            // Optionally include impersonation headers for observability (server ignores for auth):
-            'x-ib-act-as-realm': String(realmId),
+            'x-ib-act-as-realm': String(realmId), // optional: for your logs/observability
           },
-          body: JSON.stringify({ realmId, sources }),
         });
 
-        const json = await resp.json();
         if (cancelled) return;
 
-        if (!resp.ok) {
-          console.warn('[AdHocReportsPanel] picklists error', json);
+        if (error) {
+          console.warn('[AdHocReportsPanel] picklists error', error);
           const errs: Record<string, string> = {};
-          sources.forEach(s => { errs[s] = json?.error || `HTTP ${resp.status}`; });
+          sources.forEach(s => { errs[s] = error.message || 'Invoke error'; });
           setEntityError(errs);
           setEntityLoading({});
           return;
         }
 
-        const data = json?.data || {};
+        // Expected payload shape from the edge function: { data: { accounts:[], classes:[], ... } }
+        const dataBag = (data && (data as any).data) || {};
         const opts: Record<string, Opt[]> = {};
         sources.forEach((s: string) => {
-          const arr = Array.isArray(data[s]) ? data[s] : [];
+          const arr = Array.isArray(dataBag[s]) ? dataBag[s] : [];
           opts[s] = arr as Opt[];
         });
 
@@ -181,7 +168,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
         setEntityError({});
       } catch (e: any) {
         if (cancelled) return;
-        console.warn('[AdHocReportsPanel] picklists fetch failed', e);
+        console.warn('[AdHocReportsPanel] picklists invoke failed', e);
         const errs: Record<string, string> = {};
         sources.forEach(s => { errs[s] = e?.message || 'Network error'; });
         setEntityError(errs);
@@ -213,7 +200,6 @@ export const AdHocReportsPanel: React.FC<Props> = ({
           </div>
         );
       case 'select': {
-        // Supports dynamic options when def.source is provided
         const src = def.source;
         const loading = src ? !!entityLoading[src] : false;
         const err = src ? entityError[src] : null;
