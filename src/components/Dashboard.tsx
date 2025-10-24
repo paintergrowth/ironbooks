@@ -904,13 +904,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
       {/* Current Position (Bank, Cash on Hand, Receivables)
           ⛔️ Defer until KPIs resolve with a real effRealmId */}
+      { /*
       {effRealmId && kpisReady && (
         <CurrentPosition
           realmId={effRealmId}
           className="bg-card border border-border/20 shadow-sm"
         />
       )}
-
+      */ }
       {/* Business Health */}
       <Card className="bg-card border border-border/20">
         <CardHeader className="pb-3">
