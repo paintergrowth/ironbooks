@@ -9,10 +9,20 @@ type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' |
 interface Transaction {
   id: string;
   date: string;
-  description: string;
   amount: number;
-  vendor: string;
-  status: 'paid' | 'pending' | 'overdue';
+
+  // From backend (optional)
+  type?: string | null;
+  docnum?: string | null;
+  name?: string | null;   // vendor/payee
+  memo?: string | null;   // description
+
+  // Back-compat (what your older UI used)
+  description?: string;
+  vendor?: string;
+
+  // Optional UI-only status (if you ever set it)
+  status?: 'paid' | 'pending' | 'overdue';
 }
 
 interface ExpenseTransactionModalProps {
@@ -49,7 +59,7 @@ const ExpenseTransactionModal: React.FC<ExpenseTransactionModalProps> = ({
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
-    }).format(amount);
+    }).format(amount || 0);
 
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString('en-US', {
@@ -67,7 +77,7 @@ const ExpenseTransactionModal: React.FC<ExpenseTransactionModalProps> = ({
     return `${day} ${month} ${year}`;
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status?: string) => {
     switch (status) {
       case 'paid':
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
@@ -116,6 +126,18 @@ const ExpenseTransactionModal: React.FC<ExpenseTransactionModalProps> = ({
       : '(Custom Range)'
     : presetLabel;
 
+  // Small helpers for UI fallbacks
+  const txTitle = (t: Transaction) =>
+    (t.memo && t.memo.trim()) ||
+    (t.description && t.description.trim()) ||
+    [t.type, t.docnum].filter(Boolean).join(' ').trim() ||
+    'Transaction';
+
+  const txVendor = (t: Transaction) =>
+    (t.name && t.name.trim()) ||
+    (t.vendor && t.vendor.trim()) ||
+    '—';
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
@@ -131,43 +153,54 @@ const ExpenseTransactionModal: React.FC<ExpenseTransactionModalProps> = ({
         </DialogHeader>
 
         <div className="overflow-y-auto max-h-[60vh] pr-2">
-          <div className="space-y-3">
-            {transactions.map((transaction) => (
-              <Card key={transaction.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h4 className="font-medium text-gray-900 dark:text-white">
-                          {transaction.description}
-                        </h4>
-                        <Badge className={getStatusColor(transaction.status)}>
-                          {transaction.status}
-                        </Badge>
+          {transactions.length === 0 ? (
+            <div className="p-6 text-sm text-muted-foreground">
+              No transactions found for this category and period.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {transactions.map((t) => (
+                <Card key={t.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h4 className="font-medium text-gray-900 dark:text-white">
+                            {txTitle(t)}
+                          </h4>
+                          {t.status ? (
+                            <Badge className={getStatusColor(t.status)}>{t.status}</Badge>
+                          ) : null}
+                        </div>
+
+                        {/* Optional: show doc number if present */}
+                        {t.docnum ? (
+                          <div className="text-xs text-muted-foreground mb-1">Doc#: {t.docnum}</div>
+                        ) : null}
+
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Building className="h-4 w-4" />
+                            {txVendor(t)}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-4 w-4" />
+                            {formatDate(t.date)}
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Building className="h-4 w-4" />
-                          {transaction.vendor}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          {formatDate(transaction.date)}
+                      <div className="text-right">
+                        <div className="font-bold text-lg text-gray-900 dark:text-white">
+                          {formatCurrency(t.amount)}
                         </div>
                       </div>
                     </div>
-
-                    <div className="text-right">
-                      <div className="font-bold text-lg text-gray-900 dark:text-white">
-                        {formatCurrency(transaction.amount)}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
