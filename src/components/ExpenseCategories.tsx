@@ -18,7 +18,7 @@ interface ExpenseCategoriesProps {
 }
 
 function fmt0(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
 }
 function pctChange(curr: number, prev: number): number | null {
   if (!isFinite(curr) || !isFinite(prev) || prev === 0) return null;
@@ -49,7 +49,8 @@ const formatHeaderDate = (yyyyMmDd: string) => {
 
 interface CategoryRow {
   name: string;
-  accountId?: string | null;
+  canonical?: string;         // NEW from API for robust matching
+  accountId?: string | null;  // may be null when multiple accounts contribute
   current: number;
   previous: number;
   share: number;
@@ -59,13 +60,15 @@ interface CategoriesPayload {
   total: { current: number; previous: number };
   categories: CategoryRow[];
   lastSyncAt?: string;
+  // optional range (not required for this UI flow)
+  range?: { mode: 'preset' | 'custom'; from: string; to: string };
 }
 interface TxnRow {
   date: string;
-  type?: string;
-  docnum?: string;
-  name?: string;
-  memo?: string;
+  type?: string | null;
+  docnum?: string | null;
+  name?: string | null;
+  memo?: string | null;
   amount: number | string;
 }
 
@@ -90,7 +93,7 @@ export default function ExpenseCategories({
   const [selected, setSelected] = useState<CategoryRow | null>(null);
   const [txns, setTxns] = useState<TxnRow[]>([]);
 
-  // 👉 NEW: keep the actual range used by the edge fn for the modal header
+  // 👉 Keep the actual range used by the edge fn for the modal header
   const [hdrMode, setHdrMode] = useState<'preset' | 'custom'>(mode);
   const [hdrFrom, setHdrFrom] = useState<string | null>(fromDate ?? null);
   const [hdrTo, setHdrTo] = useState<string | null>(toDate ?? null);
@@ -144,10 +147,11 @@ export default function ExpenseCategories({
     try {
       const body: any = {
         period,
-        accountId: row.accountId ?? undefined,
-        accountName: row.name,
+        // Use canonical label when available for exact name-group matching on the API
+        accountName: (row.canonical || row.name),
+        accountId: row.accountId ?? undefined, // will be ignored if null
         userId: effUserId ?? null,
-        realmId: effUserId ? effRealmId ?? null : null,
+        realmId: effUserId ? effRealmId ?? null : null, // ensure realmId is passed (API supports it)
         nonce: Date.now(),
       };
       if (mode === 'custom' && fromDate && toDate) {
@@ -215,7 +219,7 @@ export default function ExpenseCategories({
           const barPct = Math.max(0, Math.min(100, (c.share || 0) * 100));
           return (
             <Card
-              key={`${c.accountId || c.name}`}
+              key={`${c.canonical || c.name}:${c.accountId ?? 'multi'}`} // stable key even when accountId is null
               className="p-4 hover:shadow-md transition-shadow cursor-pointer"
               onClick={() => openDetails(c)}
             >
