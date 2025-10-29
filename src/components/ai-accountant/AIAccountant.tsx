@@ -55,10 +55,9 @@ type ChartConfig =
 
 type TableConfig = { columns?: { key: string; label?: string }[]; rows?: any[]; data?: any[] };
 type KPIConfig = { label: string; value: string; delta?: string; color?: 'green'|'red'|'amber'|'blue'|'slate' };
-// NEW — create a fresh chat under the EFFECTIVE identity (impersonated if active)
+// Create a new chat bound to the EFFECTIVE identity (impersonated if active)
 const handleNewChat = async () => {
   try {
-    // Resolve the effective identity you already computed
     const sendUserId = effUserId;
     const sendRealmId = effRealmId;
 
@@ -71,15 +70,15 @@ const handleNewChat = async () => {
       return;
     }
 
-    // Create a session that is tagged with the effective identity
-    const session = await (createSession as any)('New Chat', {
-      ownerUserId: sendUserId,
-      realmId: sendRealmId,
-    });
+    // If your hook supports identity params on create, pass them; otherwise plain create
+    const maybeCreate = (createSession as any);
+    const session =
+      typeof maybeCreate === 'function'
+        ? await maybeCreate('New Chat', { ownerUserId: sendUserId, realmId: sendRealmId })
+        : await createSession('New Chat');
 
     if (session) {
       selectSession(session);
-      // optional: clear any temp/streaming state
       setStreamingMessages([]);
       setInputValue('');
     }
@@ -88,6 +87,7 @@ const handleNewChat = async () => {
     toast({ title: 'New chat failed', description: 'Please try again.', variant: 'destructive' });
   }
 };
+
 
 const parseFencedBlocks = (text: string) => {
   const blocks: Array<{ kind: 'chart'|'table'|'kpi'|'text'; payload: any | string }> = [];
@@ -461,20 +461,21 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const [companyName, setCompanyName] = useState<string | null>(null);
 
   // Combine database messages with streaming messages for display
-  const allMessages = React.useMemo(() => {
-    const dbMessages: Message[] = chatMessages.map(msg => ({
-      id: msg.id,
-      content: msg.content,
-      role: msg.role,
-      timestamp: new Date(msg.created_at)
-    }));
-    const newStreamingMessages = streamingMessages.filter(streamMsg =>
-      !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
-    );
-    return [...dbMessages, ...newStreamingMessages].sort((a, b) =>
-      a.timestamp.getTime() - b.timestamp.getTime()
-    );
-  }, [chatMessages, streamingMessages]);
+const allMessages = React.useMemo(() => {
+  const safeMsgs = Array.isArray(chatMessages) ? chatMessages : [];
+  const dbMessages: Message[] = safeMsgs.map(msg => ({
+    id: msg.id,
+    content: msg.content,
+    role: msg.role,
+    timestamp: new Date(msg.created_at)
+  }));
+  const newStreamingMessages = streamingMessages.filter(streamMsg =>
+    !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
+  );
+  return [...dbMessages, ...newStreamingMessages].sort((a, b) =>
+    a.timestamp.getTime() - b.timestamp.getTime()
+  );
+}, [chatMessages, streamingMessages]);
 
   // Clear streaming messages when session changes
   React.useEffect(() => {
@@ -499,32 +500,45 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     })();
   }, [user?.id]);
 
-  // Fetch company name for the EFFECTIVE identity (auth-safe)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!effUserId || !effRealmId) return;
-try {
-  const { data, error } = await supabase.functions.invoke('qbo-company', {
-    body: { userId: effUserId, realmId: effRealmId },
-    headers: {
-      // Forward effective identity for your edge function
-      'x-ib-act-as-user': effUserId || '',
-      'x-ib-act-as-realm': String(effRealmId || ''),
-    },
-  });
+// Fetch company name for the EFFECTIVE identity (auth-safe)
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    if (!effUserId || !effRealmId) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('qbo-company', {
+        body: { userId: effUserId, realmId: effRealmId },
+        headers: {
+          // These are allowed by your function's CORS and help when admin impersonates
+          'x-ib-act-as-user': effUserId,
+          'x-ib-act-as-realm': String(effRealmId),
+        },
+      });
 
-  if (!error && data?.companyName) {
-    setCompanyName(data.companyName);
-  }
-} catch (e) {
-  // swallow auth hiccups and keep UI alive
-  console.warn('[qbo-company] 401/err → falling back to qboStatus.company_name', e);
-}
+      if (!cancelled) {
+        if (error) {
+          // Try to read structured error from the function for quick diagnosis
+          console.warn('[qbo-company] error', error);
+        } else if (data?.companyName) {
+          setCompanyName(data.companyName);
+        }
+      }
+    } catch (e: any) {
+      // If the function returned a 401/JSON error, surface it for clarity
+      try {
+        const resp = e?.context?.response; // supabase-js puts response in context
+        if (resp) {
+          const text = await resp.text();
+          console.warn('[qbo-company] 401/body:', text);
+          // NOTE: 401 here most likely means qbo_reauth_required for that user+realm
+        }
+      } catch {}
+      console.warn('[qbo-company] fetch failed:', e);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [effUserId, effRealmId]);
 
-    })();
-    return () => { cancelled = true; };
-  }, [effUserId, effRealmId]);
 
   // QuickBooks OAuth config (same as CFO Agent)
   const QBO_CLIENT_ID = 'ABdBqpI0xI6KDjHIgedbLVEnXrqjJpqLj2T3yyT7mBjkfI4ulJ';
