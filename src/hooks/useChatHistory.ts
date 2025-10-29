@@ -1,5 +1,5 @@
 // src/hooks/useChatHistory.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppContext } from '@/contexts/AppContext';
 import { useQBOStatus } from '@/hooks/useQBOStatus';
@@ -23,58 +23,71 @@ export interface ChatMessage {
   created_at: string;
 }
 
-export const useChatHistory = () => {
+type UseChatHistoryParams = {
+  /** Effective owner for scoping (impersonated OR actual). If omitted, falls back to authed user. */
+  ownerUserId?: string;
+};
+
+export const useChatHistory = (params: UseChatHistoryParams = {}) => {
   const { user } = useAppContext();
   const qboStatus = useQBOStatus();
+
+  // Scope resolution: prefer effective/impersonated user, else real user
+  const effectiveUserId = useMemo(() => params.ownerUserId ?? user?.id ?? null, [params.ownerUserId, user?.id]);
+
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load sessions
+  // Whenever the scope changes, reset current session & messages (prevents cross-scope leakage)
   useEffect(() => {
-    if (!user?.id) return;
-    
-    const loadSessions = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('chat_sessions')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('updated_at', { ascending: false });
-        
-        if (error) throw error;
-        setSessions(data || []);
-      } catch (error) {
-        console.error('Error loading sessions:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+    setCurrentSession(null);
+    setMessages([]);
+  }, [effectiveUserId]);
 
-    loadSessions();
-  }, [user?.id]);
+  // Load sessions for the effective owner
+  const loadSessions = useCallback(async () => {
+    if (!effectiveUserId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('chat_sessions')
+        .select('*')
+        .eq('user_id', effectiveUserId)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setSessions(data || []);
+    } catch (error) {
+      console.error('Error loading sessions:', error);
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [effectiveUserId]);
+
+  useEffect(() => { loadSessions(); }, [loadSessions]);
 
   // Load messages for current session
   useEffect(() => {
-    if (!currentSession?.id) {
-      setMessages([]);
-      return;
-    }
-
     const loadMessages = async () => {
+      if (!currentSession?.id) {
+        setMessages([]);
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from('chat_messages')
           .select('*')
           .eq('session_id', currentSession.id)
           .order('created_at', { ascending: true });
-        
+
         if (error) throw error;
         setMessages(data || []);
       } catch (error) {
         console.error('Error loading messages:', error);
+        setMessages([]);
       }
     };
 
@@ -82,23 +95,23 @@ export const useChatHistory = () => {
   }, [currentSession?.id]);
 
   const createSession = async (title: string): Promise<ChatSession | null> => {
-    if (!user?.id) return null;
+    if (!effectiveUserId) return null;
 
     try {
       const { data, error } = await supabase
         .from('chat_sessions')
         .insert({
           title,
-          user_id: user.id,
+          user_id: effectiveUserId, // write under EFFECTIVE identity
         })
         .select()
         .single();
-      
+
       if (error) throw error;
-      
+
       const newSession = data as ChatSession;
       setSessions(prev => [newSession, ...prev]);
-      // Don't set current session here - let the caller do it after saving the first message
+      // Let the caller decide when to select; mirrors your current behavior
       return newSession;
     } catch (error) {
       console.error('Error creating session:', error);
@@ -107,6 +120,11 @@ export const useChatHistory = () => {
   };
 
   const selectSession = (session: ChatSession) => {
+    // Guard: avoid selecting a session from another owner scope
+    if (session.user_id !== effectiveUserId) {
+      console.warn('[useChatHistory] Ignored selecting session from different owner scope.');
+      return;
+    }
     setCurrentSession(session);
   };
 
@@ -116,12 +134,12 @@ export const useChatHistory = () => {
     tokens_in = 0,
     tokens_out = 0,
     cost = 0,
-    sessionId?: string // Allow overriding the session ID
+    sessionId?: string
   ): Promise<ChatMessage | null> => {
     const targetSessionId = sessionId || currentSession?.id;
     if (!targetSessionId) return null;
 
-    // Add optimistic message for instant UI feedback
+    // Optimistic UI
     const tempId = crypto.randomUUID();
     const tempMessage: ChatMessage = {
       id: tempId,
@@ -131,9 +149,8 @@ export const useChatHistory = () => {
       tokens_in,
       tokens_out,
       cost,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     };
-    
     setMessages(prev => [...prev, tempMessage]);
 
     try {
@@ -149,27 +166,30 @@ export const useChatHistory = () => {
         })
         .select()
         .single();
-      
+
       if (error) throw error;
-      
+
       const newMessage = data as ChatMessage;
-      
-      // Replace the optimistic message with the real one
-      setMessages(prev => prev.map(msg => 
-        msg.id === tempId ? newMessage : msg
-      ));
-      
+
+      // Swap optimistic with real
+      setMessages(prev => prev.map(m => (m.id === tempId ? newMessage : m)));
+
       // Update session timestamp
       await supabase
         .from('chat_sessions')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', targetSessionId);
-      
+
+      // Also bump the session in local list (so sorting looks right if you refetch)
+      setSessions(prev =>
+        prev.map(s => (s.id === targetSessionId ? { ...s, updated_at: new Date().toISOString() } : s))
+      );
+
       return newMessage;
     } catch (error) {
       console.error('Error saving message:', error);
-      // Remove the optimistic message on error
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      // Rollback optimistic insert
+      setMessages(prev => prev.filter(m => m.id !== tempId));
       return null;
     }
   };
@@ -179,18 +199,17 @@ export const useChatHistory = () => {
       const { error } = await supabase
         .from('chat_sessions')
         .update({ title })
-        .eq('id', sessionId);
-      
+        .eq('id', sessionId)
+        .eq('user_id', effectiveUserId); // safety: only mutate within scope
+
       if (error) throw error;
-      
-      setSessions(prev => 
-        prev.map(session => 
-          session.id === sessionId ? { ...session, title } : session
-        )
+
+      setSessions(prev =>
+        prev.map(s => (s.id === sessionId ? { ...s, title } : s))
       );
-      
+
       if (currentSession?.id === sessionId) {
-        setCurrentSession(prev => prev ? { ...prev, title } : null);
+        setCurrentSession(prev => (prev ? { ...prev, title } : null));
       }
     } catch (error) {
       console.error('Error updating session title:', error);
@@ -202,24 +221,27 @@ export const useChatHistory = () => {
       const { error } = await supabase
         .from('chat_sessions')
         .delete()
-        .eq('id', sessionId);
-      
+        .eq('id', sessionId)
+        .eq('user_id', effectiveUserId); // safety: only delete within scope
+
       if (error) throw error;
-      
-      setSessions(prev => prev.filter(session => session.id !== sessionId));
-      
+
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
       if (currentSession?.id === sessionId) {
         setCurrentSession(null);
+        setMessages([]);
       }
     } catch (error) {
       console.error('Error deleting session:', error);
     }
   };
 
+  // Kept for backward-compat (not used by AIAccountant which calls the function directly)
   const callQBOAgent = async (query: string): Promise<{ response: string; metadata?: any }> => {
-    if (!user?.id) throw new Error('User not authenticated');
-    
-    // Check QuickBooks connection
+    // If someone still uses this helper, we run it under the *current authed* user + qboStatus
+    const authedUserId = user?.id;
+    if (!authedUserId) throw new Error('User not authenticated');
+
     if (!qboStatus.connected || !qboStatus.realm_id) {
       throw new Error('QuickBooks not connected. Please connect your QuickBooks account to access financial data.');
     }
@@ -227,15 +249,14 @@ export const useChatHistory = () => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('qbo-query-agent', {
-        body: { 
-          query, 
-          userId: user.id,
-          realmId: qboStatus.realm_id
-        }
+        body: {
+          query,
+          userId: authedUserId,
+          realmId: qboStatus.realm_id,
+        },
       });
-      
+
       if (error) {
-        // Handle specific error cases
         if (error.message?.includes('Missing query, realmId, or userId')) {
           throw new Error('QuickBooks connection issue. Please reconnect your account.');
         }
@@ -244,10 +265,10 @@ export const useChatHistory = () => {
         }
         throw error;
       }
-      
+
       return {
         response: data.response || "I'm sorry, I couldn't process that query.",
-        metadata: data.metadata
+        metadata: data.metadata,
       };
     } catch (error) {
       console.error('QBO Agent error:', error);
@@ -267,6 +288,6 @@ export const useChatHistory = () => {
     saveMessage,
     updateSessionTitle,
     deleteSession,
-    callQBOAgent,
+    callQBOAgent, // legacy helper
   };
 };
