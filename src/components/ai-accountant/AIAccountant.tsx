@@ -263,17 +263,22 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     return () => { document.body.style.overflow = originalStyle; };
   }, []);
 
-  const {
-    sessions,
-    currentSession,
-    messages: chatMessages,
-    loading,
-    createSession,
-    selectSession,
-    saveMessage,
-    updateSessionTitle,
-    deleteSession,
-  } = useChatHistory();
+// Use the same effective identity you already computed
+const chatOwnerUserId = effUserId || undefined;
+const chatOwnerRealmId = effRealmId || undefined;
+
+const {
+  sessions,
+  currentSession,
+  messages: chatMessages,
+  loading,
+  createSession,
+  selectSession,
+  saveMessage,
+  updateSessionTitle,
+  deleteSession,
+} = useChatHistory({ ownerUserId: chatOwnerUserId, ownerRealmId: chatOwnerRealmId });
+
 
   const qboStatus = useQBOStatus();
 
