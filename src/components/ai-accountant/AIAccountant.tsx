@@ -55,6 +55,39 @@ type ChartConfig =
 
 type TableConfig = { columns?: { key: string; label?: string }[]; rows?: any[]; data?: any[] };
 type KPIConfig = { label: string; value: string; delta?: string; color?: 'green'|'red'|'amber'|'blue'|'slate' };
+// NEW — create a fresh chat under the EFFECTIVE identity (impersonated if active)
+const handleNewChat = async () => {
+  try {
+    // Resolve the effective identity you already computed
+    const sendUserId = effUserId;
+    const sendRealmId = effRealmId;
+
+    if (!sendUserId || !sendRealmId) {
+      toast({
+        title: 'Missing identity',
+        description: 'User or realm not resolved yet. Connect QuickBooks and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Create a session that is tagged with the effective identity
+    const session = await (createSession as any)('New Chat', {
+      ownerUserId: sendUserId,
+      realmId: sendRealmId,
+    });
+
+    if (session) {
+      selectSession(session);
+      // optional: clear any temp/streaming state
+      setStreamingMessages([]);
+      setInputValue('');
+    }
+  } catch (e) {
+    console.error('[AIAccountant] handleNewChat error:', e);
+    toast({ title: 'New chat failed', description: 'Please try again.', variant: 'destructive' });
+  }
+};
 
 const parseFencedBlocks = (text: string) => {
   const blocks: Array<{ kind: 'chart'|'table'|'kpi'|'text'; payload: any | string }> = [];
