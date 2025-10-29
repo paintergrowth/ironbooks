@@ -504,14 +504,24 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     let cancelled = false;
     (async () => {
       if (!effUserId || !effRealmId) return;
-      try {
-        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
-          body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
-        });
-        if (!error && !cancelled && data?.companyName) {
-          setCompanyName(data.companyName);
-        }
-      } catch {}
+try {
+  const { data, error } = await supabase.functions.invoke('qbo-company', {
+    body: { userId: effUserId, realmId: effRealmId },
+    headers: {
+      // Forward effective identity for your edge function
+      'x-ib-act-as-user': effUserId || '',
+      'x-ib-act-as-realm': String(effRealmId || ''),
+    },
+  });
+
+  if (!error && data?.companyName) {
+    setCompanyName(data.companyName);
+  }
+} catch (e) {
+  // swallow auth hiccups and keep UI alive
+  console.warn('[qbo-company] 401/err → falling back to qboStatus.company_name', e);
+}
+
     })();
     return () => { cancelled = true; };
   }, [effUserId, effRealmId]);
