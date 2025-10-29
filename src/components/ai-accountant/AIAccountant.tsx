@@ -268,17 +268,9 @@ const chatOwnerUserId = effUserId || undefined;
 const chatOwnerRealmId = effRealmId || undefined;
 
 const {
-  sessions,
-  currentSession,
-  messages: chatMessages,
-  loading,
-  createSession,
-  selectSession,
-  saveMessage,
-  updateSessionTitle,
-  deleteSession,
-} = useChatHistory({ ownerUserId: chatOwnerUserId, ownerRealmId: chatOwnerRealmId });
-
+  sessions, currentSession, messages, loading,
+  createSession, selectSession, saveMessage, updateSessionTitle, deleteSession,
+} = useChatHistory({ ownerUserId: effUserId || undefined });
 
   const qboStatus = useQBOStatus();
 
