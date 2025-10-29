@@ -1,3 +1,4 @@
+
 // src/components/ai-accountant/AIAccountant.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -55,39 +56,6 @@ type ChartConfig =
 
 type TableConfig = { columns?: { key: string; label?: string }[]; rows?: any[]; data?: any[] };
 type KPIConfig = { label: string; value: string; delta?: string; color?: 'green'|'red'|'amber'|'blue'|'slate' };
-// Create a new chat bound to the EFFECTIVE identity (impersonated if active)
-const handleNewChat = async () => {
-  try {
-    const sendUserId = effUserId;
-    const sendRealmId = effRealmId;
-
-    if (!sendUserId || !sendRealmId) {
-      toast({
-        title: 'Missing identity',
-        description: 'User or realm not resolved yet. Connect QuickBooks and try again.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // If your hook supports identity params on create, pass them; otherwise plain create
-    const maybeCreate = (createSession as any);
-    const session =
-      typeof maybeCreate === 'function'
-        ? await maybeCreate('New Chat', { ownerUserId: sendUserId, realmId: sendRealmId })
-        : await createSession('New Chat');
-
-    if (session) {
-      selectSession(session);
-      setStreamingMessages([]);
-      setInputValue('');
-    }
-  } catch (e) {
-    console.error('[AIAccountant] handleNewChat error:', e);
-    toast({ title: 'New chat failed', description: 'Please try again.', variant: 'destructive' });
-  }
-};
-
 
 const parseFencedBlocks = (text: string) => {
   const blocks: Array<{ kind: 'chart'|'table'|'kpi'|'text'; payload: any | string }> = [];
@@ -448,7 +416,74 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     }
   };
 
+  const pickVoice = () => {
+    const byLang = voices.filter(v => (v.lang || '').toLowerCase().startsWith(TTS_LANG.toLowerCase()));
+    const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Aria Online (Natural) - English (United States)'];
+    const preferred = byLang.find(v => preferredNames.includes(v.name)) || byLang[0] || voices[0] || null;
+    return preferred || null;
+  };
+
+  const speakText = (text: string, messageId: string) => {
+    if (!('speechSynthesis' in window)) {
+      toast({ title: 'Playback not supported', description: 'Your browser does not support text-to-speech.', variant: 'destructive' });
+      return;
+    }
+    if (!text?.trim()) return;
+
+    const s = speechSynthesis;
+
+    const trySpeak = () => {
+      stopTTS();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = TTS_RATE;
+      u.pitch = TTS_PITCH;
+      const voice = pickVoice();
+      if (voice) { u.voice = voice; u.lang = voice.lang || TTS_LANG; } else { u.lang = TTS_LANG; }
+      u.onstart = () => { setIsSpeaking(true); setSpeakingMessageId(messageId); };
+      u.onend = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
+      u.onerror = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
+      utteranceRef.current = u;
+      try { s.resume(); } catch {}
+      s.speak(u);
+    };
+
+    if (!ttsReady || voices.length === 0) {
+      const onVoices = () => {
+        setTimeout(() => {
+          try { speechSynthesis.onvoiceschanged = null as any; } catch {}
+          trySpeak();
+        }, 0);
+      };
+      try { speechSynthesis.onvoiceschanged = onVoices; } catch {}
+      setTimeout(onVoices, 250);
+    } else {
+      trySpeak();
+    }
+  };
+
   useEffect(() => () => stopTTS(), []); // stop speech on unmount
+
+  // Combine database messages with streaming messages for display
+  const allMessages = React.useMemo(() => {
+    const dbMessages: Message[] = chatMessages.map(msg => ({
+      id: msg.id,
+      content: msg.content,
+      role: msg.role,
+      timestamp: new Date(msg.created_at)
+    }));
+    const newStreamingMessages = streamingMessages.filter(streamMsg =>
+      !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
+    );
+    return [...dbMessages, ...newStreamingMessages].sort((a, b) =>
+      a.timestamp.getTime() - b.timestamp.getTime()
+    );
+  }, [chatMessages, streamingMessages]);
+
+  // Clear streaming messages when session changes
+  React.useEffect(() => {
+    setStreamingMessages([]);
+    stopTTS();
+  }, [currentSession?.id]);
 
   // ---- Impersonation / Effective identity ----
   const { isImpersonating, target } = useImpersonation();
@@ -457,31 +492,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
   const effRealmId = isImpersonating
     ? (target?.realmId ?? null)
-    : (realRealmId ?? useQBOStatus()?.realm_id ?? null); // keep original behavior
+    : (realRealmId ?? qboStatus?.realm_id ?? null);
   const [companyName, setCompanyName] = useState<string | null>(null);
-
-  // Combine database messages with streaming messages for display
-const allMessages = React.useMemo(() => {
-  const safeMsgs = Array.isArray(chatMessages) ? chatMessages : [];
-  const dbMessages: Message[] = safeMsgs.map(msg => ({
-    id: msg.id,
-    content: msg.content,
-    role: msg.role,
-    timestamp: new Date(msg.created_at)
-  }));
-  const newStreamingMessages = streamingMessages.filter(streamMsg =>
-    !dbMessages.find(dbMsg => dbMsg.content === streamMsg.content && dbMsg.role === streamMsg.role)
-  );
-  return [...dbMessages, ...newStreamingMessages].sort((a, b) =>
-    a.timestamp.getTime() - b.timestamp.getTime()
-  );
-}, [chatMessages, streamingMessages]);
-
-  // Clear streaming messages when session changes
-  React.useEffect(() => {
-    setStreamingMessages([]);
-    stopTTS();
-  }, [currentSession?.id]);
 
   // Load REAL user's realm (used when not impersonating)
   useEffect(() => {
@@ -500,45 +512,22 @@ const allMessages = React.useMemo(() => {
     })();
   }, [user?.id]);
 
-// Fetch company name for the EFFECTIVE identity (auth-safe)
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    if (!effUserId || !effRealmId) return;
-    try {
-      const { data, error } = await supabase.functions.invoke('qbo-company', {
-        body: { userId: effUserId, realmId: effRealmId },
-        headers: {
-          // These are allowed by your function's CORS and help when admin impersonates
-          'x-ib-act-as-user': effUserId,
-          'x-ib-act-as-realm': String(effRealmId),
-        },
-      });
-
-      if (!cancelled) {
-        if (error) {
-          // Try to read structured error from the function for quick diagnosis
-          console.warn('[qbo-company] error', error);
-        } else if (data?.companyName) {
+  // Fetch company name for the EFFECTIVE identity (auth-safe)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!effUserId || !effRealmId) return;
+      try {
+        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
+          body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
+        });
+        if (!error && !cancelled && data?.companyName) {
           setCompanyName(data.companyName);
         }
-      }
-    } catch (e: any) {
-      // If the function returned a 401/JSON error, surface it for clarity
-      try {
-        const resp = e?.context?.response; // supabase-js puts response in context
-        if (resp) {
-          const text = await resp.text();
-          console.warn('[qbo-company] 401/body:', text);
-          // NOTE: 401 here most likely means qbo_reauth_required for that user+realm
-        }
       } catch {}
-      console.warn('[qbo-company] fetch failed:', e);
-    }
-  })();
-  return () => { cancelled = true; };
-}, [effUserId, effRealmId]);
-
+    })();
+    return () => { cancelled = true; };
+  }, [effUserId, effRealmId]);
 
   // QuickBooks OAuth config (same as CFO Agent)
   const QBO_CLIENT_ID = 'ABdBqpI0xI6KDjHIgedbLVEnXrqjJpqLj2T3yyT7mBjkfI4ulJ';
@@ -599,29 +588,6 @@ useEffect(() => {
     { icon: Calculator, label: 'Calculate', color: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/40 dark:text-orange-200' },
   ];
 
-  const getMsgById = (id: string) => {
-    const all = [...streamingMessages, ...chatMessages.map(m => ({
-      id: m.id, content: m.content, role: m.role as 'user'|'assistant', timestamp: new Date(m.created_at)
-    }))];
-    return all.find(m => m.id === id);
-  };
-
-  const handleCopyMessage = (content: string) => {
-    navigator.clipboard.writeText(content);
-  };
-
-  const handleRegenerateResponse = async (messageId: string) => {
-    console.log('Regenerating response for message:', messageId);
-  };
-
-  const handleThumbsUp = (messageId: string) => {
-    console.log('Thumbs up for message:', messageId);
-  };
-
-  const handleThumbsDown = (messageId: string) => {
-    console.log('Thumbs down for message:', messageId);
-  };
-
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !user) return;
 
@@ -654,8 +620,7 @@ useEffect(() => {
     // Create new session if none exists
     let session = currentSession;
     if (!session) {
-      // CHANGE #1: ensure new session is owned by the effective identity
-      session = await (createSession as any)('New Chat', { ownerUserId: sendUserId!, realmId: sendRealmId! });
+      session = await createSession('New Chat');
       if (!session) return;
     }
 
@@ -767,6 +732,102 @@ useEffect(() => {
     }, 1250);
   };
 
+  const getMsgById = (id: string) => {
+    const all = [...streamingMessages, ...chatMessages.map(m => ({
+      id: m.id, content: m.content, role: m.role as 'user'|'assistant', timestamp: new Date(m.created_at)
+    }))];
+    return all.find(m => m.id === id);
+  };
+
+  const handleCopyMessage = (content: string) => {
+    navigator.clipboard.writeText(content);
+  };
+
+  const handleRegenerateResponse = async (messageId: string) => {
+    console.log('Regenerating response for message:', messageId);
+  };
+
+  const handleThumbsUp = (messageId: string) => {
+    console.log('Thumbs up for message:', messageId);
+  };
+
+  const handleThumbsDown = (messageId: string) => {
+    console.log('Thumbs down for message:', messageId);
+  };
+
+  const handleNewChat = async () => {
+    const newSession = await createSession('New Chat');
+    if (newSession) selectSession(newSession);
+    stopTTS();
+  };
+
+  const filteredSessions = sessions.filter(session =>
+    session.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const groupSessionsByDate = (sessions: typeof filteredSessions) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const groups = { today: [] as typeof sessions, yesterday: [] as typeof sessions, week: [] as typeof sessions, older: [] as typeof sessions };
+
+    sessions.forEach(session => {
+      const sessionDate = new Date(session.updated_at);
+      if (sessionDate >= today) groups.today.push(session);
+      else if (sessionDate >= yesterday) groups.yesterday.push(session);
+      else if (sessionDate >= weekAgo) groups.week.push(session);
+      else groups.older.push(session);
+    });
+
+    return groups;
+  };
+
+  const sessionGroups = groupSessionsByDate(filteredSessions);
+
+  const loadMoreSessions = (group: 'today' | 'yesterday' | 'week' | 'older') => {
+    setDisplayLimits(prev => ({ ...prev, [group]: prev[group] + 10 }));
+  };
+
+  // ----- Chat helpers -----
+  const generateReasoningSteps = (query: string) => {
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
+        { id: '2', title: 'Querying transaction data', content: 'Searching QuickBooks transactions for expense categories and amounts in the specified timeframe.', type: 'lookup' },
+        { id: '3', title: 'Calculating totals', content: 'Aggregating expense amounts by category and computing percentage changes from previous periods.', type: 'calculation' },
+        { id: '4', title: 'Generating insights', content: 'Identifying trends, outliers, and actionable recommendations based on expense patterns.', type: 'synthesis' }
+      ];
+    }
+    if (query.toLowerCase().includes('revenue') || query.toLowerCase().includes('profit')) {
+      return [
+        { id: '1', title: 'Understanding revenue request', content: 'Parsing query to determine if user wants revenue trends, profit margins, or comparative analysis.', type: 'analysis' },
+        { id: '2', title: 'Fetching financial data', content: 'Retrieving income statements and revenue data from QuickBooks for the requested period.', type: 'lookup' },
+        { id: '3', title: 'Synthesizing response', content: 'Combining revenue data with industry benchmarks to provide contextual business insights.', type: 'synthesis' }
+      ];
+    }
+    return [
+      { id: '1', title: 'Processing query', content: 'Analyzing the user\'s question to understand the financial information being requested.', type: 'analysis' },
+      { id: '2', title: 'Accessing data', content: 'Connecting to QuickBooks Online to retrieve relevant financial records and metrics.', type: 'lookup' },
+      { id: '3', title: 'Generating response', content: 'Formulating a comprehensive answer with actionable insights and recommendations.', type: 'synthesis' }
+    ];
+  };
+
+  const generateSources = (query: string) => {
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'QuickBooks Online - Expense Transactions', type: 'quickbooks', description: 'Retrieved expense data from your QuickBooks Online account for the specified period.' },
+        { id: '2', title: 'Expense Category Analysis', type: 'calculation', description: 'Calculated expense totals and percentage changes by category.' },
+        { id: '3', title: 'Industry Benchmark Data', type: 'api', description: 'Compared your expenses against industry averages for small businesses.' }
+      ];
+    }
+    return [
+      { id: '1', title: 'QuickBooks Online - Financial Data', type: 'quickbooks', description: 'General financial information retrieved from your QuickBooks Online account.' },
+      { id: '2', title: 'Financial Analysis Report', type: 'report', description: 'Generated analytical insights based on your financial data.' }
+    ];
+  };
+
   // ----- Streaming caller (auth-safe SSE, then JSON fallback simulation) -----
   const callAgentStreaming = async (
     query: string,
@@ -820,79 +881,6 @@ useEffect(() => {
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
     if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
     return `${Math.floor(diffInMinutes / 1440)}d ago`;
-  };
-
-  // ----- Chat helpers -----
-  const generateReasoningSteps = (query: string) => {
-    if (query.toLowerCase().includes('expense')) {
-      return [
-        { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
-        { id: '2', title: 'Querying transaction data', content: 'Searching QuickBooks transactions for expense categories and amounts in the specified timeframe.', type: 'lookup' },
-        { id: '3', title: 'Calculating totals', content: 'Aggregating expense amounts by category and computing percentage changes from previous periods.', type: 'calculation' },
-        { id: '4', title: 'Generating insights', content: 'Identifying trends, outliers, and actionable recommendations based on expense patterns.', type: 'synthesis' }
-      ];
-    }
-    if (query.toLowerCase().includes('revenue') || query.toLowerCase().includes('profit')) {
-      return [
-        { id: '1', title: 'Understanding revenue request', content: 'Parsing query to determine if user wants revenue trends, profit margins, or comparative analysis.', type: 'analysis' },
-        { id: '2', title: 'Fetching financial data', content: 'Retrieving income statements and revenue data from QuickBooks for the requested period.', type: 'lookup' },
-        { id: '3', title: 'Synthesizing response', content: 'Combining revenue data with industry benchmarks to provide contextual business insights.', type: 'synthesis' }
-      ];
-    }
-    return [
-      { id: '1', title: 'Processing query', content: 'Analyzing the user\'s question to understand the financial information being requested.', type: 'analysis' },
-      { id: '2', title: 'Accessing data', content: 'Connecting to QuickBooks Online to retrieve relevant financial records and metrics.', type: 'lookup' },
-      { id: '3', title: 'Generating response', content: 'Formulating a comprehensive answer with actionable insights and recommendations.', type: 'synthesis' }
-    ];
-  };
-
-  const generateSources = (query: string) => {
-    if (query.toLowerCase().includes('expense')) {
-      return [
-        { id: '1', title: 'QuickBooks Online - Expense Transactions', type: 'quickbooks', description: 'Retrieved expense data from your QuickBooks Online account for the specified period.' },
-        { id: '2', title: 'Expense Category Analysis', type: 'calculation', description: 'Calculated expense totals and percentage changes by category.' },
-        { id: '3', title: 'Industry Benchmark Data', type: 'api', description: 'Compared your expenses against industry averages for small businesses.' }
-      ];
-    }
-    return [
-      { id: '1', title: 'QuickBooks Online - Financial Data', type: 'quickbooks', description: 'General financial information retrieved from your QuickBooks Online account.' },
-      { id: '2', title: 'Financial Analysis Report', type: 'report', description: 'Generated analytical insights based on your financial data.' }
-    ];
-  };
-
-  // ----- Sidebar filtering by impersonated identity -----
-  // CHANGE #2: make the sidebar show sessions for the EFFECTIVE identity (impersonated user + realm)
-  const filteredSessions = sessions
-    .filter((s: any) => {
-      if (!isImpersonating) return true;
-      // tolerate missing fields by showing nothing unless both match
-      return s?.owner_user_id === effUserId && s?.realm_id === effRealmId;
-    })
-    .filter(session => session.title.toLowerCase().includes(searchQuery.toLowerCase()));
-
-  const groupSessionsByDate = (sessionsInput: typeof filteredSessions) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-    const groups = { today: [] as typeof sessionsInput, yesterday: [] as typeof sessionsInput, week: [] as typeof sessionsInput, older: [] as typeof sessionsInput };
-
-    sessionsInput.forEach(session => {
-      const sessionDate = new Date(session.updated_at);
-      if (sessionDate >= today) groups.today.push(session);
-      else if (sessionDate >= yesterday) groups.yesterday.push(session);
-      else if (sessionDate >= weekAgo) groups.week.push(session);
-      else groups.older.push(session);
-    });
-
-    return groups;
-  };
-
-  const sessionGroups = groupSessionsByDate(filteredSessions);
-
-  const loadMoreSessions = (group: 'today' | 'yesterday' | 'week' | 'older') => {
-    setDisplayLimits(prev => ({ ...prev, [group]: prev[group] + 10 }));
   };
 
   return (
@@ -1312,13 +1300,13 @@ useEffect(() => {
                             className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
                             onClick={() => loadMoreSessions('older')}
                           >
-                            Load more
+                            Load {Math.min(10, groups.older.length - displayLimits.older)} more older chats
                           </Button>
                         )}
                       </>
                     )}
 
-                    {!loading && filteredSessions.length === 0 && (
+                    {!loading && sessions.length === 0 && (
                       <div className="text-sm text-muted-foreground px-2 py-4 text-center dark:text-slate-300/90">
                         No chat history yet
                       </div>
@@ -1578,7 +1566,7 @@ useEffect(() => {
                     </>
                   )}
 
-                  {!loading && filteredSessions.length === 0 && (
+                  {!loading && sessions.length === 0 && (
                     <div className="text-sm text-muted-foreground px-2 py-4 text-center dark:text-slate-300/90">
                       No chat history yet
                     </div>
