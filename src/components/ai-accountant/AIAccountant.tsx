@@ -263,24 +263,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     return () => { document.body.style.overflow = originalStyle; };
   }, []);
 
-// Use the same effective identity you already computed
-const chatOwnerUserId = effUserId || undefined;
-const chatOwnerRealmId = effRealmId || undefined;
-
-    // ---- Impersonation / Effective identity ----
-  const { isImpersonating, target } = useImpersonation();
-  const [realRealmId, setRealRealmId] = useState<string | null>(null);
-  const [fullName, setFullName] = useState<string | null>(null);
-  const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
-  const effRealmId = isImpersonating
-    ? (target?.realmId ?? null)
-    : (realRealmId ?? qboStatus?.realm_id ?? null);
-  const [companyName, setCompanyName] = useState<string | null>(null);
-
-const {
-  sessions, currentSession, messages: chatMessages, loading,
-  createSession, selectSession, saveMessage, updateSessionTitle, deleteSession
-} = useChatHistory({ ownerUserId: effUserId || undefined });
+  const {
+    sessions,
+    currentSession,
+    messages: chatMessages,
+    loading,
+    createSession,
+    selectSession,
+    saveMessage,
+    updateSessionTitle,
+    deleteSession,
+  } = useChatHistory();
 
   const qboStatus = useQBOStatus();
 
@@ -492,6 +485,15 @@ const {
     stopTTS();
   }, [currentSession?.id]);
 
+  // ---- Impersonation / Effective identity ----
+  const { isImpersonating, target } = useImpersonation();
+  const [realRealmId, setRealRealmId] = useState<string | null>(null);
+  const [fullName, setFullName] = useState<string | null>(null);
+  const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
+  const effRealmId = isImpersonating
+    ? (target?.realmId ?? null)
+    : (realRealmId ?? qboStatus?.realm_id ?? null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
 
   // Load REAL user's realm (used when not impersonating)
   useEffect(() => {
