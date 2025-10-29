@@ -262,21 +262,6 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     return () => { document.body.style.overflow = originalStyle; };
   }, []);
 
-  // ---- Impersonation / Effective identity ----
-  const { isImpersonating, target } = useImpersonation();
-  const [realRealmId, setRealRealmId] = useState<string | null>(null);
-  const [fullName, setFullName] = useState<string | null>(null);
-  const [companyName, setCompanyName] = useState<string | null>(null);
-
-  const qboStatus = useQBOStatus();
-
-  const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
-  const effRealmId = isImpersonating
-    ? (target?.realmId ?? null)
-    : (qboStatus?.realm_id ?? null);
-
-  // ⬇️⬇️⬇️  **PATCH 1: scope chat history to effective identity**  ⬇️⬇️⬇️
-  // These props are intentionally minimal; the hook should re-run when they change.
   const {
     sessions,
     currentSession,
@@ -287,11 +272,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     saveMessage,
     updateSessionTitle,
     deleteSession,
-  } = useChatHistory({
-    ownerUserId: effUserId ?? undefined,
-    realmId: effRealmId ?? undefined,
-  });
-  // ⬆️⬆️⬆️  **PATCH 1 END**  ⬆️⬆️⬆️
+  } = useChatHistory();
+
+  const qboStatus = useQBOStatus();
 
   const [inputValue, setInputValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -302,253 +285,11 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   // Local streaming messages (separate from database-backed chat history)
   const [streamingMessages, setStreamingMessages] = useState<Message[]>([]);
 
-  // Load REAL user's realm (used when not impersonating)
-  useEffect(() => {
-    (async () => {
-      if (!user?.id) return;
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('qbo_realm_id, full_name')
-        .eq('id', user.id)
-        .single();
-      if (!error) {
-        // NOTE: we no longer rely on realRealmId for effRealmId (qboStatus already exposes it),
-        // but we keep full name behavior unchanged.
-        const name = (data?.full_name ?? '').trim();
-        setFullName(name.length ? name : null);
-      }
-    })();
-  }, [user?.id]);
-
-  // Fetch company name for the EFFECTIVE identity (auth-safe)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!effUserId || !effRealmId) return;
-      try {
-        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
-          body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
-        });
-        if (!error && !cancelled && data?.companyName) {
-          setCompanyName(data.companyName);
-        }
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [effUserId, effRealmId]);
-
-  // QuickBooks OAuth config (same as CFO Agent)
-  const QBO_CLIENT_ID = 'ABdBqpI0xI6KDjHIgedbLVEnXrqjJpqLj2T3yyT7mBjkfI4ulJ';
-  const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
-  const QBO_SCOPES = 'com.intuit.quickbooks.accounting openid profile email';
-  const QBO_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
-
-  const buildQboAuthUrl = () => {
-    const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    try {
-      localStorage.setItem('qbo_oauth_state', state);
-      localStorage.setItem('qbo_postAuthReturn', window.location.pathname + window.location.search + window.location.hash);
-    } catch {}
-    return `${QBO_AUTHORIZE_URL}?client_id=${encodeURIComponent(QBO_CLIENT_ID)}&redirect_uri=${encodeURIComponent(QBO_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(QBO_SCOPES)}&state=${encodeURIComponent(state)}&prompt=consent`;
-  };
-
-  const handleConnectQuickBooks = () => {
-    if (!QBO_CLIENT_ID) {
-      toast({ title: 'QuickBooks', description: 'Missing Client ID configuration.', variant: 'destructive' });
-      return;
-    }
-    const url = buildQboAuthUrl();
-    window.location.assign(url);
-  };
-
-  const handleSyncTransactions = async () => {
-    if (!qboStatus.connected || !qboStatus.realm_id || !user?.id) {
-      toast({ title: 'Sync Error', description: 'QuickBooks not connected or missing info.', variant: 'destructive' });
-      return;
-    }
-    try {
-      const { data, error } = await supabase.functions.invoke('qbo-sync-transactions', {
-        body: { realmId: qboStatus.realm_id, userId: user.id, mode: 'full' }
-      });
-      if (error) {
-        console.error('[Manual Sync] Failed:', error.message);
-        toast({ title: 'Sync Failed', description: error.message, variant: 'destructive' });
-      } else {
-        toast({ title: 'Sync Success', description: 'Transactions imported successfully!' });
-      }
-    } catch (e) {
-      console.error('[Manual Sync] Exception:', e);
-      toast({ title: 'Sync Error', description: 'Unexpected error during sync.', variant: 'destructive' });
-    }
-  };
-
-  const samplePrompts = [
-    'How are my financials trending?',
-    'What was my revenue last month?',
-    'What is my projected revenue for current year?',
-    'What are my key expenses?',
-  ];
-
-  const actionButtons = [
-    { icon: Sparkles, label: 'Analyze', color: 'bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/30 dark:hover:bg-purple-900/40 dark:text-purple-200' },
-    { icon: BarChart3, label: 'Reports', color: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/40 dark:text-blue-200' },
-    { icon: FileText, label: 'Documents', color: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900/30 dark:hover:bg-green-900/40 dark:text-green-200' },
-    { icon: Calculator, label: 'Calculate', color: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/40 dark:text-orange-200' },
-  ];
-
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || !user) return;
-
-    if (isRecording) stopMic();
-    stopTTS(); // stop reading if the user sends something new
-
-    // Resolve identity *fresh* at send-time to avoid momentary nulls
-    const { data: authUserData } = await supabase.auth.getUser();
-    const sendUserId = isImpersonating
-      ? (target?.userId ?? null)
-      : (authUserData?.user?.id ?? user?.id ?? null);
-    const sendRealmId = isImpersonating
-      ? (target?.realmId ?? null)
-      : (qboStatus?.realm_id ?? null);
-
-    if (!sendUserId || !sendRealmId) {
-      toast({
-        title: 'Connect QuickBooks',
-        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting.',
-        variant: 'destructive'
-      });
-      setIsTyping(false);
-      return;
-    }
-
-    const messageContent = inputValue.trim();
-    setInputValue('');
-    setInterim('');
-
-    // Create new session if none exists
-    let session = currentSession;
-    if (!session) {
-      // ⬇️⬇️⬇️  **PATCH 2: create session with effective identity**  ⬇️⬇️⬇️
-      session = await createSession('New Chat', {
-        ownerUserId: sendUserId,
-        realmId: sendRealmId,
-      });
-      // ⬆️⬆️⬆️  **PATCH 2 END**  ⬆️⬆️⬆️
-      if (!session) return;
-    }
-
-    // Save user message
-    await saveMessage('user', messageContent, 0, 0, 0, session.id);
-
-    // Add user message to streaming state for immediate display
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: messageContent,
-      role: 'user',
-      timestamp: new Date()
-    };
-    setStreamingMessages(prev => [...prev, userMessage]);
-
-    if (!currentSession) selectSession(session);
-
-    // Auto title
-    if (session.title === 'New Chat' && allMessages.length === 0) {
-      const title = messageContent.length > 50 ? messageContent.substring(0, 47) + '...' : messageContent;
-      updateSessionTitle(session.id, title);
-    }
-
-    setIsTyping(true);
-
-    const reasoningSteps = generateReasoningSteps(messageContent);
-    const sources = generateSources(messageContent);
-
-    let currentStepIndex = 0;
-    setCurrentReasoning([]);
-
-    const reasoningInterval = setInterval(() => {
-      if (currentStepIndex < reasoningSteps.length) {
-        setCurrentReasoning(prev => [...prev, reasoningSteps[currentStepIndex]]);
-        currentStepIndex++;
-      } else {
-        clearInterval(reasoningInterval);
-
-        setTimeout(async () => {
-          const messageId = (Date.now() + 1).toString();
-
-          // Create streaming assistant message
-          const streamingMessage: Message = {
-            id: messageId,
-            content: '',
-            role: 'assistant',
-            timestamp: new Date(),
-            isStreaming: true,
-            reasoningSteps,
-            sources
-          };
-          setStreamingMessages(prev => [...prev, streamingMessage]);
-          setCurrentReasoning([]);
-
-          try {
-            await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
-            if (AUTO_READ_NEW_RESPONSES) {
-              queueMicrotask(() => {
-                const msg = getMsgById(messageId);
-                if (msg?.content) speakText(msg.content, messageId);
-              });
-            }
-          } catch (e) {
-            console.warn('Streaming failed, falling back:', e);
-            try {
-              const finalResponse = await callAgentOnce(messageContent, sendUserId, sendRealmId);
-              const words = finalResponse.split(' ');
-              let currentText = '';
-              for (let i = 0; i < words.length; i++) {
-                currentText += (i > 0 ? ' ' : '') + words[i];
-                setStreamingMessages(prev => prev.map(msg =>
-                  msg.id === messageId
-                    ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
-                    : msg
-                ));
-                if (i < words.length - 1) {
-                  await new Promise(resolve => setTimeout(resolve, 30));
-                }
-              }
-              await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
-              setIsTyping(false);
-              if (AUTO_READ_NEW_RESPONSES) {
-                queueMicrotask(() => speakText(finalResponse, messageId));
-              }
-            } catch (e2) {
-              console.error('AI query error:', e2);
-
-              let fallbackResponse = `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
-              if (e2 instanceof Error) {
-                if (e2.message.includes('QuickBooks not connected')) {
-                  fallbackResponse = `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
-                } else if (e2.message.includes('authorization expired') || e2.message.includes('qbo_reauth_required')) {
-                  fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
-                }
-              }
-
-              setStreamingMessages(prev => prev.map(msg =>
-                msg.id === messageId ? { ...msg, content: fallbackResponse, isStreaming: false } : msg
-              ));
-              await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
-              setIsTyping(false);
-              if (AUTO_READ_NEW_RESPONSES) {
-                queueMicrotask(() => speakText(fallbackResponse, messageId));
-              }
-            }
-          }
-        }, 500);
-      }
-    }, 1250);
-  };
-
+  // ==== Voice (Speech-to-Text) ====
+  const recognitionRef = useRef<any | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
   const [interim, setInterim] = useState('');
-  const recognitionRef = useRef<any | null>(null);
 
   // Init Web Speech API (STT)
   useEffect(() => {
@@ -674,52 +415,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     }
   };
 
-  const pickVoice = () => {
-    const byLang = voices.filter(v => (v.lang || '').toLowerCase().startsWith(TTS_LANG.toLowerCase()));
-    const preferredNames = ['Google US English', 'Samantha', 'Alex', 'Microsoft Aria Online (Natural) - English (United States)'];
-    const preferred = byLang.find(v => preferredNames.includes(v.name)) || byLang[0] || voices[0] || null;
-    return preferred || null;
-  };
-
-  const speakText = (text: string, messageId: string) => {
-    if (!('speechSynthesis' in window)) {
-      toast({ title: 'Playback not supported', description: 'Your browser does not support text-to-speech.', variant: 'destructive' });
-      return;
-    }
-    if (!text?.trim()) return;
-
-    const s = speechSynthesis;
-
-    const trySpeak = () => {
-      stopTTS();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = TTS_RATE;
-      u.pitch = TTS_PITCH;
-      const voice = pickVoice();
-      if (voice) { u.voice = voice; u.lang = voice.lang || TTS_LANG; } else { u.lang = TTS_LANG; }
-      u.onstart = () => { setIsSpeaking(true); setSpeakingMessageId(messageId); };
-      u.onend = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
-      u.onerror = () => { setIsSpeaking(false); setSpeakingMessageId(null); utteranceRef.current = null; };
-      utteranceRef.current = u;
-      try { s.resume(); } catch {}
-      s.speak(u);
-    };
-
-    if (!ttsReady || voices.length === 0) {
-      const onVoices = () => {
-        setTimeout(() => {
-          try { speechSynthesis.onvoiceschanged = null as any; } catch {}
-          trySpeak();
-        }, 0);
-      };
-      try { speechSynthesis.onvoiceschanged = onVoices; } catch {}
-      setTimeout(onVoices, 250);
-    } else {
-      trySpeak();
-    }
-  };
-
   useEffect(() => () => stopTTS(), []); // stop speech on unmount
+
+  // ---- Impersonation / Effective identity ----
+  const { isImpersonating, target } = useImpersonation();
+  const [realRealmId, setRealRealmId] = useState<string | null>(null);
+  const [fullName, setFullName] = useState<string | null>(null);
+  const effUserId = isImpersonating ? (target?.userId ?? null) : (user?.id ?? null);
+  const effRealmId = isImpersonating
+    ? (target?.realmId ?? null)
+    : (realRealmId ?? useQBOStatus()?.realm_id ?? null); // keep original behavior
+  const [companyName, setCompanyName] = useState<string | null>(null);
 
   // Combine database messages with streaming messages for display
   const allMessages = React.useMemo(() => {
@@ -743,46 +449,265 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     stopTTS();
   }, [currentSession?.id]);
 
-  const [companyConnectedShown, setCompanyConnectedShown] = useState(false);
+  // Load REAL user's realm (used when not impersonating)
+  useEffect(() => {
+    (async () => {
+      if (!user?.id) return;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('qbo_realm_id, full_name')
+        .eq('id', user.id)
+        .single();
+      if (!error) {
+        setRealRealmId(data?.qbo_realm_id ?? null);
+        const name = (data?.full_name ?? '').trim();
+        setFullName(name.length ? name : null);
+      }
+    })();
+  }, [user?.id]);
 
-  // QuickBooks connect helpers (unchanged)
-  const buildQboAuthUrlMemo = buildQboAuthUrl;
+  // Fetch company name for the EFFECTIVE identity (auth-safe)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!effUserId || !effRealmId) return;
+      try {
+        const { data, error } = await invokeWithAuthSafe<{ companyName?: string }>('qbo-company', {
+          body: { userId: effUserId, realmId: effRealmId, nonce: Date.now() },
+        });
+        if (!error && !cancelled && data?.companyName) {
+          setCompanyName(data.companyName);
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [effUserId, effRealmId]);
 
-  const generateReasoningSteps = (query: string) => {
-    if (query.toLowerCase().includes('expense')) {
-      return [
-        { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
-        { id: '2', title: 'Querying transaction data', content: 'Searching QuickBooks transactions for expense categories and amounts in the specified timeframe.', type: 'lookup' },
-        { id: '3', title: 'Calculating totals', content: 'Aggregating expense amounts by category and computing percentage changes from previous periods.', type: 'calculation' },
-        { id: '4', title: 'Generating insights', content: 'Identifying trends, outliers, and actionable recommendations based on expense patterns.', type: 'synthesis' }
-      ];
-    }
-    if (query.toLowerCase().includes('revenue') || query.toLowerCase().includes('profit')) {
-      return [
-        { id: '1', title: 'Understanding revenue request', content: 'Parsing query to determine if user wants revenue trends, profit margins, or comparative analysis.', type: 'analysis' },
-        { id: '2', title: 'Fetching financial data', content: 'Retrieving income statements and revenue data from QuickBooks for the requested period.', type: 'lookup' },
-        { id: '3', title: 'Synthesizing response', content: 'Combining revenue data with industry benchmarks to provide contextual business insights.', type: 'synthesis' }
-      ];
-    }
-    return [
-      { id: '1', title: 'Processing query', content: 'Analyzing the user\'s question to understand the financial information being requested.', type: 'analysis' },
-      { id: '2', title: 'Accessing data', content: 'Connecting to QuickBooks Online to retrieve relevant financial records and metrics.', type: 'lookup' },
-      { id: '3', title: 'Generating response', content: 'Formulating a comprehensive answer with actionable insights and recommendations.', type: 'synthesis' }
-    ];
+  // QuickBooks OAuth config (same as CFO Agent)
+  const QBO_CLIENT_ID = 'ABdBqpI0xI6KDjHIgedbLVEnXrqjJpqLj2T3yyT7mBjkfI4ulJ';
+  const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
+  const QBO_SCOPES = 'com.intuit.quickbooks.accounting openid profile email';
+  const QBO_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
+
+  const buildQboAuthUrl = () => {
+    const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    try {
+      localStorage.setItem('qbo_oauth_state', state);
+      localStorage.setItem('qbo_postAuthReturn', window.location.pathname + window.location.search + window.location.hash);
+    } catch {}
+    return `${QBO_AUTHORIZE_URL}?client_id=${encodeURIComponent(QBO_CLIENT_ID)}&redirect_uri=${encodeURIComponent(QBO_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(QBO_SCOPES)}&state=${encodeURIComponent(state)}&prompt=consent`;
   };
 
-  const generateSources = (query: string) => {
-    if (query.toLowerCase().includes('expense')) {
-      return [
-        { id: '1', title: 'QuickBooks Online - Expense Transactions', type: 'quickbooks', description: 'Retrieved expense data from your QuickBooks Online account for the specified period.' },
-        { id: '2', title: 'Expense Category Analysis', type: 'calculation', description: 'Calculated expense totals and percentage changes by category.' },
-        { id: '3', title: 'Industry Benchmark Data', type: 'api', description: 'Compared your expenses against industry averages for small businesses.' }
-      ];
+  const handleConnectQuickBooks = () => {
+    if (!QBO_CLIENT_ID) {
+      toast({ title: 'QuickBooks', description: 'Missing Client ID configuration.', variant: 'destructive' });
+      return;
     }
-    return [
-      { id: '1', title: 'QuickBooks Online - Financial Data', type: 'quickbooks', description: 'General financial information retrieved from your QuickBooks Online account.' },
-      { id: '2', title: 'Financial Analysis Report', type: 'report', description: 'Generated analytical insights based on your financial data.' }
-    ];
+    const url = buildQboAuthUrl();
+    window.location.assign(url);
+  };
+
+  const handleSyncTransactions = async () => {
+    if (!qboStatus.connected || !qboStatus.realm_id || !user?.id) {
+      toast({ title: 'Sync Error', description: 'QuickBooks not connected or missing info.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke('qbo-sync-transactions', {
+        body: { realmId: qboStatus.realm_id, userId: user.id, mode: 'full' }
+      });
+      if (error) {
+        console.error('[Manual Sync] Failed:', error.message);
+        toast({ title: 'Sync Failed', description: error.message, variant: 'destructive' });
+      } else {
+        toast({ title: 'Sync Success', description: 'Transactions imported successfully!' });
+      }
+    } catch (e) {
+      console.error('[Manual Sync] Exception:', e);
+      toast({ title: 'Sync Error', description: 'Unexpected error during sync.', variant: 'destructive' });
+    }
+  };
+
+  const samplePrompts = [
+    'How are my financials trending?',
+    'What was my revenue last month?',
+    'What is my projected revenue for current year?',
+    'What are my key expenses?',
+  ];
+
+  const actionButtons = [
+    { icon: Sparkles, label: 'Analyze', color: 'bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/30 dark:hover:bg-purple-900/40 dark:text-purple-200' },
+    { icon: BarChart3, label: 'Reports', color: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/40 dark:text-blue-200' },
+    { icon: FileText, label: 'Documents', color: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900/30 dark:hover:bg-green-900/40 dark:text-green-200' },
+    { icon: Calculator, label: 'Calculate', color: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/40 dark:text-orange-200' },
+  ];
+
+  const getMsgById = (id: string) => {
+    const all = [...streamingMessages, ...chatMessages.map(m => ({
+      id: m.id, content: m.content, role: m.role as 'user'|'assistant', timestamp: new Date(m.created_at)
+    }))];
+    return all.find(m => m.id === id);
+  };
+
+  const handleCopyMessage = (content: string) => {
+    navigator.clipboard.writeText(content);
+  };
+
+  const handleRegenerateResponse = async (messageId: string) => {
+    console.log('Regenerating response for message:', messageId);
+  };
+
+  const handleThumbsUp = (messageId: string) => {
+    console.log('Thumbs up for message:', messageId);
+  };
+
+  const handleThumbsDown = (messageId: string) => {
+    console.log('Thumbs down for message:', messageId);
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || !user) return;
+
+    if (isRecording) stopMic();
+    stopTTS(); // stop reading if the user sends something new
+
+    // Resolve identity *fresh* at send-time to avoid momentary nulls
+    const { data: authUserData } = await supabase.auth.getUser();
+    const sendUserId = isImpersonating
+      ? (target?.userId ?? null)
+      : (authUserData?.user?.id ?? user?.id ?? null);
+    const sendRealmId = isImpersonating
+      ? (target?.realmId ?? null)
+      : (qboStatus?.realm_id ?? realRealmId ?? null);
+
+    if (!sendUserId || !sendRealmId) {
+      toast({
+        title: 'Connect QuickBooks',
+        description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting.',
+        variant: 'destructive'
+      });
+      setIsTyping(false);
+      return;
+    }
+
+    const messageContent = inputValue.trim();
+    setInputValue('');
+    setInterim('');
+
+    // Create new session if none exists
+    let session = currentSession;
+    if (!session) {
+      // CHANGE #1: ensure new session is owned by the effective identity
+      session = await (createSession as any)('New Chat', { ownerUserId: sendUserId!, realmId: sendRealmId! });
+      if (!session) return;
+    }
+
+    // Save user message
+    await saveMessage('user', messageContent, 0, 0, 0, session.id);
+
+    // Add user message to streaming state for immediate display
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content: messageContent,
+      role: 'user',
+      timestamp: new Date()
+    };
+    setStreamingMessages(prev => [...prev, userMessage]);
+
+    if (!currentSession) selectSession(session);
+
+    // Auto title
+    if (session.title === 'New Chat' && allMessages.length === 0) {
+      const title = messageContent.length > 50 ? messageContent.substring(0, 47) + '...' : messageContent;
+      updateSessionTitle(session.id, title);
+    }
+
+    setIsTyping(true);
+
+    const reasoningSteps = generateReasoningSteps(messageContent);
+    const sources = generateSources(messageContent);
+
+    let currentStepIndex = 0;
+    setCurrentReasoning([]);
+
+    const reasoningInterval = setInterval(() => {
+      if (currentStepIndex < reasoningSteps.length) {
+        setCurrentReasoning(prev => [...prev, reasoningSteps[currentStepIndex]]);
+        currentStepIndex++;
+      } else {
+        clearInterval(reasoningInterval);
+
+        setTimeout(async () => {
+          const messageId = (Date.now() + 1).toString();
+
+          // Create streaming assistant message
+          const streamingMessage: Message = {
+            id: messageId,
+            content: '',
+            role: 'assistant',
+            timestamp: new Date(),
+            isStreaming: true,
+            reasoningSteps,
+            sources
+          };
+          setStreamingMessages(prev => [...prev, streamingMessage]);
+          setCurrentReasoning([]);
+
+          try {
+            await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
+            if (AUTO_READ_NEW_RESPONSES) {
+              queueMicrotask(() => {
+                const msg = getMsgById(messageId);
+                if (msg?.content) speakText(msg.content, messageId);
+              });
+            }
+          } catch (e) {
+            console.warn('Streaming failed, falling back:', e);
+            try {
+              const finalResponse = await callAgentOnce(messageContent, sendUserId, sendRealmId);
+              const words = finalResponse.split(' ');
+              let currentText = '';
+              for (let i = 0; i < words.length; i++) {
+                currentText += (i > 0 ? ' ' : '') + words[i];
+                setStreamingMessages(prev => prev.map(msg =>
+                  msg.id === messageId
+                    ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
+                    : msg
+                ));
+                if (i < words.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 30));
+                }
+              }
+              await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
+              setIsTyping(false);
+              if (AUTO_READ_NEW_RESPONSES) {
+                queueMicrotask(() => speakText(finalResponse, messageId));
+              }
+            } catch (e2) {
+              console.error('AI query error:', e2);
+
+              let fallbackResponse = `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
+              if (e2 instanceof Error) {
+                if (e2.message.includes('QuickBooks not connected')) {
+                  fallbackResponse = `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
+                } else if (e2.message.includes('authorization expired') || e2.message.includes('qbo_reauth_required')) {
+                  fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
+                }
+              }
+
+              setStreamingMessages(prev => prev.map(msg =>
+                msg.id === messageId ? { ...msg, content: fallbackResponse, isStreaming: false } : msg
+              ));
+              await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
+              setIsTyping(false);
+              if (AUTO_READ_NEW_RESPONSES) {
+                queueMicrotask(() => speakText(fallbackResponse, messageId));
+              }
+            }
+          }
+        }, 500);
+      }
+    }, 1250);
   };
 
   // ----- Streaming caller (auth-safe SSE, then JSON fallback simulation) -----
@@ -838,6 +763,79 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
     if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
     return `${Math.floor(diffInMinutes / 1440)}d ago`;
+  };
+
+  // ----- Chat helpers -----
+  const generateReasoningSteps = (query: string) => {
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'Analyzing expense query', content: 'Identifying expense-related keywords and determining the scope of analysis needed.', type: 'analysis' },
+        { id: '2', title: 'Querying transaction data', content: 'Searching QuickBooks transactions for expense categories and amounts in the specified timeframe.', type: 'lookup' },
+        { id: '3', title: 'Calculating totals', content: 'Aggregating expense amounts by category and computing percentage changes from previous periods.', type: 'calculation' },
+        { id: '4', title: 'Generating insights', content: 'Identifying trends, outliers, and actionable recommendations based on expense patterns.', type: 'synthesis' }
+      ];
+    }
+    if (query.toLowerCase().includes('revenue') || query.toLowerCase().includes('profit')) {
+      return [
+        { id: '1', title: 'Understanding revenue request', content: 'Parsing query to determine if user wants revenue trends, profit margins, or comparative analysis.', type: 'analysis' },
+        { id: '2', title: 'Fetching financial data', content: 'Retrieving income statements and revenue data from QuickBooks for the requested period.', type: 'lookup' },
+        { id: '3', title: 'Synthesizing response', content: 'Combining revenue data with industry benchmarks to provide contextual business insights.', type: 'synthesis' }
+      ];
+    }
+    return [
+      { id: '1', title: 'Processing query', content: 'Analyzing the user\'s question to understand the financial information being requested.', type: 'analysis' },
+      { id: '2', title: 'Accessing data', content: 'Connecting to QuickBooks Online to retrieve relevant financial records and metrics.', type: 'lookup' },
+      { id: '3', title: 'Generating response', content: 'Formulating a comprehensive answer with actionable insights and recommendations.', type: 'synthesis' }
+    ];
+  };
+
+  const generateSources = (query: string) => {
+    if (query.toLowerCase().includes('expense')) {
+      return [
+        { id: '1', title: 'QuickBooks Online - Expense Transactions', type: 'quickbooks', description: 'Retrieved expense data from your QuickBooks Online account for the specified period.' },
+        { id: '2', title: 'Expense Category Analysis', type: 'calculation', description: 'Calculated expense totals and percentage changes by category.' },
+        { id: '3', title: 'Industry Benchmark Data', type: 'api', description: 'Compared your expenses against industry averages for small businesses.' }
+      ];
+    }
+    return [
+      { id: '1', title: 'QuickBooks Online - Financial Data', type: 'quickbooks', description: 'General financial information retrieved from your QuickBooks Online account.' },
+      { id: '2', title: 'Financial Analysis Report', type: 'report', description: 'Generated analytical insights based on your financial data.' }
+    ];
+  };
+
+  // ----- Sidebar filtering by impersonated identity -----
+  // CHANGE #2: make the sidebar show sessions for the EFFECTIVE identity (impersonated user + realm)
+  const filteredSessions = sessions
+    .filter((s: any) => {
+      if (!isImpersonating) return true;
+      // tolerate missing fields by showing nothing unless both match
+      return s?.owner_user_id === effUserId && s?.realm_id === effRealmId;
+    })
+    .filter(session => session.title.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const groupSessionsByDate = (sessionsInput: typeof filteredSessions) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const groups = { today: [] as typeof sessionsInput, yesterday: [] as typeof sessionsInput, week: [] as typeof sessionsInput, older: [] as typeof sessionsInput };
+
+    sessionsInput.forEach(session => {
+      const sessionDate = new Date(session.updated_at);
+      if (sessionDate >= today) groups.today.push(session);
+      else if (sessionDate >= yesterday) groups.yesterday.push(session);
+      else if (sessionDate >= weekAgo) groups.week.push(session);
+      else groups.older.push(session);
+    });
+
+    return groups;
+  };
+
+  const sessionGroups = groupSessionsByDate(filteredSessions);
+
+  const loadMoreSessions = (group: 'today' | 'yesterday' | 'week' | 'older') => {
+    setDisplayLimits(prev => ({ ...prev, [group]: prev[group] + 10 }));
   };
 
   return (
@@ -1085,7 +1083,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder={isImpersonating ? "Search their chats..." : "Search your chats..."}
+              placeholder="Search your chats..."
               className="pl-9 dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1100,9 +1098,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               {loading && <div className="text-sm text-muted-foreground px-2 dark:text-slate-300/90">Loading...</div>}
 
               {(() => {
-                const groups = groupSessionsByDate(sessions.filter(session =>
-                  session.title.toLowerCase().includes(searchQuery.toLowerCase())
-                ));
+                const groups = sessionGroups;
                 return (
                   <>
                     {groups.today.length > 0 && (
@@ -1253,14 +1249,19 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           </Card>
                         ))}
                         {groups.older.length > displayLimits.older && (
-                          <Button variant="ghost" size="sm" className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90" onClick={() => loadMoreSessions('older')}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90"
+                            onClick={() => loadMoreSessions('older')}
+                          >
                             Load more
                           </Button>
                         )}
                       </>
                     )}
 
-                    {!loading && sessions.length === 0 && (
+                    {!loading && filteredSessions.length === 0 && (
                       <div className="text-sm text-muted-foreground px-2 py-4 text-center dark:text-slate-300/90">
                         No chat history yet
                       </div>
@@ -1357,7 +1358,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder={isImpersonating ? "Search their chats..." : "Search your chats..."}
+                  placeholder="Search your chats..."
                   className="pl-9 dark:bg-slate-900/60 dark:border-slate-700 dark:placeholder:text-slate-400"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -1372,10 +1373,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   {loading && <div className="text-sm text-muted-foreground px-2 dark:text-slate-300/90">Loading...</div>}
 
                   {/* Today */}
-                  {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).today.length > 0 && (
+                  {sessionGroups.today.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">Today</div>
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).today.slice(0, displayLimits.today).map((session) => (
+                      {sessionGroups.today.slice(0, displayLimits.today).map((session) => (
                         <Card
                           key={session.id}
                           className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
@@ -1399,7 +1400,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           </div>
                         </Card>
                       ))}
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).today.length > displayLimits.today && (
+                      {sessionGroups.today.length > displayLimits.today && (
                         <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('today')}>
                           Show more from today
                         </Button>
@@ -1408,10 +1409,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   )}
 
                   {/* Yesterday */}
-                  {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).yesterday.length > 0 && (
+                  {sessionGroups.yesterday.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">Yesterday</div>
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).yesterday.slice(0, displayLimits.yesterday).map((session) => (
+                      {sessionGroups.yesterday.slice(0, displayLimits.yesterday).map((session) => (
                         <Card
                           key={session.id}
                           className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
@@ -1435,7 +1436,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           </div>
                         </Card>
                       ))}
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).yesterday.length > displayLimits.yesterday && (
+                      {sessionGroups.yesterday.length > displayLimits.yesterday && (
                         <Button variant="ghost" size="sm" className="w-full text-xs dark:text-slate-300/90" onClick={() => loadMoreSessions('yesterday')}>
                           Show more from yesterday
                         </Button>
@@ -1444,10 +1445,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   )}
 
                   {/* This Week */}
-                  {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).week.length > 0 && (
+                  {sessionGroups.week.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1 dark:text-slate-300/90">This Week</div>
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).week.slice(0, displayLimits.week).map((session) => (
+                      {sessionGroups.week.slice(0, displayLimits.week).map((session) => (
                         <Card
                           key={session.id}
                           className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
@@ -1471,7 +1472,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           </div>
                         </Card>
                       ))}
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).week.length > displayLimits.week && (
+                      {sessionGroups.week.length > displayLimits.week && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1485,10 +1486,10 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                   )}
 
                   {/* Older */}
-                  {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).older.length > 0 && (
+                  {sessionGroups.older.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1 mt-4 dark:text-slate-300/90">Older</div>
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).older.slice(0, displayLimits.older).map((session) => (
+                      {sessionGroups.older.slice(0, displayLimits.older).map((session) => (
                         <Card
                           key={session.id}
                           className={`p-3 mr-1 cursor-pointer hover:bg-muted/50 border-0 group dark:bg-slate-900/60 dark:hover:bg-slate-900/70 ${currentSession?.id === session.id ? 'bg-muted dark:border dark:border-slate-700' : 'bg-transparent dark:border-slate-700'}`}
@@ -1512,7 +1513,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                           </div>
                         </Card>
                       ))}
-                      {groupSessionsByDate(sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))).older.length > displayLimits.older && (
+                      {sessionGroups.older.length > displayLimits.older && (
                         <Button variant="ghost" size="sm" className="w-full mt-2 text-xs text-muted-foreground dark:text-slate-300/90" onClick={() => loadMoreSessions('older')}>
                           Load more
                         </Button>
@@ -1520,7 +1521,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                     </>
                   )}
 
-                  {!loading && sessions.length === 0 && (
+                  {!loading && filteredSessions.length === 0 && (
                     <div className="text-sm text-muted-foreground px-2 py-4 text-center dark:text-slate-300/90">
                       No chat history yet
                     </div>
@@ -1534,25 +1535,5 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     </div>
   );
 };
-
-// (helper used above; kept identical)
-function groupSessionsByDate(sessions: any[]) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  const groups = { today: [] as any[], yesterday: [] as any[], week: [] as any[], older: [] as any[] };
-
-  sessions.forEach(session => {
-    const sessionDate = new Date(session.updated_at);
-    if (sessionDate >= today) groups.today.push(session);
-    else if (sessionDate >= yesterday) groups.yesterday.push(session);
-    else if (sessionDate >= weekAgo) groups.week.push(session);
-    else groups.older.push(session);
-  });
-
-  return groups;
-}
 
 export default AIAccountant;
