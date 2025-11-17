@@ -259,144 +259,100 @@ const handleTimeframeChange = (value: string) => {
 };
 
 
-  
-  
-  const enrichWithPnL = async () => {
-    if (baseUsers.length === 0) return;
+  {/*start enrichWithPnL*/}
+const enrichWithPnL = async () => {
+  if (baseUsers.length === 0) return;
 
-    const today = new Date();
-    let currentYear = today.getFullYear();
-    let currentMonth = today.getMonth() + 1;
-    console.log('[P&L params]', { currentYear, currentMonth, timeframe });
+  const today = new Date();
+  let currentYear = today.getFullYear();
+  let currentMonth = today.getMonth() + 1;
+  console.log('[P&L params]', { currentYear, currentMonth, timeframe, fromDate, toDate });
 
-    const realmIds = Array.from(
-      new Set(
-        baseUsers
-          .map(u => u.realmId)
-          .filter((x: string | null): x is string => !!x)
-      )
-    );
-    console.log('[P&L realmIds unique]', realmIds);
+  const realmIds = Array.from(
+    new Set(
+      baseUsers
+        .map(u => u.realmId)
+        .filter((x: string | null): x is string => !!x)
+    )
+  );
+  console.log('[P&L realmIds unique]', realmIds);
 
-    let pnlByRealm: Record<string, { revenues: number; netIncome: number }> = {};
+  // ======================================
+  // 1) CUSTOM → use qbo-dashboard per realm
+  // ======================================
+  if (timeframe === 'Custom') {
+    if (!fromDate || !toDate) {
+      console.warn('[Admin P&L custom] from/to not set, skipping');
+      setUsers(baseUsers);
+      return;
+    }
+    if (!myUid) {
+      console.warn('[Admin P&L custom] myUid not ready yet');
+      setUsers(baseUsers);
+      return;
+    }
 
-    if (realmIds.length > 0) {
-      console.log('[P&L query] selecting from view qbo_pnl_monthly_from_postings', {
-        realmIdsCount: realmIds.length, realmIdsPreview: realmIds.slice(0, 5)
-      });
-      {/* start */}
-let query = supabase
-  .from('qbo_pnl_monthly_from_postings')
-  .select('realm_id, year, month, revenues, net_income')
-  .in('realm_id', realmIds);
-
-let isYTD = false;
-
-if (timeframe === 'This Month') {
-  query = query.eq('year', currentYear).eq('month', currentMonth);
-} else if (timeframe === 'Last Month') {
-  let lastMonth = currentMonth - 1;
-  let lastYear = currentYear;
-  if (lastMonth === 0) {
-    lastMonth = 12;
-    lastYear--;
-  }
-  query = query.eq('year', lastYear).eq('month', lastMonth);
-} else if (timeframe === 'YTD') {
-  query = query.eq('year', currentYear).gte('month', 1).lte('month', currentMonth);
-  isYTD = true;
-} else if (timeframe === 'This Quarter') {
-  const currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
-  const startMonth = (currentQuarter - 1) * 3 + 1;
-  const endMonth = startMonth + 2;
-  query = query
-    .eq('year', currentYear)
-    .gte('month', startMonth)
-    .lte('month', endMonth);
-} else if (timeframe === 'Last Quarter') {
-  let currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
-  let lastQuarter = currentQuarter - 1;
-  let yearForLastQuarter = currentYear;
-
-  if (lastQuarter === 0) {
-    lastQuarter = 4;
-    yearForLastQuarter--;
-  }
-
-  const startMonth = (lastQuarter - 1) * 3 + 1;
-  const endMonth = startMonth + 2;
-
-  query = query
-    .eq('year', yearForLastQuarter)
-    .gte('month', startMonth)
-    .lte('month', endMonth);
-} else if (timeframe === 'Custom') {
-  if (!fromDate || !toDate) {
-    console.warn('[P&L custom] from/to not set, skipping query', { fromDate, toDate });
-  } else {
     let fromD = new Date(fromDate);
     let toD = new Date(toDate);
 
-    if (!isNaN(fromD.getTime()) && !isNaN(toD.getTime())) {
-      // Ensure fromD <= toD
-      if (fromD > toD) {
-        const tmp = fromD;
-        fromD = toD;
-        toD = tmp;
-      }
-
-      const pairs: { year: number; month: number }[] = [];
-      const cursor = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
-      const end = new Date(toD.getFullYear(), toD.getMonth(), 1);
-
-      while (cursor <= end) {
-        pairs.push({ year: cursor.getFullYear(), month: cursor.getMonth() + 1 });
-        cursor.setMonth(cursor.getMonth() + 1);
-      }
-
-      if (pairs.length > 0) {
-        const orClauses = pairs
-          .map(p => `and(year.eq.${p.year},month.eq.${p.month})`)
-          .join(',');
-
-        query = query.or(orClauses);
-      }
-    } else {
-      console.warn('[P&L custom] invalid date range', { fromDate, toDate });
+    if (isNaN(fromD.getTime()) || isNaN(toD.getTime())) {
+      console.warn('[Admin P&L custom] invalid date range', { fromDate, toDate });
+      setUsers(baseUsers);
+      return;
     }
-  }
-}
 
+    // Ensure from <= to
+    if (fromD > toD) {
+      const tmp = fromD;
+      fromD = toD;
+      toD = tmp;
+    }
 
+    const fromISO = fromD.toISOString().slice(0, 10); // YYYY-MM-DD
+    const toISO = toD.toISOString().slice(0, 10);
 
-      {/* end */}
-      const { data: pnlRows, error: pnlErr } = await query;
+    const pnlByRealm: Record<string, { revenues: number; netIncome: number }> = {};
 
-      if (pnlErr) {
-        console.error('[P&L view fetch ERROR]', pnlErr);
-      } else {
-        console.log('[P&L view fetch OK] rows:', (pnlRows ?? []).length, 'sample:', (pnlRows && pnlRows[0]) || null);
-        pnlByRealm = (pnlRows || []).reduce((acc: any, row: any, idx: number) => {
-          if (!acc[row.realm_id]) {
-            acc[row.realm_id] = { revenues: 0, netIncome: 0 };
+    await Promise.all(
+      realmIds.map(async (realmId) => {
+        try {
+          // 🔴 IMPORTANT: if your dashboard call uses different param names,
+          // copy the body from Dashboard and paste it here instead.
+          const { data, error } = await supabase.functions.invoke('qbo-dashboard', {
+            body: {
+              mode: 'custom',
+              from_date: fromISO,
+              to_date: toISO,
+              realmId,
+              userId: myUid,
+              nonce: Date.now(),
+            },
+          });
+
+          if (error) {
+            console.error('[Admin P&L custom] qbo-dashboard error for realm', realmId, error);
+            return;
           }
-          acc[row.realm_id].revenues += Number(row.revenues) || 0;
-          acc[row.realm_id].netIncome += Number(row.net_income) || 0;
-          console.log('[P&L row mapped]', idx, row.realm_id, acc[row.realm_id]);
-          return acc;
-        }, {});
-      }
-    } else {
-      console.warn('[P&L] No realmIds found among users. The three columns will fall back to null/0.');
-    }
+
+          const payload: any = data ?? {};
+          const rev = Number(payload?.revenue?.current ?? 0);
+          const net = Number(payload?.netProfit?.current ?? 0);
+
+          pnlByRealm[realmId] = { revenues: rev, netIncome: net };
+          console.log('[Admin P&L custom] realm', realmId, { revenues: rev, netIncome: net });
+        } catch (e) {
+          console.error('[Admin P&L custom] unexpected error for realm', realmId, e);
+        }
+      })
+    );
 
     const enriched = baseUsers.map((u, idx) => {
       let revenue: number | null = null;
       let profit: number | null = null;
       let marginPct: number | null = null;
 
-      if (u.realmId) {
-        const pnl = pnlByRealm[u.realmId] || { revenues: 0, netIncome: 0 };
+      if (u.realmId && pnlByRealm[u.realmId]) {
+        const pnl = pnlByRealm[u.realmId];
         revenue = pnl.revenues;
         profit = pnl.netIncome;
         marginPct = revenue === 0 ? 0 : (profit / revenue) * 100;
@@ -408,21 +364,136 @@ if (timeframe === 'This Month') {
         netProfitMTD: profit,
         netMargin: marginPct,
       };
-      console.log('[User P&L merged]', idx, {
+
+      console.log('[User P&L merged CUSTOM]', idx, {
         id: merged.id,
         email: merged.email,
         realmId: merged.realmId,
         revenueMTD: merged.revenueMTD,
         netProfitMTD: merged.netProfitMTD,
         netMarginPct: merged.netMargin,
-        source: revenue !== null ? 'VIEW' : 'FALLBACK'
+        source: revenue !== null ? 'qbo-dashboard' : 'FALLBACK',
       });
+
       return merged;
     });
 
     setUsers(enriched);
-  };
+    return; // ⬅️ do NOT fall through to monthly-view logic
+  }
 
+  // ======================================
+  // 2) NON-CUSTOM → keep monthly view logic
+  // ======================================
+  let pnlByRealm: Record<string, { revenues: number; netIncome: number }> = {};
+
+  if (realmIds.length > 0) {
+    console.log('[P&L query] selecting from view qbo_pnl_monthly_from_postings', {
+      realmIdsCount: realmIds.length,
+      realmIdsPreview: realmIds.slice(0, 5),
+    });
+
+    let query = supabase
+      .from('qbo_pnl_monthly_from_postings')
+      .select('realm_id, year, month, revenues, net_income')
+      .in('realm_id', realmIds);
+
+    let isYTD = false;
+
+    if (timeframe === 'This Month') {
+      query = query.eq('year', currentYear).eq('month', currentMonth);
+    } else if (timeframe === 'Last Month') {
+      let lastMonth = currentMonth - 1;
+      let lastYear = currentYear;
+      if (lastMonth === 0) {
+        lastMonth = 12;
+        lastYear--;
+      }
+      query = query.eq('year', lastYear).eq('month', lastMonth);
+    } else if (timeframe === 'YTD') {
+      query = query.eq('year', currentYear).gte('month', 1).lte('month', currentMonth);
+      isYTD = true;
+    } else if (timeframe === 'This Quarter') {
+      const currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
+      const startMonth = (currentQuarter - 1) * 3 + 1;
+      const endMonth = startMonth + 2;
+      query = query
+        .eq('year', currentYear)
+        .gte('month', startMonth)
+        .lte('month', endMonth);
+    } else if (timeframe === 'Last Quarter') {
+      let currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
+      let lastQuarter = currentQuarter - 1;
+      let yearForLastQuarter = currentYear;
+
+      if (lastQuarter === 0) {
+        lastQuarter = 4;
+        yearForLastQuarter--;
+      }
+
+      const startMonth = (lastQuarter - 1) * 3 + 1;
+      const endMonth = startMonth + 2;
+
+      query = query
+        .eq('year', yearForLastQuarter)
+        .gte('month', startMonth)
+        .lte('month', endMonth);
+    }
+
+    const { data: pnlRows, error: pnlErr } = await query;
+
+    if (pnlErr) {
+      console.error('[P&L view fetch ERROR]', pnlErr);
+    } else {
+      console.log('[P&L view fetch OK] rows:', (pnlRows ?? []).length, 'sample:', (pnlRows && pnlRows[0]) || null);
+      pnlByRealm = (pnlRows || []).reduce((acc: any, row: any, idx: number) => {
+        if (!acc[row.realm_id]) {
+          acc[row.realm_id] = { revenues: 0, netIncome: 0 };
+        }
+        acc[row.realm_id].revenues += Number(row.revenues) || 0;
+        acc[row.realm_id].netIncome += Number(row.net_income) || 0;
+        console.log('[P&L row mapped]', idx, row.realm_id, acc[row.realm_id]);
+        return acc;
+      }, {});
+    }
+  } else {
+    console.warn('[P&L] No realmIds found among users. The three columns will fall back to null/0.');
+  }
+
+  const enriched = baseUsers.map((u, idx) => {
+    let revenue: number | null = null;
+    let profit: number | null = null;
+    let marginPct: number | null = null;
+
+    if (u.realmId) {
+      const pnl = pnlByRealm[u.realmId] || { revenues: 0, netIncome: 0 };
+      revenue = pnl.revenues;
+      profit = pnl.netIncome;
+      marginPct = revenue === 0 ? 0 : (profit / revenue) * 100;
+    }
+
+    const merged = {
+      ...u,
+      revenueMTD: revenue,
+      netProfitMTD: profit,
+      netMargin: marginPct,
+    };
+    console.log('[User P&L merged]', idx, {
+      id: merged.id,
+      email: merged.email,
+      realmId: merged.realmId,
+      revenueMTD: merged.revenueMTD,
+      netProfitMTD: merged.netProfitMTD,
+      netMarginPct: merged.netMargin,
+      source: revenue !== null ? 'VIEW' : 'FALLBACK',
+    });
+    return merged;
+  });
+
+  setUsers(enriched);
+};
+
+  {/*End enrichWithPnL*/}
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
@@ -449,7 +520,7 @@ if (timeframe === 'This Month') {
 
   useEffect(() => {
   enrichWithPnL();
-}, [timeframe, baseUsers, fromDate, toDate]);
+}, [timeframe, baseUsers, fromDate, toDate, myUid]);
 
 
 const pnlLabel =
