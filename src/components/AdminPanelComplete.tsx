@@ -243,15 +243,21 @@ const AdminPanelComplete: React.FC = () => {
 };
 
 
-  const handleTimeframeChange = (value: string) => {
+const handleTimeframeChange = (value: string) => {
   setTimeframe(value);
 
   if (value === 'Custom') {
+    // Default custom range = last month
     const { fromISO, toISO } = getLastMonthRange();
     setFromDate(fromISO);
     setToDate(toISO);
+  } else {
+    // When leaving Custom, clear date state
+    setFromDate('');
+    setToDate('');
   }
 };
+
 
   
   
@@ -325,53 +331,39 @@ if (timeframe === 'This Month') {
     .gte('month', startMonth)
     .lte('month', endMonth);
 } else if (timeframe === 'Custom') {
-  // Use custom from/to; fallback to last month if empty
-  let from = fromDate;
-  let to = toDate;
-
-  if (!from || !to) {
-    const { fromISO, toISO } = getLastMonthRange();
-    from = fromISO;
-    to = toISO;
-  }
-
-  let fromD = new Date(from);
-  let toD = new Date(to);
-
-  if (!isNaN(fromD.getTime()) && !isNaN(toD.getTime())) {
-    // Ensure fromD <= toD
-    if (fromD > toD) {
-      const tmp = fromD;
-      fromD = toD;
-      toD = tmp;
-    }
-
-    const fromYear = fromD.getFullYear();
-    const fromMonth = fromD.getMonth() + 1; // 1–12
-    const toYear = toD.getFullYear();
-    const toMonth = toD.getMonth() + 1;     // 1–12
-
-    if (fromYear === toYear) {
-      // Same year → simple month range
-      query = query
-        .eq('year', fromYear)
-        .gte('month', fromMonth)
-        .lte('month', toMonth);
-    } else {
-      // Cross-year range:
-      // (year = fromYear  AND month >= fromMonth)
-      //  OR (year > fromYear AND year < toYear)
-      //  OR (year = toYear  AND month <= toMonth)
-      query = query.or(
-        [
-          `and(year.eq.${fromYear},month.gte.${fromMonth})`,
-          `and(year.gt.${fromYear},year.lt.${toYear})`,
-          `and(year.eq.${toYear},month.lte.${toMonth})`,
-        ].join(',')
-      );
-    }
+  if (!fromDate || !toDate) {
+    console.warn('[P&L custom] from/to not set, skipping query', { fromDate, toDate });
   } else {
-    console.warn('[P&L custom] invalid date range', { from, to });
+    let fromD = new Date(fromDate);
+    let toD = new Date(toDate);
+
+    if (!isNaN(fromD.getTime()) && !isNaN(toD.getTime())) {
+      // Ensure fromD <= toD
+      if (fromD > toD) {
+        const tmp = fromD;
+        fromD = toD;
+        toD = tmp;
+      }
+
+      const pairs: { year: number; month: number }[] = [];
+      const cursor = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
+      const end = new Date(toD.getFullYear(), toD.getMonth(), 1);
+
+      while (cursor <= end) {
+        pairs.push({ year: cursor.getFullYear(), month: cursor.getMonth() + 1 });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+
+      if (pairs.length > 0) {
+        const orClauses = pairs
+          .map(p => `and(year.eq.${p.year},month.eq.${p.month})`)
+          .join(',');
+
+        query = query.or(orClauses);
+      }
+    } else {
+      console.warn('[P&L custom] invalid date range', { fromDate, toDate });
+    }
   }
 }
 
