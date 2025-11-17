@@ -335,37 +335,46 @@ if (timeframe === 'This Month') {
     to = toISO;
   }
 
-  const fromD = new Date(from);
-  const toD = new Date(to);
+  let fromD = new Date(from);
+  let toD = new Date(to);
 
   if (!isNaN(fromD.getTime()) && !isNaN(toD.getTime())) {
-    // ensure from <= to
+    // Ensure fromD <= toD
     if (fromD > toD) {
-      const tmp = fromD.getTime();
-      fromD.setTime(toD.getTime());
-      toD.setTime(tmp);
+      const tmp = fromD;
+      fromD = toD;
+      toD = tmp;
     }
 
-    const pairs: { year: number; month: number }[] = [];
-    const cur = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
-    const end = new Date(toD.getFullYear(), toD.getMonth(), 1);
+    const fromYear = fromD.getFullYear();
+    const fromMonth = fromD.getMonth() + 1; // 1–12
+    const toYear = toD.getFullYear();
+    const toMonth = toD.getMonth() + 1;     // 1–12
 
-    while (cur <= end) {
-      pairs.push({ year: cur.getFullYear(), month: cur.getMonth() + 1 });
-      cur.setMonth(cur.getMonth() + 1);
-    }
-
-    if (pairs.length > 0) {
-      const orClauses = pairs
-        .map((p) => `and(year.eq.${p.year},month.eq.${p.month})`)
-        .join(',');
-
-      query = query.or(orClauses);
+    if (fromYear === toYear) {
+      // Same year → simple month range
+      query = query
+        .eq('year', fromYear)
+        .gte('month', fromMonth)
+        .lte('month', toMonth);
+    } else {
+      // Cross-year range:
+      // (year = fromYear  AND month >= fromMonth)
+      //  OR (year > fromYear AND year < toYear)
+      //  OR (year = toYear  AND month <= toMonth)
+      query = query.or(
+        [
+          `and(year.eq.${fromYear},month.gte.${fromMonth})`,
+          `and(year.gt.${fromYear},year.lt.${toYear})`,
+          `and(year.eq.${toYear},month.lte.${toMonth})`,
+        ].join(',')
+      );
     }
   } else {
     console.warn('[P&L custom] invalid date range', { from, to });
   }
 }
+
 
 
       {/* end */}
