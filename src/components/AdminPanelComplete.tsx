@@ -26,6 +26,8 @@ const AdminPanelComplete: React.FC = () => {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState('Last Month');
+  const [fromDate, setFromDate] = useState<string>('');  // NEW
+  const [toDate, setToDate] = useState<string>('');      // NEW
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' as 'asc' | 'desc' });
   const [users, setUsers] = useState<any[]>([]);
   const [baseUsers, setBaseUsers] = useState<any[]>([]);
@@ -217,6 +219,42 @@ const AdminPanelComplete: React.FC = () => {
     }
   };
 
+  const getLastMonthRange = () => {
+  const today = new Date();
+  let year = today.getFullYear();
+  let month = today.getMonth(); // current month (0–11)
+
+  // go to last month
+  month -= 1;
+  if (month < 0) {
+    month = 11;
+    year -= 1;
+  }
+
+  const start = new Date(year, month, 1);
+  const end = new Date(year, month + 1, 0); // last day of last month
+
+  const toISO = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  return {
+    fromISO: toISO(start),
+    toISO: toISO(end),
+  };
+};
+
+
+  const handleTimeframeChange = (value: string) => {
+  setTimeframe(value);
+
+  if (value === 'Custom') {
+    const { fromISO, toISO } = getLastMonthRange();
+    setFromDate(fromISO);
+    setToDate(toISO);
+  }
+};
+
+  
+  
   const enrichWithPnL = async () => {
     if (baseUsers.length === 0) return;
 
@@ -241,52 +279,94 @@ const AdminPanelComplete: React.FC = () => {
         realmIdsCount: realmIds.length, realmIdsPreview: realmIds.slice(0, 5)
       });
       {/* start */}
-      let query = supabase
-        .from('qbo_pnl_monthly_from_postings')
-        .select('realm_id, year, month, revenues, net_income')
-        .in('realm_id', realmIds);
-      
-      let isYTD = false;
-      
-      if (timeframe === 'This Month') {
-        query = query.eq('year', currentYear).eq('month', currentMonth);
-      } else if (timeframe === 'Last Month') {
-        let lastMonth = currentMonth - 1;
-        let lastYear = currentYear;
-        if (lastMonth === 0) {
-          lastMonth = 12;
-          lastYear--;
-        }
-        query = query.eq('year', lastYear).eq('month', lastMonth);
-      } else if (timeframe === 'YTD') {
-        query = query.eq('year', currentYear).gte('month', 1).lte('month', currentMonth);
-        isYTD = true;
-      } else if (timeframe === 'This Quarter') {
-        const currentQuarter = Math.floor((currentMonth - 1) / 3) + 1; // 1–4
-        const startMonth = (currentQuarter - 1) * 3 + 1;               // 1,4,7,10
-        const endMonth = startMonth + 2;                               // 3,6,9,12
-        query = query
-          .eq('year', currentYear)
-          .gte('month', startMonth)
-          .lte('month', endMonth);
-      } else if (timeframe === 'Last Quarter') {
-        let currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
-        let lastQuarter = currentQuarter - 1;
-        let yearForLastQuarter = currentYear;
-      
-        if (lastQuarter === 0) {
-          lastQuarter = 4;
-          yearForLastQuarter--;
-        }
-      
-        const startMonth = (lastQuarter - 1) * 3 + 1;
-        const endMonth = startMonth + 2;
-      
-        query = query
-          .eq('year', yearForLastQuarter)
-          .gte('month', startMonth)
-          .lte('month', endMonth);
-      }
+let query = supabase
+  .from('qbo_pnl_monthly_from_postings')
+  .select('realm_id, year, month, revenues, net_income')
+  .in('realm_id', realmIds);
+
+let isYTD = false;
+
+if (timeframe === 'This Month') {
+  query = query.eq('year', currentYear).eq('month', currentMonth);
+} else if (timeframe === 'Last Month') {
+  let lastMonth = currentMonth - 1;
+  let lastYear = currentYear;
+  if (lastMonth === 0) {
+    lastMonth = 12;
+    lastYear--;
+  }
+  query = query.eq('year', lastYear).eq('month', lastMonth);
+} else if (timeframe === 'YTD') {
+  query = query.eq('year', currentYear).gte('month', 1).lte('month', currentMonth);
+  isYTD = true;
+} else if (timeframe === 'This Quarter') {
+  const currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
+  const startMonth = (currentQuarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  query = query
+    .eq('year', currentYear)
+    .gte('month', startMonth)
+    .lte('month', endMonth);
+} else if (timeframe === 'Last Quarter') {
+  let currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
+  let lastQuarter = currentQuarter - 1;
+  let yearForLastQuarter = currentYear;
+
+  if (lastQuarter === 0) {
+    lastQuarter = 4;
+    yearForLastQuarter--;
+  }
+
+  const startMonth = (lastQuarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+
+  query = query
+    .eq('year', yearForLastQuarter)
+    .gte('month', startMonth)
+    .lte('month', endMonth);
+} else if (timeframe === 'Custom') {
+  // Use custom from/to; fallback to last month if empty
+  let from = fromDate;
+  let to = toDate;
+
+  if (!from || !to) {
+    const { fromISO, toISO } = getLastMonthRange();
+    from = fromISO;
+    to = toISO;
+  }
+
+  const fromD = new Date(from);
+  const toD = new Date(to);
+
+  if (!isNaN(fromD.getTime()) && !isNaN(toD.getTime())) {
+    // ensure from <= to
+    if (fromD > toD) {
+      const tmp = fromD.getTime();
+      fromD.setTime(toD.getTime());
+      toD.setTime(tmp);
+    }
+
+    const pairs: { year: number; month: number }[] = [];
+    const cur = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
+    const end = new Date(toD.getFullYear(), toD.getMonth(), 1);
+
+    while (cur <= end) {
+      pairs.push({ year: cur.getFullYear(), month: cur.getMonth() + 1 });
+      cur.setMonth(cur.getMonth() + 1);
+    }
+
+    if (pairs.length > 0) {
+      const orClauses = pairs
+        .map((p) => `and(year.eq.${p.year},month.eq.${p.month})`)
+        .join(',');
+
+      query = query.or(orClauses);
+    }
+  } else {
+    console.warn('[P&L custom] invalid date range', { from, to });
+  }
+}
+
 
       {/* end */}
       const { data: pnlRows, error: pnlErr } = await query;
@@ -367,10 +447,11 @@ const AdminPanelComplete: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    enrichWithPnL();
-  }, [timeframe, baseUsers]);
+  enrichWithPnL();
+}, [timeframe, baseUsers, fromDate, toDate]);
 
-  const pnlLabel =
+
+const pnlLabel =
   timeframe === 'YTD'
     ? 'YTD'
     : timeframe === 'This Month'
@@ -381,7 +462,10 @@ const AdminPanelComplete: React.FC = () => {
     ? 'QTD'
     : timeframe === 'Last Quarter'
     ? 'LQ'
+    : timeframe === 'Custom'
+    ? 'Custom'
     : '';
+
 
 
 
@@ -405,7 +489,7 @@ const AdminPanelComplete: React.FC = () => {
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-foreground">Timeframe:</label>
-              <Select value={timeframe} onValueChange={setTimeframe}>
+              <Select value={timeframe} onValueChange={handleTimeframeChange}>
                 <SelectTrigger className="w-40 dark:bg-slate-900/60 dark:border-slate-700">
                   <SelectValue />
                 </SelectTrigger>
@@ -415,11 +499,35 @@ const AdminPanelComplete: React.FC = () => {
                   <SelectItem value="This Quarter">This Quarter</SelectItem>
                   <SelectItem value="Last Quarter">Last Quarter</SelectItem>
                   <SelectItem value="YTD">YTD</SelectItem>
+                  <SelectItem value="Custom">Custom</SelectItem> {/* NEW */}
                 </SelectContent>
               </Select>
 
+
           </div>
         </div>
+        {timeframe === 'Custom' && (
+          <div className="mt-3 flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              <label className="text-sm text-foreground">From:</label>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-40 dark:bg-slate-900/60 dark:border-slate-700"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <label className="text-sm text-foreground">To:</label>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-40 dark:bg-slate-900/60 dark:border-slate-700"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <div className="flex space-x-4">
@@ -458,7 +566,7 @@ const AdminPanelComplete: React.FC = () => {
           </div>
         </div>
   </div>
-
+      {/*new div*/}
       {/* Users Table */}
       <Card className="dark:bg-slate-900/60 dark:border-slate-700">
         <CardHeader>
