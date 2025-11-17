@@ -240,14 +240,14 @@ const AdminPanelComplete: React.FC = () => {
       console.log('[P&L query] selecting from view qbo_pnl_monthly_from_postings', {
         realmIdsCount: realmIds.length, realmIdsPreview: realmIds.slice(0, 5)
       });
-
+      {/* start */}
       let query = supabase
         .from('qbo_pnl_monthly_from_postings')
         .select('realm_id, year, month, revenues, net_income')
         .in('realm_id', realmIds);
-
+      
       let isYTD = false;
-
+      
       if (timeframe === 'This Month') {
         query = query.eq('year', currentYear).eq('month', currentMonth);
       } else if (timeframe === 'Last Month') {
@@ -261,8 +261,34 @@ const AdminPanelComplete: React.FC = () => {
       } else if (timeframe === 'YTD') {
         query = query.eq('year', currentYear).gte('month', 1).lte('month', currentMonth);
         isYTD = true;
+      } else if (timeframe === 'This Quarter') {
+        const currentQuarter = Math.floor((currentMonth - 1) / 3) + 1; // 1–4
+        const startMonth = (currentQuarter - 1) * 3 + 1;               // 1,4,7,10
+        const endMonth = startMonth + 2;                               // 3,6,9,12
+        query = query
+          .eq('year', currentYear)
+          .gte('month', startMonth)
+          .lte('month', endMonth);
+      } else if (timeframe === 'Last Quarter') {
+        let currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
+        let lastQuarter = currentQuarter - 1;
+        let yearForLastQuarter = currentYear;
+      
+        if (lastQuarter === 0) {
+          lastQuarter = 4;
+          yearForLastQuarter--;
+        }
+      
+        const startMonth = (lastQuarter - 1) * 3 + 1;
+        const endMonth = startMonth + 2;
+      
+        query = query
+          .eq('year', yearForLastQuarter)
+          .gte('month', startMonth)
+          .lte('month', endMonth);
       }
 
+      {/* end */}
       const { data: pnlRows, error: pnlErr } = await query;
 
       if (pnlErr) {
@@ -344,7 +370,19 @@ const AdminPanelComplete: React.FC = () => {
     enrichWithPnL();
   }, [timeframe, baseUsers]);
 
-  const pnlLabel = timeframe === 'YTD' ? 'YTD' : timeframe === 'This Month' ? 'MTD' : 'LM';
+  const pnlLabel =
+  timeframe === 'YTD'
+    ? 'YTD'
+    : timeframe === 'This Month'
+    ? 'MTD'
+    : timeframe === 'Last Month'
+    ? 'LM'
+    : timeframe === 'This Quarter'
+    ? 'QTD'
+    : timeframe === 'Last Quarter'
+    ? 'LQ'
+    : '';
+
 
 
   return (
@@ -367,16 +405,19 @@ const AdminPanelComplete: React.FC = () => {
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-foreground">Timeframe:</label>
-            <Select value={timeframe} onValueChange={setTimeframe}>
-              <SelectTrigger className="w-40 dark:bg-slate-900/60 dark:border-slate-700">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="dark:bg-slate-900/90 dark:border-slate-700">
-                <SelectItem value="This Month">This Month</SelectItem>
-                <SelectItem value="Last Month">Last Month</SelectItem>
-                <SelectItem value="YTD">YTD</SelectItem>
-              </SelectContent>
-            </Select>
+              <Select value={timeframe} onValueChange={setTimeframe}>
+                <SelectTrigger className="w-40 dark:bg-slate-900/60 dark:border-slate-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="dark:bg-slate-900/90 dark:border-slate-700">
+                  <SelectItem value="This Month">This Month</SelectItem>
+                  <SelectItem value="Last Month">Last Month</SelectItem>
+                  <SelectItem value="This Quarter">This Quarter</SelectItem>
+                  <SelectItem value="Last Quarter">Last Quarter</SelectItem>
+                  <SelectItem value="YTD">YTD</SelectItem>
+                </SelectContent>
+              </Select>
+
           </div>
         </div>
 
