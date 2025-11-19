@@ -554,47 +554,87 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   // YTD chart
   useEffect(() => {
     let isCancelled = false;
-    const loadYtd = async () => {
-      if (isDemo) {
-        if (!isCancelled) {
-          setYtdChartData(DEMO_MONTH_SERIES);
-          setYtdLoading(false);
-          setCompanyName(prev => prev ?? 'Demo Company');
-          setLastSync(null);
-        }
-        return;
-      }
+    {/*Start loadYtd */}
+   const loadYtd = async () => {
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1; // 1–12
 
-      if (!effUserId) return;
+  if (isDemo) {
+    if (!isCancelled) {
+      // Remove current month from demo series
+      const filteredDemo = DEMO_MONTH_SERIES.filter(row => {
+        const d = new Date(row.date);
+        return !(
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() + 1 === currentMonth
+        );
+      });
 
-      setYtdLoading(true);
-      try {
-        const { data, error } = await invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
-          body: { period: 'ytd', userId: effUserId, realmId: effRealmId, nonce: Date.now() },
-        });
-        if (error) console.error('qbo-dashboard (ytd series) error:', error);
+      setYtdChartData(filteredDemo.length ? filteredDemo : DEMO_MONTH_SERIES);
+      setYtdLoading(false);
+      setCompanyName(prev => prev ?? 'Demo Company');
+      setLastSync(null);
+    }
+    return;
+  }
 
-        const payload: QboDashboardPayload = (data as any) ?? {};
-        if (!isCancelled) {
-          const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
-          setYtdChartData(
-            (series.length ? series : DEMO_MONTH_SERIES).map((row: any) => ({
-              date: series.length ? `${thisYear}-${String(row.name).padStart(2, '0')}-01` : row.date,
-              revenue: toNumber(row.revenue, 0),
-              expenses: toNumber(row.expenses, 0),
-            })),
+  if (!effUserId) return;
+
+  setYtdLoading(true);
+  try {
+    const { data, error } = await invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
+      body: { period: 'ytd', userId: effUserId, realmId: effRealmId, nonce: Date.now() },
+    });
+    if (error) console.error('qbo-dashboard (ytd series) error:', error);
+
+    const payload: QboDashboardPayload = (data as any) ?? {};
+    if (!isCancelled) {
+      const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
+
+      if (series.length) {
+        // Backend series: row.name = month number (1–12)
+        const filteredSeries = series.filter(row => Number(row.name) !== currentMonth);
+        const effective = filteredSeries.length ? filteredSeries : series;
+
+        setYtdChartData(
+          effective.map((row: any) => ({
+            date: `${thisYear}-${String(row.name).padStart(2, '0')}-01`,
+            revenue: toNumber(row.revenue, 0),
+            expenses: toNumber(row.expenses, 0),
+          })),
+        );
+      } else {
+        // Fallback to demo data but still drop current month
+        const filteredDemo = DEMO_MONTH_SERIES.filter(row => {
+          const d = new Date(row.date);
+          return !(
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() + 1 === currentMonth
           );
-          if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
-          if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
-        }
-      } catch (e) {
-        console.error('qbo-dashboard (ytd) fetch failed:', e);
-        if (!isCancelled) setYtdChartData(DEMO_MONTH_SERIES);
-      } finally {
-        if (!isCancelled) setYtdLoading(false);
-      }
-    };
+        });
 
+        const effective = filteredDemo.length ? filteredDemo : DEMO_MONTH_SERIES;
+        setYtdChartData(
+          effective.map(row => ({
+            date: row.date,
+            revenue: toNumber(row.revenue, 0),
+            expenses: toNumber(row.expenses, 0),
+          })),
+        );
+      }
+
+      if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
+      if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
+    }
+  } catch (e) {
+    console.error('qbo-dashboard (ytd) fetch failed:', e);
+    if (!isCancelled) setYtdChartData(DEMO_MONTH_SERIES);
+  } finally {
+    if (!isCancelled) setYtdLoading(false);
+  }
+};
+
+    {/* End loadYtd */}
     loadYtd();
     return () => { isCancelled = true; };
   }, [effUserId, effRealmId, companyName, isDemo]);
