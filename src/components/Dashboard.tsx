@@ -588,44 +588,37 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     if (error) console.error('qbo-dashboard (ytd series) error:', error);
 
     const payload: QboDashboardPayload = (data as any) ?? {};
-    if (!isCancelled) {
-      const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
-
-      if (series.length) {
-        // Backend series: row.name = month number (1–12)
-        const filteredSeries = series.filter(row => Number(row.name) !== currentMonth);
-        const effective = filteredSeries.length ? filteredSeries : series;
-
-        setYtdChartData(
-          effective.map((row: any) => ({
-            date: `${thisYear}-${String(row.name).padStart(2, '0')}-01`,
-            revenue: toNumber(row.revenue, 0),
-            expenses: toNumber(row.expenses, 0),
-          })),
-        );
-      } else {
-        // Fallback to demo data but still drop current month
-        const filteredDemo = DEMO_MONTH_SERIES.filter(row => {
-          const d = new Date(row.date);
+      if (!isCancelled) {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1; // 1–12
+      
+        const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
+      
+        // 1) Build rows exactly like before
+        const rawRows = (series.length ? series : DEMO_MONTH_SERIES).map((row: any) => ({
+          date: series.length
+            ? `${thisYear}-${String(row.name).padStart(2, '0')}-01`
+            : row.date,
+          revenue: toNumber(row.revenue, 0),
+          expenses: toNumber(row.expenses, 0),
+        }));
+      
+        // 2) Filter out the *current calendar month* rows
+        const filteredRows = rawRows.filter(r => {
+          const d = new Date(r.date);
           return !(
-            d.getFullYear() === now.getFullYear() &&
+            d.getFullYear() === currentYear &&
             d.getMonth() + 1 === currentMonth
           );
         });
-
-        const effective = filteredDemo.length ? filteredDemo : DEMO_MONTH_SERIES;
-        setYtdChartData(
-          effective.map(row => ({
-            date: row.date,
-            revenue: toNumber(row.revenue, 0),
-            expenses: toNumber(row.expenses, 0),
-          })),
-        );
+      
+        setYtdChartData(filteredRows);
+      
+        if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
+        if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
       }
 
-      if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
-      if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
-    }
   } catch (e) {
     console.error('qbo-dashboard (ytd) fetch failed:', e);
     if (!isCancelled) setYtdChartData(DEMO_MONTH_SERIES);
