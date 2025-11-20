@@ -102,6 +102,16 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
   const [signedLinks, setSignedLinks] = useState<Record<MonthKey, string>>({});
   const [loadingArtifacts, setLoadingArtifacts] = useState(false);
   const [savingByMonth, setSavingByMonth] = useState<Record<MonthKey, boolean>>({});
+  //===== new data entered on 20 nov 
+
+  const [artifacts, setArtifacts] = useState<Record<MonthKey, ArtifactRow | null>>({});
+const [videoDrafts, setVideoDrafts] = useState<Record<MonthKey, string>>({});
+const [signedLinks, setSignedLinks] = useState<Record<MonthKey, string>>({});
+const [loadingArtifacts, setLoadingArtifacts] = useState(false);
+const [savingByMonth, setSavingByMonth] = useState<Record<MonthKey, boolean>>({});
+
+// ⭐ ADD THIS:
+const [lastSync, setLastSync] = useState<string | null>(null);
 
   // Re-init from incoming user on open / user change
   useEffect(() => {
@@ -259,6 +269,75 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, user?.id, initialRealmGuess]);
+  // NEW: Resolve realm id if not passed by grid
+useEffect(() => {
+  let cancelled = false;
+
+  const run = async () => {
+    if (initialRealmGuess) {
+      if (!cancelled) setResolvedRealmId(initialRealmGuess);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('qbo_realm_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!cancelled) {
+        const r = data?.qbo_realm_id ?? null;
+        setResolvedRealmId(r);
+        console.log('[UserDetailDrawer] realm resolved via profiles', { userId: user.id, qbo_realm_id: r, error });
+      }
+    } catch {
+      if (!cancelled) setResolvedRealmId(null);
+    }
+  };
+
+  if (isOpen && user?.id) run();
+  return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [isOpen, user?.id, initialRealmGuess]);
+
+// ⭐ ADD THIS NEW EFFECT:
+useEffect(() => {
+  let cancelled = false;
+
+  const loadLastSync = async () => {
+    try {
+      if (!isOpen || !resolvedRealmId) {
+        if (!cancelled) setLastSync(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('qbo_sync_queue')
+        .select('last_updated')
+        .eq('realm_id', resolvedRealmId)
+        .maybeSingle(); // PK is realm_id, so max 1 row
+
+      if (error) {
+        console.error('[UserDetailDrawer] loadLastSync error', error);
+        if (!cancelled) setLastSync(null);
+        return;
+      }
+
+      if (!cancelled) {
+        setLastSync(data?.last_updated ?? null);
+      }
+    } catch (e) {
+      console.error('[UserDetailDrawer] loadLastSync exception', e);
+      if (!cancelled) setLastSync(null);
+    }
+  };
+
+  loadLastSync();
+
+  return () => {
+    cancelled = true;
+  };
+}, [isOpen, resolvedRealmId]);
 
   // Load artifacts for selected user's realm (admin-only)
   useEffect(() => {
@@ -536,8 +615,11 @@ const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClo
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-muted-foreground">Last Sync:</span>
-                        <span className="text-sm text-foreground">{formatDate(user.qboLastSync || user.lastLogin)}</span>
+                        <span className="text-sm text-foreground">
+                          {lastSync ? formatDate(lastSync) : '—'}
+                        </span>
                       </div>
+
                     </>
                   )}
                 </CardContent>
