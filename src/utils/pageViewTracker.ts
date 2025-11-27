@@ -1,4 +1,4 @@
-// src/utils/pageViewTracker.ts  /Second Event
+// src/utils/pageViewTracker.ts
 
 const SESSION_KEY = "ib_pageview_session";
 
@@ -17,10 +17,11 @@ type TrackPageViewOptions = {
   fullUrl?: string;
   realmId?: string | null;
   actAsUserId?: string | null;
+  accessToken?: string | null; // 👈 NEW
 };
 
 export async function trackPageView(opts: TrackPageViewOptions) {
-  const { path, fullUrl, realmId, actAsUserId } = opts;
+  const { path, fullUrl, realmId, actAsUserId, accessToken } = opts;
 
   if (typeof window === "undefined") return;
   if (!path) return;
@@ -32,7 +33,10 @@ export async function trackPageView(opts: TrackPageViewOptions) {
     "Content-Type": "application/json",
   };
 
-  // NO Authorization header in v1
+  // 👇 Send auth token if we have it
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
   if (actAsUserId) {
     headers["x-ib-act-as-user"] = actAsUserId;
   }
@@ -50,7 +54,6 @@ export async function trackPageView(opts: TrackPageViewOptions) {
 
   const fnUrl = `${fnBase}/page-view`;
 
-  // Fire-and-forget
   fetch(fnUrl, {
     method: "POST",
     headers,
