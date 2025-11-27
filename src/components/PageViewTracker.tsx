@@ -6,16 +6,20 @@ import { supabase } from "@/lib/supabaseClient";
 export function PageViewTracker() {
   const location = useLocation();
 
-  const realmId: string | null = null;     // wire later if you want
-  const actAsUserId: string | null = null; // wire later for impersonation
+  const realmId: string | null = null;
+  const actAsUserId: string | null = null;
 
   useEffect(() => {
     let isCancelled = false;
 
     async function doTrack() {
-      // Get the current Supabase session (user may or may not be logged in)
-      const { data } = await supabase.auth.getSession();
-      const accessToken = data.session?.access_token ?? null;
+      let accessToken: string | null = null;
+
+      if (supabase) {
+        // Only try this if client is available
+        const { data } = await supabase.auth.getSession();
+        accessToken = data.session?.access_token ?? null;
+      }
 
       if (isCancelled) return;
 
@@ -24,7 +28,7 @@ export function PageViewTracker() {
         fullUrl: window.location.href,
         realmId,
         actAsUserId,
-        accessToken, // 👈 now we send the token
+        accessToken, // may be null – that's fine
       });
     }
 
