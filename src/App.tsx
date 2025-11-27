@@ -1,3 +1,6 @@
+import { BrowserRouter } from "react-router-dom";
+import { PageViewTracker } from "./components/PageViewTracker";
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -28,6 +31,7 @@ const AppContent = () => {
 
   return (
     <BrowserRouter>
+        <PageViewTracker />
       <Routes>
         {!user ? (
           <>
