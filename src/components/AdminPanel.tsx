@@ -1,5 +1,5 @@
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +29,6 @@ const AdminPanel: React.FC = () => {
   const [showUserDetails, setShowUserDetails] = useState(false);
   const [timeframe, setTimeframe] = useState('This Month');
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
-  
   const [users, setUsers] = useState<any[]>([]);
 
   const formatCurrency = (amount: number) => {
@@ -76,7 +75,10 @@ const AdminPanel: React.FC = () => {
   );
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    if (!dateString) return '—';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short', 
       day: 'numeric',
@@ -84,45 +86,51 @@ const AdminPanel: React.FC = () => {
       minute: '2-digit'
     });
   };
-  import { useEffect } from 'react';
 
-useEffect(() => {
-  let cancelled = false;
+  useEffect(() => {
+    let cancelled = false;
 
-  (async () => {
-    try {
-      const { data, error } = await supabase.rpc('admin_list');
-      if (error) throw error;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('admin_list');
+        if (error) throw error;
 
-      const mapped = (data ?? []).map((r: any) => ({
-  id: r.id,
-  email: r.email,
-  fullName: r.full_name || '—',
-  role: r.role === 'admin' ? 'Admin' : 'User',
-  plan: r.plan || 'Starter',
-  isActive: !!r.is_active,
-  lastLogin: r.last_login,
+        // TEMP: see what comes back
+        console.log('[AdminPanel] admin_list sample row:', data?.[0]);
 
-  lastActivity: r.last_activity,
-  lastPage: r.last_page,
+        const mapped = (data ?? []).map((r: any) => ({
+          id: r.id,
+          email: r.email,
+          fullName: r.full_name || '—',
+          role: r.role === 'admin' ? 'Admin' : 'User',
+          plan: r.plan || 'Starter',
+          isActive: !!r.is_active,
+          lastLogin: r.last_login,
 
-  qboConnected: !!r.qbo_connected,
-  cfoAgentUses: Number(r.cfo_uses) || 0,
-  createdAt: r.created_at,
-  revenueMTD: Number(r.revenue_mtd) || 0,
-  netProfitMTD: Number(r.net_profit_mtd) || 0,
-  netMargin: Number(r.net_margin_pct) || 0,
-}));
+          // NEW FIELDS FROM RPC
+          lastActivity: r.last_activity,
+          lastPage: r.last_page,
 
-      if (!cancelled) setUsers(mapped);
-    } catch (e) {
-      console.error('[AdminPanel] admin_list fetch failed:', e);
-      if (!cancelled) setUsers([]); // empty fallback
-    }
-  })();
+          qboConnected: !!r.qbo_connected,
+          cfoAgentUses: Number(r.cfo_uses) || 0,
+          createdAt: r.created_at,
+          revenueMTD: Number(r.revenue_mtd) || 0,
+          netProfitMTD: Number(r.net_profit_mtd) || 0,
+          netMargin: Number(r.net_margin_pct) || 0,
+        }));
 
-  return () => { cancelled = true; };
-}, []);
+        if (!cancelled) setUsers(mapped);
+      } catch (e) {
+        console.error('[AdminPanel] admin_list fetch failed:', e);
+        if (!cancelled) setUsers([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
 
   return (
     <div className="space-y-6">
