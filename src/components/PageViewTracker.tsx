@@ -1,44 +1,59 @@
-// V2
+// src/components/PageViewTracker.tsx
+
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { trackPageView } from "@/utils/pageViewTracker";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabase";
+import { useEffectiveIdentity } from "@/lib/impersonation";
 
 export function PageViewTracker() {
   const location = useLocation();
 
-  const realmId: string | null = null;
-  const actAsUserId: string | null = null;
+  // This is YOUR canonical identity/realm hook (already used in Dashboard, Reports, etc.)
+  const { userId: effectiveUserId, realmId, isImpersonating, target } =
+    useEffectiveIdentity?.() ?? {
+      userId: null,
+      realmId: null,
+      isImpersonating: false,
+      target: null,
+    };
 
   useEffect(() => {
-    let isCancelled = false;
+    let cancelled = false;
 
     async function doTrack() {
-      let accessToken: string | null = null;
+      // Real logged-in user (actor)
+      let actorUserId: string | null = null;
 
-      if (supabase) {
-        // Only try this if client is available
-        const { data } = await supabase.auth.getSession();
-        accessToken = data.session?.access_token ?? null;
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) {
+          console.warn("[PageViewTracker] getUser error:", error.message);
+        }
+        actorUserId = data?.user?.id ?? null;
+      } catch (e) {
+        console.warn("[PageViewTracker] getUser threw:", e);
       }
 
-      if (isCancelled) return;
+      if (cancelled) return;
 
-      trackPageView({
+      await trackPageView({
         path: location.pathname,
         fullUrl: window.location.href,
-        realmId,
-        actAsUserId,
-        accessToken, // may be null – that's fine
+
+        actorUserId,             // real auth user
+        effectiveUserId,         // from impersonation hook (may be same as actor)
+        realmId,                 // same realm as Dashboard/Reports
+        actorIsImpersonating: !!isImpersonating,
       });
     }
 
     doTrack();
 
     return () => {
-      isCancelled = true;
+      cancelled = true;
     };
-  }, [location.pathname, realmId, actAsUserId]);
+  }, [location.pathname, realmId, effectiveUserId, isImpersonating]);
 
   return null;
 }
