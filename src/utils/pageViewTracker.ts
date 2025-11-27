@@ -12,14 +12,15 @@ function getOrCreateSessionId(): string {
   return newId;
 }
 
-export async function trackPageView(opts: {
-  supabase: any;  // your Supabase client type
+type TrackPageViewOptions = {
   path: string;
   fullUrl?: string;
   realmId?: string | null;
-  actAsUserId?: string | null; // impersonation target if any
-}) {
-  const { supabase, path, fullUrl, realmId, actAsUserId } = opts;
+  actAsUserId?: string | null;
+};
+
+export async function trackPageView(opts: TrackPageViewOptions) {
+  const { path, fullUrl, realmId, actAsUserId } = opts;
 
   if (typeof window === "undefined") return;
   if (!path) return;
@@ -27,17 +28,11 @@ export async function trackPageView(opts: {
   const sessionId = getOrCreateSessionId();
   const referrer = document.referrer || "";
 
-  // Get current auth token (actor_user_id will be decoded in the function)
-  const { data } = await supabase.auth.getSession();
-  const accessToken = data.session?.access_token;
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
 
-  if (accessToken) {
-    headers["Authorization"] = `Bearer ${accessToken}`;
-  }
+  // NO Authorization header in v1
   if (actAsUserId) {
     headers["x-ib-act-as-user"] = actAsUserId;
   }
@@ -45,11 +40,17 @@ export async function trackPageView(opts: {
     headers["x-ib-act-as-realm"] = realmId;
   }
 
-  // Replace with your actual project ref if you want,
-  // or use an env var like VITE_SUPABASE_FUNCTIONS_URL
-  const fnUrl = `${import.meta.env.VITE_SUPABASE_FUNCTIONS_URL}/page-view`;
+  const fnBase = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+  if (!fnBase) {
+    console.warn(
+      "VITE_SUPABASE_FUNCTIONS_URL is not set; skipping page view tracking."
+    );
+    return;
+  }
 
-  // Fire-and-forget; we don't care about the result on the UI
+  const fnUrl = `${fnBase}/page-view`;
+
+  // Fire-and-forget
   fetch(fnUrl, {
     method: "POST",
     headers,
@@ -61,6 +62,6 @@ export async function trackPageView(opts: {
     }),
     keepalive: true,
   }).catch(() => {
-    // ignore errors in tracking
+    // ignore tracking errors
   });
 }
