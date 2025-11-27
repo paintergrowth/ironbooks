@@ -1,24 +1,19 @@
-// src/components/PageViewTracker.tsx
+ // src/components/PageViewTracker.tsx
 
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { trackPageView } from "../utils/pageViewTracker";
-import { useSupabaseClient } from "../your-supabase-hooks"; // adapt
-import { useImpersonation } from "../your-impersonation-context"; // adapt
+import { trackPageView } from "@/utils/pageViewTracker";
+import { supabase } from "@/lib/supabaseClient"; // this should already exist in your project
 
 export function PageViewTracker() {
   const location = useLocation();
-  const supabase = useSupabaseClient();
 
-  // However you store impersonation context in the app:
-  const { actAsUserId, realmId } = useImpersonation() || {
-    actAsUserId: null,
-    realmId: null,
-  };
+  // For now we’re not wiring impersonation; keep them null.
+  const realmId: string | null = null;
+  const actAsUserId: string | null = null;
 
   useEffect(() => {
-    if (!supabase) return;
-
+    // Track on initial load and every time the pathname changes
     trackPageView({
       supabase,
       path: location.pathname,
@@ -26,8 +21,7 @@ export function PageViewTracker() {
       realmId,
       actAsUserId,
     });
+  }, [location.pathname, realmId, actAsUserId]);
 
-  }, [location.pathname, supabase, realmId, actAsUserId]);
-
-  return null; // this component renders nothing
+  return null;
 }
