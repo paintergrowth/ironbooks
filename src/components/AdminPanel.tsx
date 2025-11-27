@@ -95,20 +95,24 @@ useEffect(() => {
       if (error) throw error;
 
       const mapped = (data ?? []).map((r: any) => ({
-        id: r.id,
-        email: r.email,
-        fullName: r.full_name || '—',
-        role: r.role === 'admin' ? 'Admin' : 'User',       // keep badge text clean
-        plan: r.plan || 'Starter',
-        isActive: !!r.is_active,
-        lastLogin: r.last_login,                           // your formatDate() will render it
-        qboConnected: !!r.qbo_connected,
-        cfoAgentUses: Number(r.cfo_uses) || 0,
-        createdAt: r.created_at,
-        revenueMTD: Number(r.revenue_mtd) || 0,            // $0.0 as requested
-        netProfitMTD: Number(r.net_profit_mtd) || 0,       // $0.0 as requested
-        netMargin: Number(r.net_margin_pct) || 0,          // 0.0% as requested
-      }));
+  id: r.id,
+  email: r.email,
+  fullName: r.full_name || '—',
+  role: r.role === 'admin' ? 'Admin' : 'User',
+  plan: r.plan || 'Starter',
+  isActive: !!r.is_active,
+  lastLogin: r.last_login,
+
+  lastActivity: r.last_activity,
+  lastPage: r.last_page,
+
+  qboConnected: !!r.qbo_connected,
+  cfoAgentUses: Number(r.cfo_uses) || 0,
+  createdAt: r.created_at,
+  revenueMTD: Number(r.revenue_mtd) || 0,
+  netProfitMTD: Number(r.net_profit_mtd) || 0,
+  netMargin: Number(r.net_margin_pct) || 0,
+}));
 
       if (!cancelled) setUsers(mapped);
     } catch (e) {
@@ -210,6 +214,8 @@ useEffect(() => {
                   <th className="text-left p-2">Role</th>
                   <th className="text-left p-2">Status</th>
                   <th className="text-left p-2">Last Login</th>
+                  <th className="text-left p-2">Last Activity</th>
+<th className="text-left p-2">Last Page</th>
                   <th className="text-left p-2">QBO</th>
                   <th className="text-left p-2">CFO Uses</th>
                   <th className="text-left p-2">Plan</th>
@@ -259,6 +265,18 @@ useEffect(() => {
                       </Badge>
                     </td>
                     <td className="p-2 text-sm">{formatDate(user.lastLogin)}</td>
+                    <td className="p-2 text-sm">
+  {user.lastActivity ? formatDate(user.lastActivity) : (
+    <span className="text-muted-foreground">—</span>
+  )}
+</td>
+<td className="p-2 text-sm">
+  {user.lastPage ? user.lastPage : (
+    <span className="text-muted-foreground">—</span>
+  )}
+</td>
+
+                    
                     <td className="p-2">
                       <Badge variant={user.qboConnected ? "default" : "outline"}>
                         {user.qboConnected ? 'Connected' : 'Not Connected'}
