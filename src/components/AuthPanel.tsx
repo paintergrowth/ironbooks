@@ -10,7 +10,8 @@ import { Link } from 'react-router-dom';
 
 // Force auth redirects to production root (avoid preview hosts and nonexistent routes)
 
-const APP_ORIGIN = 'https://ironbooks.netlify.app/';
+//const APP_ORIGIN = 'https://ironbooks.netlify.app/';
+const APP_ORIGIN = 'https://app.ironbooks.com';
 
 interface AuthPanelProps {
   mode?: 'signin' | 'signup';
