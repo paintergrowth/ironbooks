@@ -13,8 +13,8 @@ import { LoginFooter } from './LoginFooter';
 import { SecurityBar } from './SecurityBar';
 import { BenefitsPanel } from './BenefitsPanel';
 
-//const APP_ORIGIN = 'https://ironbooks.netlify.app';
-const APP_ORIGIN = 'https://api.ironbooks.com';
+const APP_ORIGIN = 'https://ironbooks.netlify.app';
+//const APP_ORIGIN = 'https://api.ironbooks.com';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
