@@ -39,7 +39,7 @@ interface QboDashboardPayload {
   companyName?: string | null;
 }
 
-const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
+const QBO_REDIRECT_URI = 'https://app.ironbooks.com/?connected=qbo';
 
 // ===== DEMO DATA (Jan–Sep of current year) =====
 const thisYear = new Date().getFullYear();
