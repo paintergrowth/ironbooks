@@ -37,7 +37,8 @@ console.log('[Settings] file loaded');
 
 /** ===== Intuit (QuickBooks) OAuth config (copied from CFOAgent) ===== */
 const QBO_CLIENT_ID = 'ABdBqpI0xI6KDjHIgedbLVEnXrqjJpqLj2T3yyT7mBjkfI4ulJ';
-const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
+//const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
+const QBO_REDIRECT_URI = 'https://app.ironbooks.com/?connected=qbo';
 const QBO_SCOPES = 'com.intuit.quickbooks.accounting openid profile email';
 const QBO_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
 
