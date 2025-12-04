@@ -909,7 +909,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
             <div className="max-w-2xl mx-auto px-4 pt-4">
               <div className="mb-4 rounded-md border border-dashed border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-100">
                 You are using <span className="font-semibold">demo financial data</span>.
-                Numbers are based on a sample client and adjusted for demonstration only.
+                Numbers are based on a sample client and are for demonstration only.
               </div>
             </div>
           )}
