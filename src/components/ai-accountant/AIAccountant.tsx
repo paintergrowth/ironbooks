@@ -42,6 +42,7 @@ interface AIAccountantProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }
+const DEMO_REALM_ALIAS = '__DEMO__';
 
 const AUTO_SEND_ON_END = true;           // Voice input: auto-send transcript when speech ends
 const AUTO_READ_NEW_RESPONSES = true;   // TTS: auto-read assistant replies when they finish streaming
@@ -494,7 +495,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     ? (target?.realmId ?? null)
     : (realRealmId ?? qboStatus?.realm_id ?? null);
   const [companyName, setCompanyName] = useState<string | null>(null);
-
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  
   // Load REAL user's realm (used when not impersonating)
   useEffect(() => {
     (async () => {
@@ -531,7 +533,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
   // QuickBooks OAuth config (same as CFO Agent)
   const QBO_CLIENT_ID = 'ABdBqpI0xI6KDjHIgedbLVEnXrqjJpqLj2T3yyT7mBjkfI4ulJ';
-  const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
+  //const QBO_REDIRECT_URI = 'https://ironbooks.netlify.app/?connected=qbo';
+    const QBO_REDIRECT_URI = 'https://app.ironbooks.com/?connected=qbo';
+
   const QBO_SCOPES = 'com.intuit.quickbooks.accounting openid profile email';
   const QBO_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
 
@@ -599,11 +603,20 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
     const sendUserId = isImpersonating
       ? (target?.userId ?? null)
       : (authUserData?.user?.id ?? user?.id ?? null);
-    const sendRealmId = isImpersonating
+
+    let effectiveRealmId = isImpersonating
       ? (target?.realmId ?? null)
       : (qboStatus?.realm_id ?? realRealmId ?? null);
 
-    if (!sendUserId || !sendRealmId) {
+    // If we're NOT impersonating and there is no realm yet → use demo realm
+    if (!effectiveRealmId && !isImpersonating) {
+      effectiveRealmId = DEMO_REALM_ALIAS;
+      setIsDemoMode(true);
+    } else {
+      setIsDemoMode(false);
+    }
+
+    if (!sendUserId || !effectiveRealmId) {
       toast({
         title: 'Connect QuickBooks',
         description: 'Please connect your QuickBooks (or wait for your company/realm to load) before chatting.',
@@ -612,6 +625,7 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       setIsTyping(false);
       return;
     }
+
 
     const messageContent = inputValue.trim();
     setInputValue('');
@@ -676,8 +690,9 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           setCurrentReasoning([]);
 
           try {
-            await callAgentStreaming(messageContent, messageId, session.id, sendUserId, sendRealmId);
+                        await callAgentStreaming(messageContent, messageId, session.id, sendUserId, effectiveRealmId!);
             if (AUTO_READ_NEW_RESPONSES) {
+
               queueMicrotask(() => {
                 const msg = getMsgById(messageId);
                 if (msg?.content) speakText(msg.content, messageId);
@@ -686,7 +701,8 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           } catch (e) {
             console.warn('Streaming failed, falling back:', e);
             try {
-              const finalResponse = await callAgentOnce(messageContent, sendUserId, sendRealmId);
+                            const finalResponse = await callAgentOnce(messageContent, sendUserId, effectiveRealmId!);
+
               const words = finalResponse.split(' ');
               let currentText = '';
               for (let i = 0; i < words.length; i++) {
@@ -889,6 +905,15 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       <div className="flex-1 relative h-full">
         {/* Chat Messages Area - Absolute positioned with bottom margin for input */}
         <div className="absolute inset-0 bottom-24 overflow-y-auto">
+                    {isDemoMode && (
+            <div className="max-w-2xl mx-auto px-4 pt-4">
+              <div className="mb-4 rounded-md border border-dashed border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-100">
+                You are using <span className="font-semibold">demo financial data</span>.
+                Numbers are based on a sample client and adjusted for demonstration only.
+              </div>
+            </div>
+          )}
+
           {allMessages.length === 0 ? (
             // Welcome Screen
             <div className="h-full flex flex-col items-center justify-center p-8 space-y-8">
