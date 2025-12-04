@@ -105,7 +105,12 @@ const [savingByMonth, setSavingByMonth] = useState<Record<MonthKey, boolean>>({}
 
 // ⭐ NEW: last sync value from qbo_sync_queue.last_updated
 const [lastSync, setLastSync] = useState<string | null>(null);
+// ⭐ From user_last_activity view
+const [lastActivity, setLastActivity] = useState<string | null>(null);
+const [lastPage, setLastPage] = useState<string | null>(null);
 
+
+  
 
   // Re-init from incoming user on open / user change
   useEffect(() => {
@@ -342,6 +347,54 @@ useEffect(() => {
     cancelled = true;
   };
 }, [isOpen, resolvedRealmId]);
+// ⭐ NEW EFFECT: load last activity & last page from user_last_activity view
+useEffect(() => {
+  let cancelled = false;
+
+  const loadLastActivity = async () => {
+    try {
+      if (!isOpen || !user?.id) {
+        if (!cancelled) {
+          setLastActivity(null);
+          setLastPage(null);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('user_last_activity')
+        .select('last_activity, last_page')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[UserDetailDrawer] loadLastActivity error', error);
+        if (!cancelled) {
+          setLastActivity(null);
+          setLastPage(null);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setLastActivity(data?.last_activity ?? null);
+        setLastPage(data?.last_page ?? null);
+      }
+    } catch (e) {
+      console.error('[UserDetailDrawer] loadLastActivity exception', e);
+      if (!cancelled) {
+        setLastActivity(null);
+        setLastPage(null);
+      }
+    }
+  };
+
+  loadLastActivity();
+
+  return () => {
+    cancelled = true;
+  };
+}, [isOpen, user?.id]);
 
   // Load artifacts for selected user's realm (admin-only)
   useEffect(() => {
@@ -659,17 +712,30 @@ useEffect(() => {
                   <CardTitle className="text-sm text-foreground">Login History</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Last Login:</span>
-                      <span className="text-foreground">{formatDate(user.lastLogin)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Created:</span>
-                      <span className="text-foreground">{formatDate(user.createdAt)}</span>
-                    </div>
-                  </div>
-                </CardContent>
+  <div className="space-y-2">
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">Last Login:</span>
+      <span className="text-foreground">{formatDate(user.lastLogin)}</span>
+    </div>
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">Created:</span>
+      <span className="text-foreground">{formatDate(user.createdAt)}</span>
+    </div>
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">Last Activity:</span>
+      <span className="text-foreground">
+        {lastActivity ? formatDate(lastActivity) : '—'}
+      </span>
+    </div>
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">Last Page Viewed:</span>
+      <span className="text-foreground">
+        {lastPage || '—'}
+      </span>
+    </div>
+  </div>
+</CardContent>
+
               </Card>
             </TabsContent>
 
