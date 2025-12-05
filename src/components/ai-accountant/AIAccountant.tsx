@@ -681,145 +681,142 @@ const sendUserId = isImpersonating
       } else {
         clearInterval(reasoningInterval);
 
+        // Wait a bit after "thinking" finishes, then call the agent
         setTimeout(async () => {
           const messageId = (Date.now() + 1).toString();
 
-          // Create streaming assistant message
-setTimeout(async () => {
-  const messageId = (Date.now() + 1).toString();
+          const streamingMessage: Message = {
+            id: messageId,
+            content: '',
+            role: 'assistant',
+            timestamp: new Date(),
+            isStreaming: true,
+            reasoningSteps,
+            sources,
+          };
+          setStreamingMessages(prev => [...prev, streamingMessage]);
+          setCurrentReasoning([]);
 
-  const streamingMessage: Message = {
-    id: messageId,
-    content: '',
-    role: 'assistant',
-    timestamp: new Date(),
-    isStreaming: true,
-    reasoningSteps,
-    sources,
+          try {
+            // 🔹 1) DEMO PATH: no Supabase auth session → go straight to one-shot demo call
+            if (isDemoUser && !hasAuthSession) {
+              const finalResponse = await callAgentOnceDemo(
+                messageContent,
+                sendUserId || 'demo-user',
+                effectiveRealmId!
+              );
+
+              const words = finalResponse.split(' ');
+              let currentText = '';
+              for (let i = 0; i < words.length; i++) {
+                currentText += (i > 0 ? ' ' : '') + words[i];
+                setStreamingMessages(prev => prev.map(msg =>
+                  msg.id === messageId
+                    ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
+                    : msg
+                ));
+                if (i < words.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 30));
+                }
+              }
+
+              await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
+              setIsTyping(false);
+
+              if (AUTO_READ_NEW_RESPONSES) {
+                queueMicrotask(() => speakText(finalResponse, messageId));
+              }
+
+              return; // ⬅️ important: don't continue to streaming logic
+            }
+
+            // 🔹 2) NORMAL PATH: real users → streaming + fallback
+            await callAgentStreaming(
+              messageContent,
+              messageId,
+              session.id,
+              sendUserId!,
+              effectiveRealmId!
+            );
+
+            if (AUTO_READ_NEW_RESPONSES) {
+              queueMicrotask(() => {
+                const msg = getMsgById(messageId);
+                if (msg?.content) speakText(msg.content, messageId);
+              });
+            }
+          } catch (e) {
+            console.warn('Streaming failed, falling back:', e);
+            try {
+              const finalResponse = (isDemoUser && !hasAuthSession)
+                ? await callAgentOnceDemo(
+                    messageContent,
+                    sendUserId || 'demo-user',
+                    effectiveRealmId!
+                  )
+                : await callAgentOnce(
+                    messageContent,
+                    sendUserId!,
+                    effectiveRealmId!
+                  );
+
+              const words = finalResponse.split(' ');
+              let currentText = '';
+              for (let i = 0; i < words.length; i++) {
+                currentText += (i > 0 ? ' ' : '') + words[i];
+                setStreamingMessages(prev => prev.map(msg =>
+                  msg.id === messageId
+                    ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
+                    : msg
+                ));
+                if (i < words.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 30));
+                }
+              }
+
+              await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
+              setIsTyping(false);
+
+              if (AUTO_READ_NEW_RESPONSES) {
+                queueMicrotask(() => speakText(finalResponse, messageId));
+              }
+            } catch (e2) {
+              console.error('AI query error:', e2);
+
+              let fallbackResponse =
+                `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
+
+              if (e2 instanceof Error) {
+                if (e2.message.includes('QuickBooks not connected')) {
+                  fallbackResponse =
+                    `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
+                } else if (
+                  e2.message.includes('authorization expired') ||
+                  e2.message.includes('qbo_reauth_required')
+                ) {
+                  fallbackResponse =
+                    `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
+                }
+              }
+
+              setStreamingMessages(prev => prev.map(msg =>
+                msg.id === messageId
+                  ? { ...msg, content: fallbackResponse, isStreaming: false }
+                  : msg
+              ));
+              await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
+              setIsTyping(false);
+
+              if (AUTO_READ_NEW_RESPONSES) {
+                queueMicrotask(() => speakText(fallbackResponse, messageId));
+              }
+            }
+          }
+        }, 500); // delay after reasoning finishes
+      }
+    }, 1250); // reasoning step animation interval
   };
-  setStreamingMessages(prev => [...prev, streamingMessage]);
-  setCurrentReasoning([]);
 
-  try {
-    // 🔹 1) DEMO PATH: no Supabase auth session → go straight to one-shot demo call
-    if (isDemoUser && !hasAuthSession) {
-      const finalResponse = await callAgentOnceDemo(
-        messageContent,
-        sendUserId || 'demo-user',
-        effectiveRealmId!
-      );
-
-      const words = finalResponse.split(' ');
-      let currentText = '';
-      for (let i = 0; i < words.length; i++) {
-        currentText += (i > 0 ? ' ' : '') + words[i];
-        setStreamingMessages(prev => prev.map(msg =>
-          msg.id === messageId
-            ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
-            : msg
-        ));
-        if (i < words.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 30));
-        }
-      }
-
-      await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
-      setIsTyping(false);
-
-      if (AUTO_READ_NEW_RESPONSES) {
-        queueMicrotask(() => speakText(finalResponse, messageId));
-      }
-
-      return; // ⬅️ important: don't continue to streaming logic
-    }
-
-    // 🔹 2) NORMAL PATH: real users → streaming + fallback
-    await callAgentStreaming(
-      messageContent,
-      messageId,
-      session.id,
-      sendUserId!,
-      effectiveRealmId!
-    );
-
-    if (AUTO_READ_NEW_RESPONSES) {
-      queueMicrotask(() => {
-        const msg = getMsgById(messageId);
-        if (msg?.content) speakText(msg.content, messageId);
-      });
-    }
-  } catch (e) {
-    console.warn('Streaming failed, falling back:', e);
-    try {
-      const finalResponse = (isDemoUser && !hasAuthSession)
-        ? await callAgentOnceDemo(
-            messageContent,
-            sendUserId || 'demo-user',
-            effectiveRealmId!
-          )
-        : await callAgentOnce(
-            messageContent,
-            sendUserId!,
-            effectiveRealmId!
-          );
-
-      const words = finalResponse.split(' ');
-      let currentText = '';
-      for (let i = 0; i < words.length; i++) {
-        currentText += (i > 0 ? ' ' : '') + words[i];
-        setStreamingMessages(prev => prev.map(msg =>
-          msg.id === messageId
-            ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
-            : msg
-        ));
-        if (i < words.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 30));
-        }
-      }
-
-      await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
-      setIsTyping(false);
-
-      if (AUTO_READ_NEW_RESPONSES) {
-        queueMicrotask(() => speakText(finalResponse, messageId));
-      }
-    } catch (e2) {
-      console.error('AI query error:', e2);
-
-      let fallbackResponse =
-        `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
-
-      if (e2 instanceof Error) {
-        if (e2.message.includes('QuickBooks not connected')) {
-          fallbackResponse =
-            `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
-        } else if (
-          e2.message.includes('authorization expired') ||
-          e2.message.includes('qbo_reauth_required')
-        ) {
-          fallbackResponse =
-            `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
-        }
-      }
-
-      setStreamingMessages(prev => prev.map(msg =>
-        msg.id === messageId
-          ? { ...msg, content: fallbackResponse, isStreaming: false }
-          : msg
-      ));
-      await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
-      setIsTyping(false);
-
-      if (AUTO_READ_NEW_RESPONSES) {
-        queueMicrotask(() => speakText(fallbackResponse, messageId));
-      }
-    }
-  }
-}, 500);
-
-      }
-    }, 1250);
-  };
 
   const getMsgById = (id: string) => {
     const all = [...streamingMessages, ...chatMessages.map(m => ({
