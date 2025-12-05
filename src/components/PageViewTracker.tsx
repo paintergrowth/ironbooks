@@ -27,9 +27,20 @@ export function PageViewTracker() {
 
       try {
         const { data, error } = await supabase.auth.getUser();
+
         if (error) {
-          console.warn("[PageViewTracker] getUser error:", error.message);
+          const msg = (error as any)?.message || String(error);
+
+          // 👉 This is normal in demo/public mode – don't spam warnings
+          if (msg.includes("Auth session missing")) {
+            console.info(
+              "[PageViewTracker] no auth session (demo/public) – skipping actorUserId"
+            );
+          } else {
+            console.warn("[PageViewTracker] getUser error:", msg);
+          }
         }
+
         actorUserId = data?.user?.id ?? null;
       } catch (e) {
         console.warn("[PageViewTracker] getUser threw:", e);
@@ -37,11 +48,17 @@ export function PageViewTracker() {
 
       if (cancelled) return;
 
+      // OPTIONAL: if you don't care about totally anonymous views, bail out here
+      if (!actorUserId && !effectiveUserId) {
+        // console.info("[PageViewTracker] skipping anonymous view");
+        return;
+      }
+
       await trackPageView({
         path: location.pathname,
         fullUrl: window.location.href,
 
-        actorUserId,             // real auth user
+        actorUserId,             // real auth user (may be null in demo)
         effectiveUserId,         // from impersonation hook (may be same as actor)
         realmId,                 // same realm as Dashboard/Reports
         actorIsImpersonating: !!isImpersonating,
@@ -54,6 +71,7 @@ export function PageViewTracker() {
       cancelled = true;
     };
   }, [location.pathname, realmId, effectiveUserId, isImpersonating]);
+
 
   return null;
 }
