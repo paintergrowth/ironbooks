@@ -600,9 +600,17 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
 
     // Resolve identity *fresh* at send-time to avoid momentary nulls
     const { data: authUserData } = await supabase.auth.getUser();
-    const sendUserId = isImpersonating
-      ? (target?.userId ?? null)
-      : (authUserData?.user?.id ?? user?.id ?? null);
+const hasAuthSession = !!authUserData?.user;
+
+// Heuristic: demo-auth.tsx sets a fake user with id 'demo-user' (or email demo@ironbooks.com)
+const isDemoUser =
+  !isImpersonating &&
+  (user?.id === 'demo-user' || user?.email === 'demo@ironbooks.com');
+
+const sendUserId = isImpersonating
+  ? (target?.userId ?? null)
+  : (authUserData?.user?.id ?? user?.id ?? null);
+
 
     let effectiveRealmId = isImpersonating
       ? (target?.realmId ?? null)
@@ -698,51 +706,57 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
                 if (msg?.content) speakText(msg.content, messageId);
               });
             }
-          } catch (e) {
-            console.warn('Streaming failed, falling back:', e);
-            try {
-                            const finalResponse = await callAgentOnce(messageContent, sendUserId, effectiveRealmId!);
+} catch (e) {
+  console.warn('Streaming failed, falling back:', e);
+  try {
+    // 🔑 KEY CHANGE:
+    // If this is a demo user AND there is no auth session,
+    // call the no-auth demo helper instead of invokeWithAuthSafe.
+    const finalResponse = (isDemoUser && !hasAuthSession)
+      ? await callAgentOnceDemo(messageContent, sendUserId || 'demo-user', effectiveRealmId!)
+      : await callAgentOnce(messageContent, sendUserId!, effectiveRealmId!);
 
-              const words = finalResponse.split(' ');
-              let currentText = '';
-              for (let i = 0; i < words.length; i++) {
-                currentText += (i > 0 ? ' ' : '') + words[i];
-                setStreamingMessages(prev => prev.map(msg =>
-                  msg.id === messageId
-                    ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
-                    : msg
-                ));
-                if (i < words.length - 1) {
-                  await new Promise(resolve => setTimeout(resolve, 30));
-                }
-              }
-              await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
-              setIsTyping(false);
-              if (AUTO_READ_NEW_RESPONSES) {
-                queueMicrotask(() => speakText(finalResponse, messageId));
-              }
-            } catch (e2) {
-              console.error('AI query error:', e2);
+    const words = finalResponse.split(' ');
+    let currentText = '';
+    for (let i = 0; i < words.length; i++) {
+      currentText += (i > 0 ? ' ' : '') + words[i];
+      setStreamingMessages(prev => prev.map(msg =>
+        msg.id === messageId
+          ? { ...msg, content: currentText, isStreaming: i < words.length - 1 }
+          : msg
+      ));
+      if (i < words.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+    }
+    await saveMessage('assistant', finalResponse, 0, 0, 0, session.id);
+    setIsTyping(false);
+    if (AUTO_READ_NEW_RESPONSES) {
+      queueMicrotask(() => speakText(finalResponse, messageId));
+    }
+  } catch (e2) {
+    console.error('AI query error:', e2);
 
-              let fallbackResponse = `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
-              if (e2 instanceof Error) {
-                if (e2.message.includes('QuickBooks not connected')) {
-                  fallbackResponse = `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
-                } else if (e2.message.includes('authorization expired') || e2.message.includes('qbo_reauth_required')) {
-                  fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
-                }
-              }
+    let fallbackResponse = `I'm having trouble accessing your financial data right now. Please check your QuickBooks connection and try again.`;
+    if (e2 instanceof Error) {
+      if (e2.message.includes('QuickBooks not connected')) {
+        fallbackResponse = `🔗 **QuickBooks Not Connected**\n\nI need access to your QuickBooks data to provide financial insights. Please connect your QuickBooks account using the button in the sidebar.`;
+      } else if (e2.message.includes('authorization expired') || e2.message.includes('qbo_reauth_required')) {
+        fallbackResponse = `🔄 **QuickBooks Authorization Expired**\n\nYour QuickBooks connection has expired. Please reconnect your account to continue accessing your financial data.`;
+      }
+    }
 
-              setStreamingMessages(prev => prev.map(msg =>
-                msg.id === messageId ? { ...msg, content: fallbackResponse, isStreaming: false } : msg
-              ));
-              await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
-              setIsTyping(false);
-              if (AUTO_READ_NEW_RESPONSES) {
-                queueMicrotask(() => speakText(fallbackResponse, messageId));
-              }
-            }
-          }
+    setStreamingMessages(prev => prev.map(msg =>
+      msg.id === messageId ? { ...msg, content: fallbackResponse, isStreaming: false } : msg
+    ));
+    await saveMessage('assistant', fallbackResponse, 0, 0, 0, session.id);
+    setIsTyping(false);
+    if (AUTO_READ_NEW_RESPONSES) {
+      queueMicrotask(() => speakText(fallbackResponse, messageId));
+    }
+  }
+}
+
         }, 500);
       }
     }, 1250);
@@ -890,6 +904,26 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
       ? text
       : "Sorry, I couldn't process that query.";
   };
+  // Non-streaming demo fallback (NO auth session required)
+const callAgentOnceDemo = async (query: string, userId: string, realmId: string) => {
+  const { data, error } = await supabase.functions.invoke<{ response?: string }>('qbo-query-agent', {
+    body: {
+      query,
+      realmId,
+      userId,
+      demo: true, // optional flag so backend can treat this as demo if you want
+    },
+  });
+
+  if (error) {
+    throw new Error((error as any)?.message || 'Demo invoke error');
+  }
+
+  const text = data?.response;
+  return (typeof text === 'string' && text.trim().length > 0)
+    ? text
+    : "Sorry, I couldn't process that query in demo mode.";
+};
 
   const formatTime = (date: Date) => {
     const now = new Date();
