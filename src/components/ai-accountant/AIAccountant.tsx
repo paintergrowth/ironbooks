@@ -593,23 +593,34 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
   ];
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || !user) return;
+  if (!inputValue.trim()) return;
+
 
     if (isRecording) stopMic();
     stopTTS(); // stop reading if the user sends something new
 
-    // Resolve identity *fresh* at send-time to avoid momentary nulls
+    
+       // Resolve identity *fresh* at send-time to avoid momentary nulls
     const { data: authUserData } = await supabase.auth.getUser();
-const hasAuthSession = !!authUserData?.user;
+    const hasAuthSession = !!authUserData?.user;
 
-// Heuristic: demo-auth.tsx sets a fake user with id 'demo-user' (or email demo@ironbooks.com)
-const isDemoUser =
-  !isImpersonating &&
-  (user?.id === 'demo-user' || user?.email === 'demo@ironbooks.com');
+    // Demo mode: no Supabase auth session OR explicit demo user
+    const isDemoUser =
+      !isImpersonating &&
+      (
+        !hasAuthSession ||                                   // 👈 public demo (no auth)
+        user?.id === 'demo-user' ||
+        user?.email?.toLowerCase() === 'demo@ironbooks.com'
+      );
 
-const sendUserId = isImpersonating
-  ? (target?.userId ?? null)
-  : (authUserData?.user?.id ?? user?.id ?? null);
+    const sendUserId = isDemoUser
+      ? (user?.id || 'demo-user')                           // 👈 always have an ID in demo
+      : (
+          isImpersonating
+            ? (target?.userId ?? null)
+            : (authUserData?.user?.id ?? user?.id ?? null)
+        );
+
 
 
     let effectiveRealmId = isImpersonating
