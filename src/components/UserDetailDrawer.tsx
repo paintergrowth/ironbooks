@@ -47,15 +47,22 @@ type MonthKey = string; // "YYYY-MM"
 
 const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClose, onSaved }) => {
   if (!user) return null;
-    // Best-effort: try common IP fields from the grid/user object
-  const ip: string | null =
-    user.lastIp ||
-    user.last_ip ||
-    user.ip_address ||
-    user.ip ||
-    null;
+const [lastIp, setLastIp] = useState<string | null>(null);
 
-  const { location, status: ipStatus } = useIpLocation(ip);
+// Fallback from grid/user object in case DB lookup fails or is empty
+const candidateIp: string | null =
+  user.lastIp ||
+  user.last_ip ||
+  user.ip_address ||
+  user.ip ||
+  null;
+
+// Prefer DB lastIp; fallback to candidateIp from grid
+const effectiveIp = lastIp || candidateIp;
+
+// Now resolve location from the effective IP
+const { location, status: ipStatus } = useIpLocation(effectiveIp);
+
 
   // ----- initial values from props (safe fallbacks) -----
   const initialName = useMemo(() => (user.fullName === '—' ? '' : (user.fullName ?? '')), [user?.id]);
@@ -358,6 +365,48 @@ useEffect(() => {
     cancelled = true;
   };
 }, [isOpen, resolvedRealmId]);
+
+// Load last IP from page_view_events when drawer opens
+useEffect(() => {
+  let cancelled = false;
+
+  const loadLastIp = async () => {
+    try {
+      if (!isOpen || !user?.id) {
+        if (!cancelled) setLastIp(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('page_view_events')
+        .select('ip_address')
+        .eq('effective_user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[UserDetailDrawer] loadLastIp error', error);
+        if (!cancelled) setLastIp(null);
+        return;
+      }
+
+      if (!cancelled) {
+        setLastIp(data?.ip_address ?? null);
+      }
+    } catch (e) {
+      console.error('[UserDetailDrawer] loadLastIp exception', e);
+      if (!cancelled) setLastIp(null);
+    }
+  };
+
+  loadLastIp();
+
+  return () => {
+    cancelled = true;
+  };
+}, [isOpen, user?.id]);
+  
 // ⭐ NEW EFFECT: load last activity & last page from user_last_activity view
 useEffect(() => {
   let cancelled = false;
@@ -748,27 +797,30 @@ useEffect(() => {
       </span>
     </div>
 
-    {/* NEW: IP + Location */}
-    <div className="flex justify-between text-sm">
-      <span className="text-muted-foreground">Last IP:</span>
-      <span className="text-foreground">{ip || '—'}</span>
-    </div>
+{/* NEW: IP + Location */}
+<div className="flex justify-between text-sm">
+  <span className="text-muted-foreground">Last IP:</span>
+  <span className="text-foreground">
+    {effectiveIp || '—'}
+  </span>
+</div>
 
-    <div className="flex justify-between text-sm">
-      <span className="text-muted-foreground">Location:</span>
-      <span className="text-foreground text-right">
-        {!ip && ipStatus === 'idle' && '—'}
-        {ip && ipStatus === 'loading' && 'Looking up…'}
-        {ip && ipStatus === 'error' && 'Unknown'}
-        {ip && ipStatus === 'success' && location && (
-          <>
-            {location.city && `${location.city}, `}
-            {location.region && `${location.region}, `}
-            {location.country}
-          </>
-        )}
-      </span>
-    </div>
+<div className="flex justify-between text-sm">
+  <span className="text-muted-foreground">Location:</span>
+  <span className="text-foreground text-right">
+    {!effectiveIp && ipStatus === 'idle' && '—'}
+    {effectiveIp && ipStatus === 'loading' && 'Looking up…'}
+    {effectiveIp && ipStatus === 'error' && 'Unknown'}
+    {effectiveIp && ipStatus === 'success' && location && (
+      <>
+        {location.city && `${location.city}, `}
+        {location.region && `${location.region}, `}
+        {location.country}
+      </>
+    )}
+  </span>
+</div>
+
   </div>
 </CardContent>
 
