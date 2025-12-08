@@ -48,6 +48,7 @@ type MonthKey = string; // "YYYY-MM"
 const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClose, onSaved }) => {
   if (!user) return null;
 const [lastIp, setLastIp] = useState<string | null>(null);
+const [lastUserAgent, setLastUserAgent] = useState<string | null>(null);
 
 // Fallback from grid/user object in case DB lookup fails or is empty
 const candidateIp: string | null =
@@ -366,46 +367,57 @@ useEffect(() => {
   };
 }, [isOpen, resolvedRealmId]);
 
-// Load last IP from page_view_events when drawer opens
+// Load last IP + user agent from page_view_events when drawer opens
 useEffect(() => {
   let cancelled = false;
 
-  const loadLastIp = async () => {
+  const loadLastSessionMeta = async () => {
     try {
       if (!isOpen || !user?.id) {
-        if (!cancelled) setLastIp(null);
+        if (!cancelled) {
+          setLastIp(null);
+          setLastUserAgent(null);
+        }
         return;
       }
 
       const { data, error } = await supabase
         .from('page_view_events')
-        .select('ip_address')
+        .select('ip_address,user_agent')
         .eq('effective_user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (error) {
-        console.error('[UserDetailDrawer] loadLastIp error', error);
-        if (!cancelled) setLastIp(null);
+        console.error('[UserDetailDrawer] loadLastSessionMeta error', error);
+        if (!cancelled) {
+          setLastIp(null);
+          setLastUserAgent(null);
+        }
         return;
       }
 
       if (!cancelled) {
         setLastIp(data?.ip_address ?? null);
+        setLastUserAgent(data?.user_agent ?? null);
       }
     } catch (e) {
-      console.error('[UserDetailDrawer] loadLastIp exception', e);
-      if (!cancelled) setLastIp(null);
+      console.error('[UserDetailDrawer] loadLastSessionMeta exception', e);
+      if (!cancelled) {
+        setLastIp(null);
+        setLastUserAgent(null);
+      }
     }
   };
 
-  loadLastIp();
+  loadLastSessionMeta();
 
   return () => {
     cancelled = true;
   };
 }, [isOpen, user?.id]);
+
   
 // ⭐ NEW EFFECT: load last activity & last page from user_last_activity view
 useEffect(() => {
@@ -820,7 +832,15 @@ useEffect(() => {
     )}
   </span>
 </div>
-
+<div className="flex justify-between text-sm">
+  <span className="text-muted-foreground">App/Device:</span>
+  <span
+    className="text-foreground text-right truncate max-w-[260px]"
+    title={lastUserAgent || ''}
+  >
+    {lastUserAgent || '—'}
+  </span>
+</div>
   </div>
 </CardContent>
 
