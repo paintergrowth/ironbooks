@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 
 import { supabase } from '@/lib/supabase';
@@ -9,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { User, Shield, Link, Key, Mail, UserX, CreditCard } from 'lucide-react';
+import { useIpLocation } from '@/hooks/useIpLocation';
 
 interface UserDetailDrawerProps {
   user: any;
@@ -45,6 +47,15 @@ type MonthKey = string; // "YYYY-MM"
 
 const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ user, isOpen, onClose, onSaved }) => {
   if (!user) return null;
+    // Best-effort: try common IP fields from the grid/user object
+  const ip: string | null =
+    user.lastIp ||
+    user.last_ip ||
+    user.ip_address ||
+    user.ip ||
+    null;
+
+  const { location, status: ipStatus } = useIpLocation(ip);
 
   // ----- initial values from props (safe fallbacks) -----
   const initialName = useMemo(() => (user.fullName === '—' ? '' : (user.fullName ?? '')), [user?.id]);
@@ -717,24 +728,50 @@ useEffect(() => {
       <span className="text-muted-foreground">Last Login:</span>
       <span className="text-foreground">{formatDate(user.lastLogin)}</span>
     </div>
+
     <div className="flex justify-between text-sm">
       <span className="text-muted-foreground">Created:</span>
       <span className="text-foreground">{formatDate(user.createdAt)}</span>
     </div>
+
     <div className="flex justify-between text-sm">
       <span className="text-muted-foreground">Last Activity:</span>
       <span className="text-foreground">
         {lastActivity ? formatDate(lastActivity) : '—'}
       </span>
     </div>
+
     <div className="flex justify-between text-sm">
       <span className="text-muted-foreground">Last Page Viewed:</span>
       <span className="text-foreground">
         {lastPage || '—'}
       </span>
     </div>
+
+    {/* NEW: IP + Location */}
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">Last IP:</span>
+      <span className="text-foreground">{ip || '—'}</span>
+    </div>
+
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">Location:</span>
+      <span className="text-foreground text-right">
+        {!ip && ipStatus === 'idle' && '—'}
+        {ip && ipStatus === 'loading' && 'Looking up…'}
+        {ip && ipStatus === 'error' && 'Unknown'}
+        {ip && ipStatus === 'success' && location && (
+          <>
+            {location.city && `${location.city}, `}
+            {location.region && `${location.region}, `}
+            {location.country}
+          </>
+        )}
+      </span>
+    </div>
   </div>
 </CardContent>
+
 
               </Card>
             </TabsContent>
