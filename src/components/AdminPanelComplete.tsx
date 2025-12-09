@@ -141,83 +141,125 @@ const AdminPanelComplete: React.FC = () => {
     pastDue: users.filter(u => u.pastDue).length
   };
 
-  const fetchAdmin = async (uid: string) => {
-    console.log('[AdminPanelComplete] fetchAdmin START', { uid });
-    try {
-      const { data, error } = await supabase.rpc('admin_list', { p_caller: uid });
-      if (error) {
-        console.error('[admin_list error]', error.message, error.details, error.hint, error.code);
-        setBaseUsers([]);
-        return;
-      }
-      console.log('[admin_list OK] rows:', (data ?? []).length, 'sample:', (data && data[0]) || null);
+const fetchAdmin = async (uid: string) => {
+  console.log('[AdminPanelComplete] fetchAdmin START', { uid });
+  try {
+    const { data, error } = await supabase.rpc('admin_list', { p_caller: uid });
+    if (error) {
+      console.error('[admin_list error]', error.message, error.details, error.hint, error.code);
+      setBaseUsers([]);
+      return;
+    }
+    console.log('[admin_list OK] rows:', (data ?? []).length, 'sample:', (data && data[0]) || null);
 
-      let mappedBase = (data ?? []).map((r: any, idx: number) => {
-        const lastLogin = r.last_login;
-        const isActive = !!r.is_active;
+    // --- base mapping from admin_list() ---
+    let mappedBase = (data ?? []).map((r: any, idx: number) => {
+      const lastLogin = r.last_login;
+      const isActive = !!r.is_active;
 
-        const realmId: string | null = r.qbo_realm_id || r.realm_id || r.qboRealmId || null;
+      const realmId: string | null = r.qbo_realm_id || r.realm_id || r.qboRealmId || null;
 
-        const mappedRow = {
-          id: r.id,
-          email: r.email,
-          fullName: r.full_name || '—',
-          role: r.role === 'admin' ? 'Admin' : 'User',
-          plan: r.plan || 'Starter',
-          isActive,
-          suspended: !isActive,
-          neverLoggedIn: !lastLogin,
-          trial: false,
-          pastDue: false,
-          qboConnected: !!r.qbo_connected,
-          cfoAgentUses: Number(r.cfo_uses) || 0,
-          aiTokens: Number(r.ai_tokens) || 0,
-          organization: '—',
-          billingStatus: 'active',
-          mrr: 0,
-          createdAt: r.created_at,
-          lastLogin,
-          realmId,
-        };
+      const mappedRow = {
+        id: r.id,
+        email: r.email,
+        fullName: r.full_name || '—',
+        role: r.role === 'admin' ? 'Admin' : 'User',
+        plan: r.plan || 'Starter',
+        isActive,
+        suspended: !isActive,
+        neverLoggedIn: !lastLogin,
+        trial: false,
+        pastDue: false,
+        qboConnected: !!r.qbo_connected,
+        cfoAgentUses: Number(r.cfo_uses) || 0,
+        aiTokens: Number(r.ai_tokens) || 0,
+        organization: '—',
+        billingStatus: 'active',
+        mrr: 0,
+        createdAt: r.created_at,
+        lastLogin,
+        realmId,
 
-        console.log('[admin_list -> baseUser]', idx, {
-          id: mappedRow.id,
-          email: mappedRow.email,
-          realmId: mappedRow.realmId,
-          qboConnected: mappedRow.qboConnected,
-        });
+        // 🔥 NEW: placeholders so TS knows these exist
+        lastActivity: null as string | null,
+        lastPage: null as string | null,
+      };
 
-        return mappedRow;
+      console.log('[admin_list -> baseUser]', idx, {
+        id: mappedRow.id,
+        email: mappedRow.email,
+        realmId: mappedRow.realmId,
+        qboConnected: mappedRow.qboConnected,
       });
 
-      const userIds = mappedBase.map(u => u.id);
-      if (userIds.length > 0) {
-        const { data: profilesData, error: profilesErr } = await supabase
-          .from('profiles')
-          .select('id, qbo_realm_id')
-          .in('id', userIds);
-        if (profilesErr) {
-          console.error('[profiles realms fetch ERROR]', profilesErr);
-        } else {
-          const realmMap: Record<string, string | null> = (profilesData || []).reduce((acc: any, p: any) => {
-            acc[p.id] = p.qbo_realm_id || null;
+      return mappedRow;
+    });
+
+    // --- merge realm from profiles (unchanged from before) ---
+    const userIds = mappedBase.map(u => u.id);
+    if (userIds.length > 0) {
+      const { data: profilesData, error: profilesErr } = await supabase
+        .from('profiles')
+        .select('id, qbo_realm_id')
+        .in('id', userIds);
+
+      if (profilesErr) {
+        console.error('[profiles realms fetch ERROR]', profilesErr);
+      } else {
+        const realmMap: Record<string, string | null> = (profilesData || []).reduce((acc: any, p: any) => {
+          acc[p.id] = p.qbo_realm_id || null;
+          return acc;
+        }, {});
+        mappedBase = mappedBase.map(u => ({
+          ...u,
+          realmId: realmMap[u.id] !== undefined ? realmMap[u.id] : u.realmId,
+        }));
+        console.log('[profiles realms merged]', { count: Object.keys(realmMap).length });
+      }
+    }
+
+    // --- 🔥 NEW: merge last_activity + last_page from user_last_activity view ---
+    if (userIds.length > 0) {
+      const { data: lastActRows, error: lastActErr } = await supabase
+        .from('user_last_activity')
+        .select('user_id, last_activity, last_page')
+        .in('user_id', userIds);
+
+      if (lastActErr) {
+        console.error('[user_last_activity fetch ERROR]', lastActErr);
+      } else {
+        const laMap: Record<string, { last_activity: string | null; last_page: string | null }> =
+          (lastActRows || []).reduce((acc: any, row: any) => {
+            acc[row.user_id] = {
+              last_activity: row.last_activity,
+              last_page: row.last_page,
+            };
             return acc;
           }, {});
-          mappedBase = mappedBase.map(u => ({
-            ...u,
-            realmId: realmMap[u.id] !== undefined ? realmMap[u.id] : u.realmId,
-          }));
-          console.log('[profiles realms merged]', { count: Object.keys(realmMap).length });
-        }
-      }
 
-      setBaseUsers(mappedBase);
-      console.log('[AdminPanelComplete] fetchAdmin DONE. Base users length:', mappedBase.length);
-    } catch (e) {
-      console.error('[AdminPanelComplete] admin_list fetch failed:', e);
-      setBaseUsers([]);
+        mappedBase = mappedBase.map(u => {
+          const la = laMap[u.id];
+          return {
+            ...u,
+            lastActivity: la?.last_activity ?? null,
+            lastPage: la?.last_page ?? null,
+          };
+        });
+
+        console.log('[user_last_activity merged]', {
+          rows: (lastActRows || []).length,
+        });
+      }
     }
-  };
+
+    setBaseUsers(mappedBase);
+    console.log('[AdminPanelComplete] fetchAdmin DONE. Base users length:', mappedBase.length);
+  } catch (e) {
+    console.error('[AdminPanelComplete] admin_list fetch failed:', e);
+    setBaseUsers([]);
+  }
+};
+
 
   const getLastMonthRange = () => {
   const today = new Date();
@@ -660,6 +702,7 @@ const pnlLabel =
                   <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Role</th>
                   <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Status</th>
                   <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Last Login</th>
+                  <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">Last Activity</th>
                   <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">QBO</th>
                   <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">CFO Uses</th>
                   <th className="text-left p-2 text-muted-foreground uppercase tracking-wide text-xs">AI Tokens</th>
@@ -730,23 +773,32 @@ const pnlLabel =
                         {user.suspended ? 'Suspended' : (user.isActive ? 'Active' : 'Inactive')}
                       </Badge>
                     </td>
-                    <td className="p-2 text-xs text-foreground">
-                      {user.lastLogin
-                        ? new Date(user.lastLogin).toLocaleDateString()
-                        : <span className="text-muted-foreground">Never</span>}
-                    </td>
-                    <td className="p-2">
-                      <Badge
-                        className={
-                          user.qboConnected
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
-                            : "bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
-                        }
-                        variant="outline"
-                      >
-                        {user.qboConnected ? 'Connected' : 'Not Connected'}
-                      </Badge>
-                    </td>
+<td className="p-2 text-xs text-foreground">
+  {user.lastLogin
+    ? new Date(user.lastLogin).toLocaleDateString()
+    : <span className="text-muted-foreground">Never</span>}
+</td>
+
+{/* 🔥 NEW: Last Activity column */}
+<td className="p-2 text-xs text-foreground">
+  {user.lastActivity
+    ? new Date(user.lastActivity).toLocaleDateString()
+    : <span className="text-muted-foreground">—</span>}
+</td>
+
+<td className="p-2">
+  <Badge
+    className={
+      user.qboConnected
+        ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
+        : "bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
+    }
+    variant="outline"
+  >
+    {user.qboConnected ? 'Connected' : 'Not Connected'}
+  </Badge>
+</td>
+
                     <td className="p-2 font-medium text-foreground">{user.cfoAgentUses}</td>
                     <td className="p-2 font-medium text-foreground">{(user.aiTokens ?? 0).toLocaleString()}</td>
                     <td className="p-2">
