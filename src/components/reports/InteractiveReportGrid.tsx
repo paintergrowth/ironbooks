@@ -21,6 +21,7 @@ type SectionRow = {
   __isSectionHeader?: boolean;
   __sectionId?: string | null;
   __collapsed?: boolean;
+  __indent?: number;
   [key: string]: any;
 };
 
@@ -35,7 +36,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
   const [pageSize, setPageSize] = useState(25);
   const [isDark, setIsDark] = useState(false);
 
-  // 🔹 which sections are collapsed? key = sectionId
+  // which sections are collapsed? key = sectionId
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   // Detect dark mode based on <html class="dark">
@@ -53,51 +54,87 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // Use Quartz theme (new default in AG Grid)
   const themeClass = isDark ? 'ag-theme-quartz-dark' : 'ag-theme-quartz';
 
-  // 🔹 Build base row objects + detect "section header" rows
+  // Helper: numeric-ish?
+  const looksNumeric = (val: unknown): boolean => {
+    if (val === null || val === undefined) return false;
+    const s = String(val).trim();
+    if (!s) return false;
+    if (s === '-' || s === '—') return false;
+    // strip $, commas, %
+    const cleaned = s.replace(/[$,%\s]/g, '');
+    const n = Number(cleaned);
+    return Number.isFinite(n);
+  };
+
+  // Build base rows and detect indent from leading spaces
   const sectionedRows: SectionRow[] = useMemo(() => {
     if (!headers || headers.length === 0) return [];
 
     const firstKey = headers[0];
-    let currentSectionId: string | null = null;
-
-    return rows.map((row, idx) => {
+    const base: SectionRow[] = rows.map((row, idx) => {
       const obj: SectionRow = { _id: idx };
       headers.forEach((h, i) => {
         obj[h] = row[i];
       });
 
-      const firstVal = obj[firstKey];
+      const rawLabel = obj[firstKey] ?? '';
+      const labelStr = String(rawLabel);
+      const indent = labelStr.length - labelStr.trimStart().length;
+      obj.__indent = indent;
+
+      return obj;
+    });
+
+    // Second pass: decide which rows are "section headers"
+    let currentSectionId: string | null = null;
+
+    for (let i = 0; i < base.length; i++) {
+      const row = base[i];
+      const labelRaw = row[headers[0]];
+      const label = String(labelRaw ?? '').trim();
+      const indent = row.__indent ?? 0;
+      const next = base[i + 1];
+      const nextIndent = next ? (next.__indent ?? 0) : indent;
+
       let isHeader = false;
 
-      if (firstVal !== null && firstVal !== undefined && String(firstVal).trim() !== '') {
-        const othersEmpty = headers.slice(1).every((key) => {
-          const v = obj[key];
-          if (v === null || v === undefined) return true;
-          if (typeof v === 'string' && v.trim() === '') return true;
+      // Heuristic 1: top-level + next row more indented (common in QBO P&L)
+      if (label && indent === 0 && next && nextIndent > indent) {
+        isHeader = true;
+      }
+
+      // Heuristic 2: label row where other cols are non-numeric (totals/headers)
+      if (!isHeader && label) {
+        const othersNonNumeric = headers.slice(1).every((key) => {
+          const v = row[key];
+          // treat empty / dash / NaN as non-numeric
+          if (!looksNumeric(v)) return true;
           return false;
         });
 
-        if (othersEmpty) {
+        if (othersNonNumeric) {
           isHeader = true;
         }
       }
 
+      row.__isSectionHeader = isHeader;
+
       if (isHeader) {
-        // Unique section id
-        currentSectionId = `sec-${idx}-${String(firstVal)}`;
+        currentSectionId = `sec-${i}-${label}`;
       }
 
-      obj.__isSectionHeader = isHeader;
-      obj.__sectionId = currentSectionId;
+      row.__sectionId = currentSectionId;
+    }
 
-      return obj;
-    });
+    // Uncomment this if you want to see in browser console what's detected:
+    // console.log('sectionedRows (with headers):', base);
+
+    return base;
   }, [headers, rows]);
 
-  // 🔹 Apply collapsedSections → decide which rows are visible
+  // Apply collapsedSections → decide which rows are visible
   const visibleRowData: SectionRow[] = useMemo(() => {
     return sectionedRows
       .filter((row) => {
@@ -108,7 +145,6 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
       })
       .map((row) => {
         if (!row.__isSectionHeader || !row.__sectionId) return row;
-        // annotate header row with collapsed flag (for icon)
         return {
           ...row,
           __collapsed: !!collapsedSections[row.__sectionId],
@@ -134,23 +170,53 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
         resizable: true,
       };
 
-      // First column: show ▾ / ▸ for section headers
+      // First column: show ▾ / ▸ and indent children
       if (idx === 0) {
         col.valueFormatter = (params) => {
-          const v = params.value ?? '';
           const data = params.data as SectionRow | undefined;
-          if (!data?.__isSectionHeader) return v;
+          const raw = params.value ?? '';
+          const label = String(raw).trim();
+
+          if (!data?.__isSectionHeader) {
+            // children: we rely on padding via cellStyle
+            return label;
+          }
+
           const collapsed = !!data.__collapsed;
           const icon = collapsed ? '▸ ' : '▾ ';
-          return icon + v;
+          return icon + label;
+        };
+
+        col.cellStyle = (params) => {
+          const data = params.data as SectionRow | undefined;
+
+          // Header style
+          if (data?.__isSectionHeader) {
+            return {
+              fontWeight: 600,
+              backgroundColor: isDark
+                ? 'rgba(148, 163, 184, 0.25)'
+                : 'rgba(148, 163, 184, 0.12)',
+              cursor: 'pointer',
+            };
+          }
+
+          // Children: indent based on __indent (fallback to 1 level)
+          const indentPx = data?.__indent && data.__indent > 0
+            ? 8 + data.__indent // small base + actual spaces for QBO
+            : 24; // generic indent if we don't know
+
+          return {
+            paddingLeft: `${indentPx}px`,
+          };
         };
       }
 
       return col;
     });
-  }, [headers]);
+  }, [headers, isDark]);
 
-  // 🔹 styles for section rows (bold, shaded, pointer cursor)
+  // RowClassRules optional (we could use it too, but cellStyle is enough visually)
   const rowClassRules: RowClassRules = useMemo(
     () => ({
       'ib-section-row': (params) => {
@@ -177,7 +243,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     }
   };
 
-  // 🔹 click on a section header → toggle collapse
+  // Click on a section header → toggle collapse
   const handleRowClicked = (event: any) => {
     const data = event.data as SectionRow | undefined;
     if (!data?.__isSectionHeader || !data.__sectionId) return;
