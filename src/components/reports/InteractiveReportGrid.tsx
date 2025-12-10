@@ -1,6 +1,7 @@
+// src/components/reports/InteractiveReportGrid.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef, RowClassRules } from 'ag-grid-community';
+import type { ColDef } from 'ag-grid-community';
 
 import '@ag-grid-community/styles/ag-grid.css';
 import '@ag-grid-community/styles/ag-theme-quartz.css';
@@ -21,7 +22,6 @@ type SectionRow = {
   __isSectionHeader?: boolean;
   __sectionId?: string | null;
   __collapsed?: boolean;
-  __indent?: number;
   [key: string]: any;
 };
 
@@ -39,13 +39,12 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
   // which sections are collapsed? key = sectionId
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
-  // Detect dark mode based on <html class="dark">
+  // Detect dark mode from <html class="dark">
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const root = document.documentElement;
     const updateTheme = () => setIsDark(root.classList.contains('dark'));
-
     updateTheme();
 
     const observer = new MutationObserver(updateTheme);
@@ -56,19 +55,16 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
 
   const themeClass = isDark ? 'ag-theme-quartz-dark' : 'ag-theme-quartz';
 
-  // Helper: numeric-ish?
-  const looksNumeric = (val: unknown): boolean => {
-    if (val === null || val === undefined) return false;
+  // Simple helper: is "empty-ish" (null / undefined / '' / '-' / '—')
+  const isEmptyish = (val: unknown): boolean => {
+    if (val === null || val === undefined) return true;
     const s = String(val).trim();
-    if (!s) return false;
-    if (s === '-' || s === '—') return false;
-    // strip $, commas, %
-    const cleaned = s.replace(/[$,%\s]/g, '');
-    const n = Number(cleaned);
-    return Number.isFinite(n);
+    return s === '' || s === '-' || s === '—';
   };
 
-  // Build base rows and detect indent from leading spaces
+  // 🔹 Build row objects + detect "section headers" based on:
+  // - first column has a value
+  // - all other columns are empty-ish (like your first grid behaviour)
   const sectionedRows: SectionRow[] = useMemo(() => {
     if (!headers || headers.length === 0) return [];
 
@@ -78,43 +74,21 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
       headers.forEach((h, i) => {
         obj[h] = row[i];
       });
-
-      const rawLabel = obj[firstKey] ?? '';
-      const labelStr = String(rawLabel);
-      const indent = labelStr.length - labelStr.trimStart().length;
-      obj.__indent = indent;
-
       return obj;
     });
 
-    // Second pass: decide which rows are "section headers"
     let currentSectionId: string | null = null;
 
     for (let i = 0; i < base.length; i++) {
       const row = base[i];
-      const labelRaw = row[headers[0]];
-      const label = String(labelRaw ?? '').trim();
-      const indent = row.__indent ?? 0;
-      const next = base[i + 1];
-      const nextIndent = next ? (next.__indent ?? 0) : indent;
+      const firstVal = row[firstKey];
+      const hasLabel = firstVal !== null && firstVal !== undefined && String(firstVal).trim() !== '';
 
       let isHeader = false;
 
-      // Heuristic 1: top-level + next row more indented (common in QBO P&L)
-      if (label && indent === 0 && next && nextIndent > indent) {
-        isHeader = true;
-      }
-
-      // Heuristic 2: label row where other cols are non-numeric (totals/headers)
-      if (!isHeader && label) {
-        const othersNonNumeric = headers.slice(1).every((key) => {
-          const v = row[key];
-          // treat empty / dash / NaN as non-numeric
-          if (!looksNumeric(v)) return true;
-          return false;
-        });
-
-        if (othersNonNumeric) {
+      if (hasLabel) {
+        const othersEmpty = headers.slice(1).every((key) => isEmptyish(row[key]));
+        if (othersEmpty) {
           isHeader = true;
         }
       }
@@ -122,26 +96,30 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
       row.__isSectionHeader = isHeader;
 
       if (isHeader) {
+        const label = String(firstVal).trim();
         currentSectionId = `sec-${i}-${label}`;
       }
 
       row.__sectionId = currentSectionId;
     }
 
-    // Uncomment this if you want to see in browser console what's detected:
-     console.log('sectionedRows (with headers):', base);
+    // Debug: see how many headers we found
+    console.log(
+      '[InteractiveReportGrid] detected headers:',
+      base.filter((r) => r.__isSectionHeader).map((r) => r[headers[0]])
+    );
 
     return base;
   }, [headers, rows]);
 
-  // Apply collapsedSections → decide which rows are visible
+  // 🔹 Apply collapsedSections → produce visible rows
   const visibleRowData: SectionRow[] = useMemo(() => {
     return sectionedRows
       .filter((row) => {
         if (row.__isSectionHeader) return true; // headers always visible
-        if (!row.__sectionId) return true;      // rows outside any section
+        if (!row.__sectionId) return true;      // not part of any section
         const collapsed = collapsedSections[row.__sectionId];
-        return !collapsed;                      // hide if its section is collapsed
+        return !collapsed;
       })
       .map((row) => {
         if (!row.__isSectionHeader || !row.__sectionId) return row;
@@ -170,15 +148,15 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
         resizable: true,
       };
 
-      // First column: show ▾ / ▸ and indent children
       if (idx === 0) {
+        // First column: icon + label, indent children
         col.valueFormatter = (params) => {
           const data = params.data as SectionRow | undefined;
           const raw = params.value ?? '';
           const label = String(raw).trim();
 
           if (!data?.__isSectionHeader) {
-            // children: we rely on padding via cellStyle
+            // child row – no icon
             return label;
           }
 
@@ -190,41 +168,27 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
         col.cellStyle = (params) => {
           const data = params.data as SectionRow | undefined;
 
-          // Header style
+          // Header style is done via getRowStyle; here just ensure pointer cursor
           if (data?.__isSectionHeader) {
             return {
-              fontWeight: 600,
-              backgroundColor: isDark
-                ? 'rgba(148, 163, 184, 0.25)'
-                : 'rgba(148, 163, 184, 0.12)',
               cursor: 'pointer',
             };
           }
 
-          // Children: indent based on __indent (fallback to 1 level)
-          const indentPx = data?.__indent && data.__indent > 0
-            ? 8 + data.__indent // small base + actual spaces for QBO
-            : 24; // generic indent if we don't know
+          // Children: indent if they belong to a section
+          if (data?.__sectionId) {
+            return {
+              paddingLeft: '24px',
+            };
+          }
 
-          return {
-            paddingLeft: `${indentPx}px`,
-          };
+          return null;
         };
       }
 
       return col;
     });
-  }, [headers, isDark]);
-
-  // RowClassRules optional (we could use it too, but cellStyle is enough visually)
-  const rowClassRules: RowClassRules = useMemo(
-    () => ({
-      'ib-section-row': (params) => {
-        return !!(params.data && (params.data as SectionRow).__isSectionHeader);
-      },
-    }),
-    [],
-  );
+  }, [headers]);
 
   const handleExportCsv = () => {
     if (!gridRef.current?.api) return;
@@ -243,7 +207,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     }
   };
 
-  // Click on a section header → toggle collapse
+  // 🔹 click on header row toggles collapse
   const handleRowClicked = (event: any) => {
     const data = event.data as SectionRow | undefined;
     if (!data?.__isSectionHeader || !data.__sectionId) return;
@@ -252,6 +216,20 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
       ...prev,
       [data.__sectionId]: !prev[data.__sectionId],
     }));
+  };
+
+  // 🔹 style whole header row (bold + shaded)
+  const getRowStyle = (params: any) => {
+    const data = params.data as SectionRow | undefined;
+    if (!data?.__isSectionHeader) return null;
+
+    return {
+      fontWeight: 600,
+      backgroundColor: isDark
+        ? 'rgba(148, 163, 184, 0.25)' // slate-400-ish, dark mode
+        : 'rgba(148, 163, 184, 0.12)', // slate-400-ish, light mode
+      cursor: 'pointer',
+    };
   };
 
   if (!headers || headers.length === 0 || !rows || rows.length === 0) {
@@ -322,6 +300,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
               columnDefs={columnDefs}
               pagination={true}
               paginationPageSize={pageSize}
+              paginationPageSizeSelector={[25, 50, 100]} // ✅ fix console warning
               animateRows={true}
               suppressMenuHide={false}
               enableCellTextSelection={true}
@@ -331,7 +310,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
                 resizable: true,
               }}
               quickFilterText={quickFilter}
-              rowClassRules={rowClassRules}
+              getRowStyle={getRowStyle}
               onRowClicked={handleRowClicked}
             />
           </div>
