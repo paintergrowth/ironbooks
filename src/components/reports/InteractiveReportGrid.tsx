@@ -156,14 +156,16 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
           .replace(/\s+/g, ' ')
           .replace(/\b\w/g, (c) => c.toUpperCase()) || h;
 
-      const col: ColDef = {
-        field: h,
-        headerName,
-        sortable: true,
-        filter: true,
-        floatingFilter: true,
-        resizable: true,
-      };
+const col: ColDef = {
+  field: h,
+  headerName,
+  // 👇 NO sorting at column level
+  sortable: false,
+  filter: true,
+  floatingFilter: true,
+  resizable: true,
+};
+
 
       if (idx === 0) {
         // First column: show ▾ / ▸ for headers + indent children
@@ -321,11 +323,12 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
               animateRows={true}
               suppressMenuHide={false}
               enableCellTextSelection={true}
-              defaultColDef={{
-                sortable: true,
-                filter: true,
-                resizable: true,
-              }}
+                defaultColDef={{
+    sortable: false, // 👈 turn off globally
+    filter: true,
+    resizable: true,
+  }}
+
               quickFilterText={quickFilter}
               getRowStyle={getRowStyle}
               onRowClicked={handleRowClicked}
