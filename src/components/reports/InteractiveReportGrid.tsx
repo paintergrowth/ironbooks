@@ -1,17 +1,15 @@
-// src/components/reports/InteractiveReportGrid.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef } from 'ag-grid-community';
 
-// ✅ NEW: import CSS from the styles package
 import '@ag-grid-community/styles/ag-grid.css';
 import '@ag-grid-community/styles/ag-theme-quartz.css';
-import '@ag-grid-community/styles/ag-theme-quartz-dark.css';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
+
 
 type InteractiveReportGridProps = {
   title?: string;
