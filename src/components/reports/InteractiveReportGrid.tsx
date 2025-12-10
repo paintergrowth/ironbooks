@@ -129,7 +129,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     }
 
     // Uncomment this if you want to see in browser console what's detected:
-    // console.log('sectionedRows (with headers):', base);
+     console.log('sectionedRows (with headers):', base);
 
     return base;
   }, [headers, rows]);
