@@ -321,6 +321,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
       {/* Live preview + errors */}
       {adhocLoading && <div className="text-sm text-gray-600">Running finance report…</div>}
       {adhocError && <div className="text-sm text-red-600">{adhocError}</div>}
+        {/* 
       {adhocPreview && (
         <ReportPreview
           title={prettyReport(adhocMeta?.reportName || lastReportName)}
@@ -336,6 +337,8 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           }}
         />
       )}
+*/}
+      
             {/* NEW: Interactive grid for ANY QBO report (from adhocPreview) */}
       {adhocPreview && adhocPreview.headers?.length > 0 && adhocPreview.rows?.length > 0 && (
         <div className="mt-6">
