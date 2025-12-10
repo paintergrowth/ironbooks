@@ -177,3 +177,22 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* AG Grid custom styles for IronBooks section headers */
+
+.ag-theme-quartz .ib-section-row .ag-cell,
+.ag-theme-quartz-dark .ib-section-row .ag-cell {
+  font-weight: 600;
+  background-color: rgba(148, 163, 184, 0.12); /* light slate-ish */
+  cursor: pointer;
+}
+
+.ag-theme-quartz-dark .ib-section-row .ag-cell {
+  background-color: rgba(148, 163, 184, 0.25);
+}
+
+/* Indent non-header rows so they visually sit "inside" the section */
+.ag-theme-quartz .ag-row:not(.ib-section-row) .ag-cell:first-child,
+.ag-theme-quartz-dark .ag-row:not(.ib-section-row) .ag-cell:first-child {
+  padding-left: 1.5rem;
+}
