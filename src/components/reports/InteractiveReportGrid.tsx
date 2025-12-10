@@ -3,9 +3,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef } from 'ag-grid-community';
 
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-alpine.css';
-import 'ag-grid-community/styles/ag-theme-alpine-dark.css';
+// ✅ NEW: import CSS from the styles package
+import '@ag-grid-community/styles/ag-grid.css';
+import '@ag-grid-community/styles/ag-theme-quartz.css';
+import '@ag-grid-community/styles/ag-theme-quartz-dark.css';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,7 +45,8 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  const themeClass = isDark ? 'ag-theme-alpine-dark' : 'ag-theme-alpine';
+  // Use Quartz theme (new default in AG Grid)
+  const themeClass = isDark ? 'ag-theme-quartz-dark' : 'ag-theme-quartz';
 
   const columnDefs: ColDef[] = useMemo(() => {
     return headers.map((h) => {
@@ -59,8 +61,8 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
         field: h,
         headerName,
         sortable: true,
-        filter: true, // enables column-level filter
-        floatingFilter: true, // filter input under header
+        filter: true, // column-level filter
+        floatingFilter: true, // shows small filter input under header
         resizable: true,
       } as ColDef;
     });
@@ -147,10 +149,6 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
 
       <CardContent>
         <div className={`${themeClass} w-full`} style={{ minHeight: 400 }}>
-          {/* 
-            On mobile: horizontal scroll + vertical scroll is handled by AG Grid.
-            pagination + page size are enabled below.
-          */}
           <div
             className="w-full"
             style={{
@@ -173,7 +171,6 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
                 filter: true,
                 resizable: true,
               }}
-              // quick filter for global search
               quickFilterText={quickFilter}
             />
           </div>
