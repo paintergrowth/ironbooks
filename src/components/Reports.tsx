@@ -10,6 +10,7 @@ import { useEffectiveIdentity } from '@/lib/impersonation';
 import { AdHocReportsPanel } from '@/components/reports/AdHocReportsPanel';
 import { runAdHocReport, downloadBlob } from '@/lib/qboReports';
 import { ReportPreview } from '@/components/reports/ReportPreview';
+import { InteractiveReportGrid } from '@/components/reports/InteractiveReportGrid';
 
 interface ReportsProps {
   initialFilter?: string;
@@ -449,7 +450,14 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           </CardContent>
         </Card>
       )}
-
+      {/* NEW: Interactive grid for ANY QBO report (from adhocPreview) */}
+      {adhocPreview && adhocPreview.headers?.length > 0 && adhocPreview.rows?.length > 0 && (
+        <InteractiveReportGrid
+          title={prettyReport(adhocMeta?.reportName || lastReportName)}
+          headers={adhocPreview.headers}
+          rows={adhocPreview.rows}
+        />
+      )}
       {/* Simple modal for video playback (no external deps) */}
       {showPlayer && (
         <div className="fixed inset-0 z-50">
