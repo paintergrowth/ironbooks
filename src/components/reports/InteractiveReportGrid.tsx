@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef } from 'ag-grid-community';
+import type { ColDef, RowClassRules } from 'ag-grid-community';
 
 import '@ag-grid-community/styles/ag-grid.css';
 import '@ag-grid-community/styles/ag-theme-quartz.css';
@@ -10,11 +10,18 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 
-
 type InteractiveReportGridProps = {
   title?: string;
   headers: string[];
   rows: any[][];
+};
+
+type SectionRow = {
+  _id: number;
+  __isSectionHeader?: boolean;
+  __sectionId?: string | null;
+  __collapsed?: boolean;
+  [key: string]: any;
 };
 
 export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
@@ -27,6 +34,9 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
   const [quickFilter, setQuickFilter] = useState('');
   const [pageSize, setPageSize] = useState(25);
   const [isDark, setIsDark] = useState(false);
+
+  // 🔹 which sections are collapsed? key = sectionId
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   // Detect dark mode based on <html class="dark">
   useEffect(() => {
@@ -46,8 +56,68 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
   // Use Quartz theme (new default in AG Grid)
   const themeClass = isDark ? 'ag-theme-quartz-dark' : 'ag-theme-quartz';
 
+  // 🔹 Build base row objects + detect "section header" rows
+  const sectionedRows: SectionRow[] = useMemo(() => {
+    if (!headers || headers.length === 0) return [];
+
+    const firstKey = headers[0];
+    let currentSectionId: string | null = null;
+
+    return rows.map((row, idx) => {
+      const obj: SectionRow = { _id: idx };
+      headers.forEach((h, i) => {
+        obj[h] = row[i];
+      });
+
+      const firstVal = obj[firstKey];
+      let isHeader = false;
+
+      if (firstVal !== null && firstVal !== undefined && String(firstVal).trim() !== '') {
+        const othersEmpty = headers.slice(1).every((key) => {
+          const v = obj[key];
+          if (v === null || v === undefined) return true;
+          if (typeof v === 'string' && v.trim() === '') return true;
+          return false;
+        });
+
+        if (othersEmpty) {
+          isHeader = true;
+        }
+      }
+
+      if (isHeader) {
+        // Unique section id
+        currentSectionId = `sec-${idx}-${String(firstVal)}`;
+      }
+
+      obj.__isSectionHeader = isHeader;
+      obj.__sectionId = currentSectionId;
+
+      return obj;
+    });
+  }, [headers, rows]);
+
+  // 🔹 Apply collapsedSections → decide which rows are visible
+  const visibleRowData: SectionRow[] = useMemo(() => {
+    return sectionedRows
+      .filter((row) => {
+        if (row.__isSectionHeader) return true; // headers always visible
+        if (!row.__sectionId) return true;      // rows outside any section
+        const collapsed = collapsedSections[row.__sectionId];
+        return !collapsed;                      // hide if its section is collapsed
+      })
+      .map((row) => {
+        if (!row.__isSectionHeader || !row.__sectionId) return row;
+        // annotate header row with collapsed flag (for icon)
+        return {
+          ...row,
+          __collapsed: !!collapsedSections[row.__sectionId],
+        };
+      });
+  }, [sectionedRows, collapsedSections]);
+
   const columnDefs: ColDef[] = useMemo(() => {
-    return headers.map((h) => {
+    return headers.map((h, idx) => {
       const headerName =
         h
           .replace(/_/g, ' ')
@@ -55,26 +125,40 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
           .replace(/\s+/g, ' ')
           .replace(/\b\w/g, (c) => c.toUpperCase()) || h;
 
-      return {
+      const col: ColDef = {
         field: h,
         headerName,
         sortable: true,
-        filter: true, // column-level filter
-        floatingFilter: true, // shows small filter input under header
+        filter: true,
+        floatingFilter: true,
         resizable: true,
-      } as ColDef;
+      };
+
+      // First column: show ▾ / ▸ for section headers
+      if (idx === 0) {
+        col.valueFormatter = (params) => {
+          const v = params.value ?? '';
+          const data = params.data as SectionRow | undefined;
+          if (!data?.__isSectionHeader) return v;
+          const collapsed = !!data.__collapsed;
+          const icon = collapsed ? '▸ ' : '▾ ';
+          return icon + v;
+        };
+      }
+
+      return col;
     });
   }, [headers]);
 
-  const rowData = useMemo(() => {
-    return rows.map((row, idx) => {
-      const obj: Record<string, any> = { _id: idx };
-      headers.forEach((h, i) => {
-        obj[h] = row[i];
-      });
-      return obj;
-    });
-  }, [headers, rows]);
+  // 🔹 styles for section rows (bold, shaded, pointer cursor)
+  const rowClassRules: RowClassRules = useMemo(
+    () => ({
+      'ib-section-row': (params) => {
+        return !!(params.data && (params.data as SectionRow).__isSectionHeader);
+      },
+    }),
+    [],
+  );
 
   const handleExportCsv = () => {
     if (!gridRef.current?.api) return;
@@ -91,6 +175,17 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
         gridRef.current.api.paginationSetPageSize(n);
       }
     }
+  };
+
+  // 🔹 click on a section header → toggle collapse
+  const handleRowClicked = (event: any) => {
+    const data = event.data as SectionRow | undefined;
+    if (!data?.__isSectionHeader || !data.__sectionId) return;
+
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [data.__sectionId]: !prev[data.__sectionId],
+    }));
   };
 
   if (!headers || headers.length === 0 || !rows || rows.length === 0) {
@@ -111,7 +206,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
             {title}
           </CardTitle>
           <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Drag columns, filter, sort, and export your report data. Works on desktop and mobile.
+            Drag columns, filter, sort, collapse sections, and export your report data. Works on desktop and mobile.
           </p>
         </div>
 
@@ -157,7 +252,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
           >
             <AgGridReact
               ref={gridRef}
-              rowData={rowData}
+              rowData={visibleRowData}
               columnDefs={columnDefs}
               pagination={true}
               paginationPageSize={pageSize}
@@ -170,6 +265,8 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
                 resizable: true,
               }}
               quickFilterText={quickFilter}
+              rowClassRules={rowClassRules}
+              onRowClicked={handleRowClicked}
             />
           </div>
         </div>
