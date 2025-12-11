@@ -261,6 +261,33 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     });
   }, [headers, numericColumns]);
 
+    // 🔹 Expand all sections
+  const handleExpandAll = () => {
+    const next: Record<string, boolean> = {};
+
+    // Collect all section IDs and mark them NOT collapsed
+    sectionedRows.forEach((row) => {
+      if (row.__isSectionHeader && row.__sectionId) {
+        next[row.__sectionId] = false;
+      }
+    });
+
+    setCollapsedSections(next);
+  };
+
+  // 🔹 Collapse all sections
+  const handleCollapseAll = () => {
+    const next: Record<string, boolean> = {};
+
+    // Collect all section IDs and mark them collapsed
+    sectionedRows.forEach((row) => {
+      if (row.__isSectionHeader && row.__sectionId) {
+        next[row.__sectionId] = true;
+      }
+    });
+
+    setCollapsedSections(next);
+  };
 
   const handleExportCsv = () => {
     if (!gridRef.current?.api) return;
@@ -331,7 +358,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <Input
             placeholder="Search in all columns…"
             value={quickFilter}
@@ -349,6 +376,25 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
             <option value={100}>Top 100</option>
           </select>
 
+          {/* 🔹 Expand / Collapse all sections */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-1"
+            onClick={handleExpandAll}
+          >
+            Expand All
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-1"
+            onClick={handleCollapseAll}
+          >
+            Collapse All
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -359,6 +405,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
             CSV
           </Button>
         </div>
+
       </CardHeader>
 
 <CardContent>
