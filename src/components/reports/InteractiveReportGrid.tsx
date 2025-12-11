@@ -250,7 +250,12 @@ const col: ColDef = {
       cursor: 'pointer',
     };
   };
-
+ // 🔹 Dynamically size grid height based on visible rows (no vertical scrollbar)
+  const rowsToShow = Math.min(pageSize, visibleRowData.length || 0);
+  const rowHeightPx = 32;        // approximate row height including borders
+  const extraChromePx = 80;      // header, filters, padding inside AG Grid
+  const gridHeight = rowsToShow * rowHeightPx + extraChromePx;
+  
   if (!headers || headers.length === 0 || !rows || rows.length === 0) {
     return (
       <Card className="border-2 shadow-lg dark:border-gray-700 mt-6">
@@ -303,39 +308,39 @@ const col: ColDef = {
         </div>
       </CardHeader>
 
-      <CardContent>
-        <div className={`${themeClass} w-full`} style={{ minHeight: 400 }}>
-          <div
-            className="w-full"
-            style={{
-              height: 400,
-              maxWidth: '100%',
-              overflow: 'hidden',
-            }}
-          >
-            <AgGridReact
-              ref={gridRef}
-              rowData={visibleRowData}
-              columnDefs={columnDefs}
-              pagination={true}
-              paginationPageSize={pageSize}
-              paginationPageSizeSelector={[25, 50, 100]}  // ✅ no more warning
-              animateRows={true}
-              suppressMenuHide={false}
-              enableCellTextSelection={true}
-                defaultColDef={{
-    sortable: false, // 👈 turn off globally
-    filter: true,
-    resizable: true,
-  }}
+<CardContent>
+  <div className={`${themeClass} w-full`}>
+    <div
+      className="w-full"
+      style={{
+        height: gridHeight,        // 🔹 use dynamic height
+        maxWidth: '100%',
+        overflow: 'hidden',
+      }}
+    >
+      <AgGridReact
+        ref={gridRef}
+        rowData={visibleRowData}
+        columnDefs={columnDefs}
+        pagination={true}
+        paginationPageSize={pageSize}
+        paginationPageSizeSelector={[25, 50, 100]}
+        animateRows={true}
+        suppressMenuHide={false}
+        enableCellTextSelection={true}
+        defaultColDef={{
+          sortable: false,
+          filter: true,
+          resizable: true,
+        }}
+        quickFilterText={quickFilter}
+        getRowStyle={getRowStyle}
+        onRowClicked={handleRowClicked}
+      />
+    </div>
+  </div>
+</CardContent>
 
-              quickFilterText={quickFilter}
-              getRowStyle={getRowStyle}
-              onRowClicked={handleRowClicked}
-            />
-          </div>
-        </div>
-      </CardContent>
     </Card>
   );
 };
