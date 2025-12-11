@@ -129,6 +129,26 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     return base;
   }, [headers, rows]);
 
+    // 🔹 Figure out which columns are mostly numeric (so we can format them)
+  const numericColumns = useMemo(() => {
+    const map: Record<string, boolean> = {};
+
+    if (!headers || headers.length === 0 || sectionedRows.length === 0) {
+      return map;
+    }
+
+    headers.forEach((h) => {
+      // Look at first 50 rows max for performance
+      const hasNumeric = sectionedRows
+        .slice(0, 50)
+        .some((row) => looksNumeric(row[h]));
+
+      map[h] = hasNumeric;
+    });
+
+    return map;
+  }, [headers, sectionedRows]);
+
   // 🔹 Apply collapsedSections → visible rows
   const visibleRowData: SectionRow[] = useMemo(() => {
     return sectionedRows
@@ -147,7 +167,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
       });
   }, [sectionedRows, collapsedSections]);
 
-  const columnDefs: ColDef[] = useMemo(() => {
+    const columnDefs: ColDef[] = useMemo(() => {
     return headers.map((h, idx) => {
       const headerName =
         h
@@ -156,26 +176,24 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
           .replace(/\s+/g, ' ')
           .replace(/\b\w/g, (c) => c.toUpperCase()) || h;
 
-const col: ColDef = {
-  field: h,
-  headerName,
-  // 👇 NO sorting at column level
-  sortable: false,
-  filter: true,
-  floatingFilter: true,
-  resizable: true,
-};
+      const col: ColDef = {
+        field: h,
+        headerName,
+        sortable: false,
+        filter: true,
+        floatingFilter: true,
+        resizable: true,
+      };
 
-
+      // 🔹 First column: expand / collapse icons + indentation
       if (idx === 0) {
-        // First column: show ▾ / ▸ for headers + indent children
         col.valueFormatter = (params) => {
           const data = params.data as SectionRow | undefined;
           const raw = params.value ?? '';
           const label = String(raw).trim();
 
           if (!data?.__isSectionHeader) {
-            // child row or normal row
+            // child or normal row
             return label;
           }
 
@@ -194,7 +212,7 @@ const col: ColDef = {
             };
           }
 
-          // Header row: pointer cursor (rest of styling done via getRowStyle)
+          // Header row: pointer cursor
           if (data?.__isSectionHeader) {
             return {
               cursor: 'pointer',
@@ -203,11 +221,46 @@ const col: ColDef = {
 
           return null;
         };
+      } else if (numericColumns[h]) {
+        // 🔹 Other columns that look numeric → format as 1,234,345.98 (keep $ and % if present)
+        col.valueFormatter = (params) => {
+          const raw = params.value;
+
+          if (raw === null || raw === undefined || raw === '') return '';
+
+          const rawStr = String(raw);
+
+          // Preserve currency / percent if they were there
+          const hasDollar = rawStr.includes('$');
+          const hasPercent = rawStr.includes('%');
+
+          // Strip symbols & commas to parse the number
+          const cleaned = rawStr
+            .replace(/[\$,]/g, '')
+            .replace(/[%\s]/g, '')
+            .replace(/[()]/g, '')
+            .trim();
+
+          const num = Number(cleaned);
+          if (Number.isNaN(num)) return rawStr;
+
+          const formatted = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(num);
+
+          let result = formatted;
+          if (hasDollar) result = '$' + result;
+          if (hasPercent) result = result + '%';
+
+          return result;
+        };
       }
 
       return col;
     });
-  }, [headers]);
+  }, [headers, numericColumns]);
+
 
   const handleExportCsv = () => {
     if (!gridRef.current?.api) return;
