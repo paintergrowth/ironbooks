@@ -555,13 +555,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   useEffect(() => {
     let isCancelled = false;
     {/*Start loadYtd */}
-   const loadYtd = async () => {
+const loadYtd = async () => {
   const now = new Date();
   const currentMonth = now.getMonth() + 1; // 1–12
 
   if (isDemo) {
     if (!isCancelled) {
-      // Remove current month from demo series
       const filteredDemo = DEMO_MONTH_SERIES.filter(row => {
         const d = new Date(row.date);
         return !(
@@ -588,52 +587,35 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     if (error) console.error('qbo-dashboard (ytd series) error:', error);
 
     const payload: QboDashboardPayload = (data as any) ?? {};
-      if (!isCancelled) {
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth() + 1; // 1–12
-      
-const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
+    const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
 
-// Build the 12 month "date spine" (12 months ago → last month)
-const now = new Date();
-const months: { date: string; revenue: number; expenses: number }[] = [];
+    if (!isCancelled) {
+      // Build the 12 month "date spine" (12 months ago → last month)
+      const months: { date: string; revenue: number; expenses: number }[] = [];
 
-for (let i = 12; i >= 1; i--) {
-  const d = new Date(now.getFullYear(), now.getMonth() - i, 1); // local is fine for chart
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  months.push({
-    date: `${yyyy}-${mm}-01`,
-    revenue: 0,
-    expenses: 0,
-  });
-}
-
-// Fill the spine with backend series (already 12 points in the same order)
-if (series.length === 12) {
-  const filled = months.map((m, idx) => ({
-    date: m.date,
-    revenue: toNumber(series[idx]?.revenue, 0),
-    expenses: toNumber(series[idx]?.expenses, 0),
-  }));
-  setYtdChartData(filled);
-} else {
-  // Fallback (demo or unexpected shape): still show last-12-minus-current logic
-  const start = new Date(now.getFullYear(), now.getMonth() - 12, 1);
-  const end = new Date(now.getFullYear(), now.getMonth(), 0); // end of last month
-  const filteredDemo = DEMO_MONTH_SERIES.filter(r => {
-    const d = new Date(r.date);
-    return d >= start && d <= end;
-  });
-  setYtdChartData(filteredDemo.length ? filteredDemo : DEMO_MONTH_SERIES);
-}
-
-      
-        if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
-        if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
+      for (let i = 12; i >= 1; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1); // local ok
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        months.push({ date: `${yyyy}-${mm}-01`, revenue: 0, expenses: 0 });
       }
 
+      if (series.length === 12) {
+        setYtdChartData(
+          months.map((m, idx) => ({
+            date: m.date,
+            revenue: toNumber(series[idx]?.revenue, 0),
+            expenses: toNumber(series[idx]?.expenses, 0),
+          }))
+        );
+      } else {
+        // fallback
+        setYtdChartData(DEMO_MONTH_SERIES);
+      }
+
+      if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
+      if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
+    }
   } catch (e) {
     console.error('qbo-dashboard (ytd) fetch failed:', e);
     if (!isCancelled) setYtdChartData(DEMO_MONTH_SERIES);
@@ -641,6 +623,7 @@ if (series.length === 12) {
     if (!isCancelled) setYtdLoading(false);
   }
 };
+
 
     {/* End loadYtd */}
     loadYtd();
