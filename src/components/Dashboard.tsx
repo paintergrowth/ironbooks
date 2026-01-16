@@ -605,13 +605,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         }));
       
         // 2) Filter out the *current calendar month* rows
+        // 2) Keep last 12 FULL months (exclude current month)
+        const start = new Date(currentYear, currentMonth - 13, 1); // 12 months ago
+        const end   = new Date(currentYear, currentMonth - 1, 0);  // end of last month
+        
         const filteredRows = rawRows.filter(r => {
           const d = new Date(r.date);
-          return !(
-            d.getFullYear() === currentYear &&
-            d.getMonth() + 1 === currentMonth
-          );
+          return d >= start && d <= end;
         });
+
       
         setYtdChartData(filteredRows);
       
