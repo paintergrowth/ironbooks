@@ -1001,7 +1001,8 @@ if (series.length === 12) {
             </p>
           </div>
           <CardTitle className="text-xl font-bold text-foreground">
-            Revenue vs Expenses (YTD)
+            Revenue vs Expenses (Last 12 Months)
+
           </CardTitle>
         </CardHeader>
         <CardContent>
