@@ -593,29 +593,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth() + 1; // 1–12
       
-        const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
-      
-        // 1) Build rows exactly like before
-        const rawRows = (series.length ? series : DEMO_MONTH_SERIES).map((row: any) => ({
-          date: series.length
-            ? `${thisYear}-${String(row.name).padStart(2, '0')}-01`
-            : row.date,
-          revenue: toNumber(row.revenue, 0),
-          expenses: toNumber(row.expenses, 0),
-        }));
-      
-        // 2) Filter out the *current calendar month* rows
-        // 2) Keep last 12 FULL months (exclude current month)
-        const start = new Date(currentYear, currentMonth - 13, 1); // 12 months ago
-        const end   = new Date(currentYear, currentMonth - 1, 0);  // end of last month
-        
-        const filteredRows = rawRows.filter(r => {
-          const d = new Date(r.date);
-          return d >= start && d <= end;
-        });
+const series = Array.isArray(payload?.ytdSeries) ? payload.ytdSeries : [];
 
-      
-        setYtdChartData(filteredRows);
+// Build the 12 month "date spine" (12 months ago → last month)
+const now = new Date();
+const months: { date: string; revenue: number; expenses: number }[] = [];
+
+for (let i = 12; i >= 1; i--) {
+  const d = new Date(now.getFullYear(), now.getMonth() - i, 1); // local is fine for chart
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  months.push({
+    date: `${yyyy}-${mm}-01`,
+    revenue: 0,
+    expenses: 0,
+  });
+}
+
+// Fill the spine with backend series (already 12 points in the same order)
+if (series.length === 12) {
+  const filled = months.map((m, idx) => ({
+    date: m.date,
+    revenue: toNumber(series[idx]?.revenue, 0),
+    expenses: toNumber(series[idx]?.expenses, 0),
+  }));
+  setYtdChartData(filled);
+} else {
+  // Fallback (demo or unexpected shape): still show last-12-minus-current logic
+  const start = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 0); // end of last month
+  const filteredDemo = DEMO_MONTH_SERIES.filter(r => {
+    const d = new Date(r.date);
+    return d >= start && d <= end;
+  });
+  setYtdChartData(filteredDemo.length ? filteredDemo : DEMO_MONTH_SERIES);
+}
+
       
         if (payload?.lastSyncAt) setLastSync(payload.lastSyncAt);
         if (payload?.companyName && !companyName) setCompanyName(payload.companyName);
