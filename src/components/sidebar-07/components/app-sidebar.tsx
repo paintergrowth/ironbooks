@@ -84,7 +84,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       ...(isAdmin && SHOW_CFO_AGENT ? [{ id: 'cfo-agent', title: 'CFO Agent', icon: Bot, url: '/cfo' } as NavItem] : []),
       { id: 'ai-accountant', title: 'AI Accountant', icon: MessageSquare,   url: '/ai-accountant' },
       { id: 'reports',       title: 'Reports',       icon: FileText,        url: '/reports' },
-      { id: 'add-ons',       title: 'Add-Ons',       icon: Plus,            url: '/add-ons' },
+      { id: 'add-ons',       title: 'Packages',       icon: Plus,            url: '/add-ons' },
       { id: 'settings',      title: 'Settings',      icon: Settings,        url: '/settings' },
     ]
     return base
