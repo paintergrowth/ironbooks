@@ -217,6 +217,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
   // ---------- Ad-hoc preview state ----------
   const [adhocPreview, setAdhocPreview] = useState<{ headers: string[]; rows: any[][] } | null>(null);
   const [lastUsedParams, setLastUsedParams] = useState<Record<string, any> | null>(null);
+  const [adhocPercentMode, setAdhocPercentMode] = useState(false);
   const [lastReportName, setLastReportName] = useState<string>('ProfitAndLoss');
   const [adhocLoading, setAdhocLoading] = useState(false);
   const [adhocError, setAdhocError] = useState<string | null>(null);
@@ -287,8 +288,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           try {
             setAdhocError(null);
             setAdhocLoading(true);
-            const canonicalReportName =
-              reportName === 'ProfitAndLossPct' ? 'ProfitAndLoss' : reportName;
+            
             
             setAdhocPercentMode(reportName === 'ProfitAndLossPct');
             const res = await runAdHocReport({ realmId, reportName, params, format: 'json' });
