@@ -11,7 +11,69 @@ export type ParamDef = {
   source?: 'customers' | 'vendors' | 'items' | 'accounts' | 'classes' | 'departments'; // for async picks
   showIf?: (values: Record<string, any>) => boolean; // optional conditional visibility
 };
+const PROFIT_AND_LOSS_PARAMS: ParamDef[] = [
+  // ✅ move your existing ProfitAndLoss array contents here
+    ProfitAndLoss: [
+    {
+      id: 'date_mode', label: 'Date Mode', type: 'select',
+      options: [
+        { label: 'Range', value: 'range' },
+        { label: 'Single Month', value: 'single' },
+      ],
+      default: 'range'
+    },
 
+    // RANGE inputs (shown only when date_mode = range)
+    { id: 'start_date', label: 'Start date', type: 'date', showIf: v => v.date_mode === 'range' },
+    { id: 'end_date',   label: 'End date',   type: 'date', showIf: v => v.date_mode === 'range' },
+
+    // SINGLE-MONTH inputs
+    { id: 'as_of_date', label: 'As of', type: 'date', showIf: v => v.date_mode === 'single' },
+
+    // (New) Optional QuickBooks macro when in single mode (lets edge use canonical macros)
+    {
+      id: 'date_macro', label: 'Date Macro', type: 'select',
+      options: [
+        { label: 'Today', value: 'Today' },
+        { label: 'This Month', value: 'This Month' },
+        { label: 'Last Month', value: 'Last Month' },
+        { label: 'This Quarter', value: 'This Quarter' },
+        { label: 'This Year-to-date', value: 'This Year-to-date' },
+      ],
+      showIf: v => v.date_mode === 'single'
+    },
+
+    {
+      id: 'accounting_method', label: 'Accounting Method', type: 'select',
+      options: [{ label:'Accrual', value:'Accrual' }, { label:'Cash', value:'Cash' }],
+      default: 'Accrual'
+    },
+    {
+      id: 'summarize_column_by', label: 'Summarize By', type: 'select',
+      options: [
+        { label:'Month', value:'Month' },
+        { label:'Quarter', value:'Quarter' },
+        { label:'Year', value:'Year' }
+      ],
+      default: 'Month'
+    },
+    {
+      id: 'columns', label: 'Columns', type: 'select',
+      options: [
+        { label:'Total Only',   value:'TotalOnly' },
+        { label:'Customers',    value:'Customers' },
+        { label:'Classes',      value:'Classes' },
+        { label:'Departments',  value:'Departments' }
+      ],
+      default: 'TotalOnly'
+    },
+
+    // entity filters (optional)
+    { id: 'customer',   label: 'Customers',   type: 'multiselect', source: 'customers',   showIf: v => v.columns === 'Customers' },
+    { id: 'class',      label: 'Classes',     type: 'multiselect', source: 'classes',     showIf: v => v.columns === 'Classes' },
+    { id: 'department', label: 'Departments', type: 'multiselect', source: 'departments', showIf: v => v.columns === 'Departments' },
+  ]
+];
 export const REPORT_PARAM_CONFIG: Record<string, ParamDef[]> = {
   ProfitAndLoss: [
     {
@@ -73,6 +135,67 @@ export const REPORT_PARAM_CONFIG: Record<string, ParamDef[]> = {
     { id: 'class',      label: 'Classes',     type: 'multiselect', source: 'classes',     showIf: v => v.columns === 'Classes' },
     { id: 'department', label: 'Departments', type: 'multiselect', source: 'departments', showIf: v => v.columns === 'Departments' },
   ],
+  ProfitAndLossPct: [
+    {
+      id: 'date_mode', label: 'Date Mode', type: 'select',
+      options: [
+        { label: 'Range', value: 'range' },
+        { label: 'Single Month', value: 'single' },
+      ],
+      default: 'range'
+    },
+
+    // RANGE inputs (shown only when date_mode = range)
+    { id: 'start_date', label: 'Start date', type: 'date', showIf: v => v.date_mode === 'range' },
+    { id: 'end_date',   label: 'End date',   type: 'date', showIf: v => v.date_mode === 'range' },
+
+    // SINGLE-MONTH inputs
+    { id: 'as_of_date', label: 'As of', type: 'date', showIf: v => v.date_mode === 'single' },
+
+    // (New) Optional QuickBooks macro when in single mode (lets edge use canonical macros)
+    {
+      id: 'date_macro', label: 'Date Macro', type: 'select',
+      options: [
+        { label: 'Today', value: 'Today' },
+        { label: 'This Month', value: 'This Month' },
+        { label: 'Last Month', value: 'Last Month' },
+        { label: 'This Quarter', value: 'This Quarter' },
+        { label: 'This Year-to-date', value: 'This Year-to-date' },
+      ],
+      showIf: v => v.date_mode === 'single'
+    },
+
+    {
+      id: 'accounting_method', label: 'Accounting Method', type: 'select',
+      options: [{ label:'Accrual', value:'Accrual' }, { label:'Cash', value:'Cash' }],
+      default: 'Accrual'
+    },
+    {
+      id: 'summarize_column_by', label: 'Summarize By', type: 'select',
+      options: [
+        { label:'Month', value:'Month' },
+        { label:'Quarter', value:'Quarter' },
+        { label:'Year', value:'Year' }
+      ],
+      default: 'Month'
+    },
+    {
+      id: 'columns', label: 'Columns', type: 'select',
+      options: [
+        { label:'Total Only',   value:'TotalOnly' },
+        { label:'Customers',    value:'Customers' },
+        { label:'Classes',      value:'Classes' },
+        { label:'Departments',  value:'Departments' }
+      ],
+      default: 'TotalOnly'
+    },
+
+    // entity filters (optional)
+    { id: 'customer',   label: 'Customers',   type: 'multiselect', source: 'customers',   showIf: v => v.columns === 'Customers' },
+    { id: 'class',      label: 'Classes',     type: 'multiselect', source: 'classes',     showIf: v => v.columns === 'Classes' },
+    { id: 'department', label: 'Departments', type: 'multiselect', source: 'departments', showIf: v => v.columns === 'Departments' },
+  ],
+  
 
   BalanceSheet: [
     { id: 'as_of_date', label: 'As of', type: 'date' },
