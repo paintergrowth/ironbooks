@@ -46,6 +46,16 @@ function ytdStart() {
   return `${now.getFullYear()}-01-01`;
 }
 
+function lastYearStartEnd() {
+  const now = new Date();
+  const lastYear = now.getFullYear() - 1;
+
+  const start = new Date(lastYear, 0, 1); // Jan 1 last year
+  const end = new Date(lastYear, 11, 31); // Dec 31 last year
+
+  return { start: toISO(start), end: toISO(end) };
+}
+
 /** Pretty labels for report selector (value remains the internal key) */
 const REPORT_LABELS: Record<string, string> = {
   ProfitAndLoss: 'Profit & Loss',
@@ -319,16 +329,16 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   };
 
   const handlePresetTodayOnly = () => {
-    const t = todayISO();
-    setValues(v => ({
-      ...v,
-      date_mode: 'range',
-      start_date: t,
-      end_date: t,
-      as_of_date: t,
-      date_macro: undefined,
-    }));
-  };
+  const ly = lastYearStartEnd();
+  setValues(v => ({
+    ...v,
+    date_mode: 'range',
+    start_date: ly.start,
+    end_date: ly.end,
+    as_of_date: ly.end,
+    date_macro: undefined,
+  }));
+};
 
   const handlePresetYTD = () => {
     const start = ytdStart();
@@ -378,8 +388,9 @@ export const AdHocReportsPanel: React.FC<Props> = ({
             <label className="text-sm text-gray-600 dark:text-gray-300">Quick Preset</label>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={handlePresetYTD}>YTD</Button>
+              <Button variant="outline" size="sm" onClick={handlePresetTodayOnly}>Last Year</Button>
               <Button variant="outline" size="sm" onClick={handlePresetLastMonth}>Last Month</Button>
-              <Button variant="outline" size="sm" onClick={handlePresetTodayOnly}>Today Only</Button>
+              
               
             </div>
           </div>
