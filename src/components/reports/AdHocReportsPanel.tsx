@@ -92,9 +92,13 @@ export const AdHocReportsPanel: React.FC<Props> = ({
   };
 
   const [values, setValues] = useState<Record<string, any>>(baseDefaults);
-  useEffect(() => {
-    setValues(baseDefaults);
-  }, [reportName]);
+     useEffect(() => {
+      setValues(baseDefaults);
+    }, [reportName]);
+    
+    useEffect(() => {
+      handlePresetYTD();
+    }, []);
 
   /* -------- async options for entity pickers (live from QBO via edge function) -------- */
   type Opt = { label: string; value: string };
@@ -373,9 +377,10 @@ export const AdHocReportsPanel: React.FC<Props> = ({
           <div className="space-y-1 md:col-span-2">
             <label className="text-sm text-gray-600 dark:text-gray-300">Quick Preset</label>
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={handlePresetYTD}>YTD</Button>
               <Button variant="outline" size="sm" onClick={handlePresetLastMonth}>Last Month</Button>
               <Button variant="outline" size="sm" onClick={handlePresetTodayOnly}>Today Only</Button>
-              <Button variant="outline" size="sm" onClick={handlePresetYTD}>YTD</Button>
+              
             </div>
           </div>
         </div>
