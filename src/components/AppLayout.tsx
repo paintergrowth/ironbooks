@@ -115,7 +115,7 @@ const AppLayout: React.FC = () => {
           <div className="flex items-center gap-3">
             <SidebarTrigger className="-ml-1" />
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
-              Ai BookKeeping
+              {activeSection.replace('-', ' ')}
             </h2>
           </div>
           <div className="flex items-center gap-2">
