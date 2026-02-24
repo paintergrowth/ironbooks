@@ -82,7 +82,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     const base: NavItem[] = [
       { id: 'dashboard',     title: 'Dashboard',     icon: LayoutDashboard, url: '/dashboard' },
       ...(isAdmin && SHOW_CFO_AGENT ? [{ id: 'cfo-agent', title: 'CFO Agent', icon: Bot, url: '/cfo' } as NavItem] : []),
-      { id: 'ai-accountant', title: 'Ai BookKeeping', icon: MessageSquare,   url: '/ai-accountant' },
+      { id: 'ai-accountant', title: 'AI Bookkeeper', icon: MessageSquare,   url: '/ai-accountant' },
       { id: 'reports',       title: 'Reports',       icon: FileText,        url: '/reports' },
       { id: 'add-ons',       title: 'Packages',       icon: Plus,            url: '/add-ons' },
       { id: 'settings',      title: 'Settings',      icon: Settings,        url: '/settings' },
