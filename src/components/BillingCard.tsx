@@ -204,7 +204,7 @@ export const BillingCard: React.FC = () => {
               <SelectValue placeholder="Select a plan" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Iron">Iron — $197/mo (App only)</SelectItem>
+              <SelectItem value="Iron">Iron — $247/mo (App only)</SelectItem>
               <SelectItem value="Gold">Gold — $497/mo (App + DFY Bookkeeping)</SelectItem>
               <SelectItem value="Platinum">Platinum — $997/mo (App + DFY + Fractional CFO)</SelectItem>
             </SelectContent>
