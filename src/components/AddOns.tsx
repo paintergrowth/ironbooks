@@ -58,7 +58,7 @@ const AddOns: React.FC = () => {
           "• Businesses over $1M in annual revenue",
         ],
         icon: TrendingUp,
-        popular: true,
+        popular: false,
         buttonText: "Buy Tier 2 - $497/Mo",
       },
       {
@@ -80,7 +80,7 @@ const AddOns: React.FC = () => {
           "Add-on services or custom projects will be scoped and billed separately.",
         ],
         icon: Crown,
-        popular: false,
+        popular: true,
         buttonText: "Buy Tier 3 - $997/Mo",
       },
     ],
