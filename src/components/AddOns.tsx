@@ -106,7 +106,7 @@ const AddOns: React.FC = () => {
         <div className="max-w-2xl mx-auto">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Custom Solutions</h2>
           <p className="text-lg text-gray-600 dark:text-gray-300 mb-6">
-            Your business is unique — we'll tailor a financial solution that fits your specific needs and goals.
+            Your business is unique, we'll tailor a financial solution that fits your specific needs and goals.
           </p>
             <a
               href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
