@@ -59,6 +59,7 @@ function lastYearStartEnd() {
 /** Pretty labels for report selector (value remains the internal key) */
 const REPORT_LABELS: Record<string, string> = {
   ProfitAndLoss: 'Profit & Loss',
+  ProfitAndLossPct: 'Profit & Loss % of Total Income', 
   BalanceSheet: 'Balance Sheet',
   TrialBalance: 'Trial Balance',
   CashFlow: 'Cash Flow',
