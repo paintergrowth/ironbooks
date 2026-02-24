@@ -240,7 +240,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Reports</h1>
-          <p className="text-gray-600 dark:text-gray-400">Access your monthly financial reports and video reviews</p>
+          <p className="text-gray-600 dark:text-gray-400">Access your financial reports and video reviews</p>
           {initialFilter && (
             <div className="mt-3">
               <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
