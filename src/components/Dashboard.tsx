@@ -246,7 +246,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
   console.log('[Dashboard] effective identity', { effUserId, effRealmId, isImpersonating });
   const isDemo = !effRealmId;
 
-  const [timeframe, setTimeframe] = useState<UiTimeframe>('lastMonth');
+  const [timeframe, setTimeframe] = useState<UiTimeframe>('ytd');
 
   // custom range state (YYYY-MM-DD)
   const [fromDate, setFromDate] = useState<string | null>(null);
