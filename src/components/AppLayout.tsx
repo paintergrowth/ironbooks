@@ -116,7 +116,9 @@ const AppLayout: React.FC = () => {
             <SidebarTrigger className="-ml-1" />
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
               {activeSection === 'ai-accountant'
-                  ? 'AI Bookkeeper'
+                  ? 'Ai Bookkeeping'
+                  : activeSection === 'add-ons'
+                  ? 'Packages'
                   : activeSection.replace('-', ' ')
                 }
             </h2>
