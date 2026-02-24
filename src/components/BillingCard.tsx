@@ -194,7 +194,7 @@ export const BillingCard: React.FC = () => {
 
       <CardContent className="space-y-4">
         <div className="grid gap-2">
-          <label className="text-sm text-muted-foreground">Choose plan</label>
+          <label className="text-sm text-muted-foreground">Choose Package</label>
           <Select
             value={selectedPlan}
             onValueChange={(v) => setSelectedPlan(v as Plan)}
@@ -204,9 +204,9 @@ export const BillingCard: React.FC = () => {
               <SelectValue placeholder="Select a plan" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Iron">Iron — $247/mo (App only)</SelectItem>
-              <SelectItem value="Gold">Gold — $497/mo (App + DFY Bookkeeping)</SelectItem>
-              <SelectItem value="Platinum">Platinum — $997/mo (App + DFY + Fractional CFO)</SelectItem>
+              <SelectItem value="Iron">Tier 1 — $247/mo (App only)</SelectItem>
+              <SelectItem value="Gold">Tier 2 — $497/mo (App + DFY Bookkeeping)</SelectItem>
+              <SelectItem value="Platinum">Tier 3 — $997/mo (App + DFY + Fractional CFO)</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
