@@ -287,7 +287,10 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
           try {
             setAdhocError(null);
             setAdhocLoading(true);
-
+            const canonicalReportName =
+              reportName === 'ProfitAndLossPct' ? 'ProfitAndLoss' : reportName;
+            
+            setAdhocPercentMode(reportName === 'ProfitAndLossPct');
             const res = await runAdHocReport({ realmId, reportName, params, format: 'json' });
 
             // Keep UI aligned with what the edge function actually used/returned
@@ -344,6 +347,7 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
         <div className="mt-6">
           <InteractiveReportGrid
             title={prettyReport(adhocMeta?.reportName || lastReportName)}
+            percentOfFirstRow={adhocPercentMode}   // ✅ ADD THIS LINE
             headers={adhocPreview.headers}
             rows={adhocPreview.rows}
           />
