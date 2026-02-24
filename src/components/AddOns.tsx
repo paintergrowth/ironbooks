@@ -108,13 +108,19 @@ const AddOns: React.FC = () => {
           <p className="text-lg text-gray-600 dark:text-gray-300 mb-6">
             Your business is unique — we'll tailor a financial solution that fits your specific needs and goals.
           </p>
-          <Button 
-            variant="outline" 
-            size="lg"
-            className="bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 font-semibold px-8 py-3 text-base"
-          >
-            👉 Book a Free Consultation
-          </Button>
+            <a
+              href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button 
+                variant="outline" 
+                size="lg"
+                className="bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 font-semibold px-8 py-3 text-base"
+              >
+                👉 Book a Free Consultation
+              </Button>
+            </a>
         </div>
       </div>
     </div>
