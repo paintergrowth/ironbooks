@@ -353,7 +353,7 @@ export const AdHocReportsPanel: React.FC<Props> = ({
           </div>
           <Badge variant="outline" className="flex gap-2">
             <Calendar className="w-3 h-3" />
-            Defaults: Last Month / Accrual
+            Defaults: YTD / Accrual
           </Badge>
         </div>
       </CardHeader>
