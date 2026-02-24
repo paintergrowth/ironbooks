@@ -15,6 +15,7 @@ type InteractiveReportGridProps = {
   title?: string;
   headers: string[];
   rows: any[][];
+  percentOfFirstRow?: boolean; // ✅ ADD
 };
 
 type SectionRow = {
@@ -29,6 +30,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
   title = 'Interactive Report Explorer',
   headers,
   rows,
+  percentOfFirstRow = false, // ✅ ADD
 }) => {
   const gridRef = useRef<AgGridReact<any>>(null);
 
@@ -61,7 +63,29 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
     const s = String(val).trim();
     return s === '' || s === '-' || s === '—';
   };
+ const parseNum = (val: unknown): number | null => {
+  if (val === null || val === undefined) return null;
+  const s = String(val)
+    .replace(/[\$,]/g, '')
+    .replace(/[%\s]/g, '')
+    .replace(/[()]/g, '')
+    .trim();
+  if (s === '') return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
 
+const firstRowDenoms = useMemo(() => {
+  const map: Record<string, number | null> = {};
+  if (!headers?.length || !rows?.length) return map;
+
+  const firstRow = rows[0] || [];
+  headers.forEach((h, idx) => {
+    if (idx === 0) return; // ✅ skip title column
+    map[h] = parseNum(firstRow[idx]);
+  });
+  return map;
+}, [headers, rows]);
   const looksNumeric = (val: unknown): boolean => {
     if (val === null || val === undefined) return false;
     const s = String(val)
@@ -221,41 +245,64 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
 
           return null;
         };
-      } else if (numericColumns[h]) {
-        // 🔹 Other columns that look numeric → format as 1,234,345.98 (keep $ and % if present)
-        col.valueFormatter = (params) => {
-          const raw = params.value;
+} else if (numericColumns[h]) {
+  // Keep your formatting logic as a function so renderer can reuse it
+  const formatMain = (raw: any) => {
+    if (raw === null || raw === undefined || raw === '') return '';
 
-          if (raw === null || raw === undefined || raw === '') return '';
+    const rawStr = String(raw);
+    const hasDollar = rawStr.includes('$');
+    const hasPercent = rawStr.includes('%');
 
-          const rawStr = String(raw);
+    const cleaned = rawStr
+      .replace(/[\$,]/g, '')
+      .replace(/[%\s]/g, '')
+      .replace(/[()]/g, '')
+      .trim();
 
-          // Preserve currency / percent if they were there
-          const hasDollar = rawStr.includes('$');
-          const hasPercent = rawStr.includes('%');
+    const num = Number(cleaned);
+    if (Number.isNaN(num)) return rawStr;
 
-          // Strip symbols & commas to parse the number
-          const cleaned = rawStr
-            .replace(/[\$,]/g, '')
-            .replace(/[%\s]/g, '')
-            .replace(/[()]/g, '')
-            .trim();
+    const formatted = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num);
 
-          const num = Number(cleaned);
-          if (Number.isNaN(num)) return rawStr;
+    let result = formatted;
+    if (hasDollar) result = '$' + result;
+    if (hasPercent) result = result + '%';
+    return result;
+  };
 
-          const formatted = new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          }).format(num);
+  if (percentOfFirstRow) {
+    col.cellRenderer = (params: any) => {
+      const main = formatMain(params.value);
 
-          let result = formatted;
-          if (hasDollar) result = '$' + result;
-          if (hasPercent) result = result + '%';
+      const denom = firstRowDenoms[h];
+      const num = parseNum(params.value);
 
-          return result;
-        };
+      let pctLine = '';
+      if (denom && denom !== 0 && num !== null) {
+        const pct = (num / denom) * 100;
+        pctLine = `${pct.toFixed(1)}%`;
       }
+
+      return (
+        <div style={{ lineHeight: '1.05' }}>
+          <div>{main}</div>
+          {pctLine ? (
+            <div style={{ fontSize: '11px', opacity: 0.75, marginTop: '2px' }}>
+              {pctLine}
+            </div>
+          ) : null}
+        </div>
+      );
+    };
+  } else {
+    // default mode: keep simple formatting
+    col.valueFormatter = (params) => formatMain(params.value);
+  }
+}
 
       return col;
     });
@@ -332,7 +379,7 @@ export const InteractiveReportGrid: React.FC<InteractiveReportGridProps> = ({
   };
  // 🔹 Dynamically size grid height based on visible rows (no vertical scrollbar)
   const rowsToShow = Math.min(pageSize, visibleRowData.length || 0);
-  const rowHeightPx = 32;        // approximate row height including borders
+  const rowHeightPx = percentOfFirstRow ? 44 : 32;       // approximate row height including borders
   const extraChromePx = 80;      // header, filters, padding inside AG Grid
   const gridHeight = rowsToShow * rowHeightPx + extraChromePx;
   
