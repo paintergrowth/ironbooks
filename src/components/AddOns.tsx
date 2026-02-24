@@ -12,7 +12,7 @@ const AddOns: React.FC = () => {
       headline: 'Save 10+ hours a month with automated payroll & compliance management.',
       description: 'We handle payroll processing, tax filing, and compliance so you never worry about deadlines or penalties. Get back your time and protect your business.',
       icon: Users,
-      price: 'Starting at $99/month — less than the cost of one payroll mistake.',
+      price: 'Starting at $99/month, less than the cost of one payroll mistake.',
       cta: '👉 Start Payroll Setup',
       popular: false
     },
@@ -22,7 +22,7 @@ const AddOns: React.FC = () => {
       headline: 'Get executive-level financial clarity without the $150K salary.',
       description: 'Strategic planning, budgeting, and advisory from seasoned CFOs who know your industry. Turn numbers into decisions and scale with confidence.',
       icon: TrendingUp,
-      price: 'Starting at $500/month — compared to $5K+ for a part-time CFO.',
+      price: 'Starting at $500/month, compared to $5K+ for a part-time CFO.',
       cta: '👉 Talk to a CFO Today',
       popular: true
     },
@@ -32,7 +32,7 @@ const AddOns: React.FC = () => {
       headline: 'Seamlessly manage multiple businesses in one platform.',
       description: 'Add bookkeeping services for another entity without the hassle of juggling multiple systems. One login, one dashboard, total visibility.',
       icon: Building,
-      price: 'Starting at $200/month — simple add-on for multi-entity operators.',
+      price: 'Starting at $200/month, simple add-on for multi-entity operators.',
       cta: '👉 Add Another Entity',
       popular: false
     }
