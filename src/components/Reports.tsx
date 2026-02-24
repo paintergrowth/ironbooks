@@ -290,8 +290,17 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
             setAdhocLoading(true);
             
             
-            setAdhocPercentMode(reportName === 'ProfitAndLossPct');
-            const res = await runAdHocReport({ realmId, reportName, params, format: 'json' });
+            const percentMode = reportName === 'ProfitAndLossPct';
+              setAdhocPercentMode(percentMode);
+              
+              const apiReportName = percentMode ? 'ProfitAndLoss' : reportName;
+              
+              const res = await runAdHocReport({
+                realmId,
+                reportName: apiReportName,   // ✅ send canonical name to edge function
+                params,
+                format: 'json'
+              });
 
             // Keep UI aligned with what the edge function actually used/returned
             setLastReportName(res?.meta?.reportName ?? reportName);
@@ -313,8 +322,16 @@ const Reports: React.FC<ReportsProps> = ({ initialFilter, initialTimeframe }) =>
             setLastReportName(reportName);
             setLastUsedParams(params);
 
-            const blob = await runAdHocReport({ realmId, reportName, params, format: fmt });
-            downloadBlob(blob, `${reportName}.${fmt === 'csv' ? 'csv' : 'pdf'}`);
+            const percentMode = reportName === 'ProfitAndLossPct';
+            const apiReportName = percentMode ? 'ProfitAndLoss' : reportName;
+            
+            const blob = await runAdHocReport({
+              realmId,
+              reportName: apiReportName,   // ✅ send canonical name
+              params,
+              format: fmt
+            });
+                        downloadBlob(blob, `${reportName}.${fmt === 'csv' ? 'csv' : 'pdf'}`);
           } catch (e: any) {
             alert(e?.message || 'Download failed');
           }
