@@ -20,6 +20,12 @@ import { useEffectiveIdentity } from '@/lib/impersonation';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
 import CurrentPosition from "@/components/CurrentPosition"; // ⬅️ (unchanged)
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type UiTimeframe = 'ytd' | 'thisYear' | 'lastYear' | 'thisMonth' | 'lastMonth' | 'custom';
 type ApiPeriod = 'ytd' | 'this_year' | 'last_year' | 'this_month' | 'last_month';
@@ -163,6 +169,56 @@ const changeLabel = (period: UiTimeframe) =>
     : period === 'lastYear' ? 'from year before'
       : period === 'custom' ? 'vs selected range'
         : 'from last month';
+
+const periodTitle = (tf: UiTimeframe) =>
+  tf === 'ytd' ? 'YTD'
+    : tf === 'thisYear' ? 'This Year'
+      : tf === 'lastYear' ? 'Last Year'
+        : tf === 'thisMonth' ? 'This Month'
+          : tf === 'lastMonth' ? 'Last Month'
+            : 'Custom';
+
+const fmtDate = (d: Date) =>
+  d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+
+const getRangeForTimeframe = (
+  tf: UiTimeframe,
+  fromDate: string | null,
+  toDate: string | null
+  ) => {
+  const now = new Date();
+
+  if (tf === 'custom' && fromDate && toDate) {
+    return { start: fromDate, end: toDate };
+  }
+
+  if (tf === 'thisMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  if (tf === 'lastMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  if (tf === 'thisYear') {
+    const start = new Date(now.getFullYear(), 0, 1);
+    const end = new Date(now.getFullYear(), 11, 31);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  if (tf === 'lastYear') {
+    const start = new Date(now.getFullYear() - 1, 0, 1);
+    const end = new Date(now.getFullYear() - 1, 11, 31);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  const start = new Date(now.getFullYear(), 0, 1);
+  return { start: fmtDate(start), end: fmtDate(now) };
+};
 
 const chartConfig = {
   revenue: { label: 'Revenue', color: 'hsl(var(--chart-1))' },
@@ -477,6 +533,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     const run = async () => {
       const isCustom = timeframe === 'custom';
       const customValid = isCustom && !!fromDate && !!toDate && fromDate <= toDate;
+      const tfMeta = getRangeForTimeframe(timeframe, fromDate, toDate);
 
       // If custom selected but dates incomplete/invalid → don't fetch yet
       if (isCustom && !customValid) return;
@@ -839,36 +896,59 @@ const loadYtd = async () => {
 
       {/* 3 Main Metric Cards */}
       <div className="grid gap-6 md:grid-cols-3">
-        <Card
-          className="cursor-pointer bg-card border border-border/20 shadow-sm transition-all hover:bg-muted/30 hover:border-border/30"
-          onClick={() => handleCardClick('revenue')}
-        >
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-muted-foreground">REVENUE →</CardDescription>
-              <div className="text-green-500">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fillRule="evenodd"
-                    d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Card
+              className="cursor-pointer bg-card border border-border/20 shadow-sm transition-all hover:bg-muted/30 hover:border-border/30"
+              onClick={() => handleCardClick('revenue')}
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardDescription className="text-muted-foreground">
+                    REVENUE →
+                  </CardDescription>
+                  <div className="text-green-500">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path
+                        fillRule="evenodd"
+                        d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                </div>
+        
+                <CardTitle className="text-3xl font-bold text-foreground">
+                  {formatCurrency(revCurr)}
+                </CardTitle>
+        
+                <p className={`text-sm font-medium ${revPct !== null && revPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {revPct === null
+                    ? `— ${changeLabel(timeframe)}`
+                    : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}% ${changeLabel(timeframe)}`}
+                </p>
+              </CardHeader>
+            </Card>
+          </TooltipTrigger>
+        
+          <TooltipContent className="bg-popover border border-border/30 p-3 w-64">
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-muted-foreground">
+                {periodTitle(timeframe)} • Revenue
+              </div>
+        
+              <div className="text-xs text-muted-foreground">
+                {tfMeta.start} — {tfMeta.end}
+              </div>
+        
+              <div className="text-sm font-semibold">
+                Amount: {formatCurrency(revCurr)}
               </div>
             </div>
-            <CardTitle className="text-3xl font-bold text-foreground">
-              {formatCurrency(revCurr)}
-            </CardTitle>
-            <p className={`text-sm font-medium ${revPct !== null && revPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-              {revPct === null
-                ? `— ${changeLabel(timeframe)}`
-                : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}% ${changeLabel(timeframe)}`}
-            </p>
-          </CardHeader>
-
-         
-        
-        </Card>
+          </TooltipContent>
+        </Tooltip>
+        </TooltipProvider>
 
         <Card
           className="cursor-pointer bg-card border border-border/20 shadow-sm transition-all hover:bg-muted/30 hover:border-border/30"
