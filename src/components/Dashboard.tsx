@@ -21,8 +21,8 @@ import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import ExpenseCategories from './ExpenseCategories';
 import CurrentPosition from "@/components/CurrentPosition"; // ⬅️ (unchanged)
 
-type UiTimeframe = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'ytd' | 'custom';
-type ApiPeriod = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'ytd';
+type UiTimeframe = 'ytd' | 'thisYear' | 'lastYear' | 'thisMonth' | 'lastMonth' | 'custom';
+type ApiPeriod = 'ytd' | 'this_year' | 'last_year' | 'this_month' | 'last_month';
 
 interface ApiNumberPair {
   current?: number | string | null;
@@ -155,12 +155,12 @@ const pctChange = (curr: number, prev: number): number | null => {
 const toApiPeriod = (ui: Exclude<UiTimeframe, 'custom'>): ApiPeriod =>
   ui === 'thisMonth' ? 'this_month'
     : ui === 'lastMonth' ? 'last_month'
-      : ui === 'thisQuarter' ? 'this_quarter'
-        : ui === 'lastQuarter' ? 'last_quarter'
+      : ui === 'thisYear' ? 'this_year'
+        : ui === 'lastYear' ? 'last_year'
           : 'ytd';
 const changeLabel = (period: UiTimeframe) =>
-  period === 'ytd' ? 'from last year'
-    : period === 'thisQuarter' || period === 'lastQuarter' ? 'from last quarter'
+  period === 'ytd' || period === 'thisYear' ? 'from last year'
+    : period === 'lastYear' ? 'from year before'
       : period === 'custom' ? 'vs selected range'
         : 'from last month';
 
@@ -774,13 +774,13 @@ const loadYtd = async () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-popover border border-border/30">
-              <SelectItem value="thisMonth">This Month</SelectItem>
-              <SelectItem value="lastMonth">Last Month</SelectItem>
-              <SelectItem value="thisQuarter">This Quarter</SelectItem>
-              <SelectItem value="lastQuarter">Last Quarter</SelectItem>
-              <SelectItem value="ytd">YTD</SelectItem>
-              <SelectItem value="custom">Custom…</SelectItem>
-            </SelectContent>
+                <SelectItem value="ytd">YTD</SelectItem>
+                <SelectItem value="thisYear">This Year</SelectItem>
+                <SelectItem value="lastYear">Last Year</SelectItem>
+                <SelectItem value="thisMonth">This Month</SelectItem>
+                <SelectItem value="lastMonth">Last Month</SelectItem>
+                <SelectItem value="custom">Custom…</SelectItem>
+              </SelectContent>
           </Select>
 
           {/* From/To inputs only for Custom */}
