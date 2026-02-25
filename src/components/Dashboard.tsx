@@ -1027,70 +1027,138 @@ const loadYtd = async () => {
         </Tooltip>
         </TooltipProvider>
 
-        <Card
-          className="cursor-pointer bg-card border border-border/20 shadow-sm transition-all hover:bg-muted/30 hover:border-border/30"
-          onClick={() => handleCardClick('expenses')}
-        >
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-muted-foreground">EXPENSES →</CardDescription>
-              <div className="text-red-500">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                </svg>
-              </div>
-            </div>
-            <CardTitle className="text-3xl font-bold text-foreground">
-              {formatCurrency(expCurr)}
-            </CardTitle>
-            <p className={`text-sm font-medium ${expPct !== null && expPct < 0 ? 'text-green-600' : 'text-red-500'}`}>
-              {expPct === null
-                ? `— ${changeLabel(timeframe)}`
-                : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}% ${changeLabel(timeframe)}`}
-            </p>
-          </CardHeader>
-        </Card>
+       <Tooltip>
+  <TooltipTrigger asChild>
+    <Card
+      className="cursor-pointer bg-card border border-border/20 shadow-sm transition-all hover:bg-muted/30 hover:border-border/30"
+      onClick={() => handleCardClick('expenses')}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardDescription className="text-muted-foreground">EXPENSES →</CardDescription>
+          <div className="text-red-500">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+            </svg>
+          </div>
+        </div>
 
-        <Card
-          className="cursor-pointer bg-card border border-border/20 shadow-sm transition-all hover:bg-muted/30 hover:border-border/30"
-          onClick={() => handleCardClick('profit-loss')}
-        >
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardDescription className="text-muted-foreground">NET PROFIT →</CardDescription>
-              <div className="text-green-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-              </div>
-            </div>
-            <CardTitle className="text-3xl font-bold text-foreground">
-              {formatCurrency(netCurr)}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Margin: {profitMargin.toFixed(1)}%
-            </p>
-            <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-              {netPct === null
-                ? `— vs ${timeframe === 'ytd'
-                  ? 'last year'
-                  : timeframe === 'thisQuarter' || timeframe === 'lastQuarter'
-                    ? 'last quarter'
-                    : timeframe === 'custom'
-                      ? 'selected range'
-                      : 'last month'
-                }`
-                : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd'
-                  ? 'last year'
-                  : timeframe === 'thisQuarter' || timeframe === 'lastQuarter'
-                    ? 'last quarter'
-                    : timeframe === 'custom'
-                      ? 'selected range'
-                      : 'last month'
-                }`}
-            </p>
-          </CardHeader>
-        </Card>
+        <CardTitle className="text-3xl font-bold text-foreground">
+          {formatCurrency(expCurr)}
+        </CardTitle>
+
+        <p className={`text-sm font-medium ${expPct !== null && expPct < 0 ? 'text-green-600' : 'text-red-500'}`}>
+          {expPct === null
+            ? `— ${changeLabel(timeframe)}`
+            : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}% ${changeLabel(timeframe)}`}
+        </p>
+      </CardHeader>
+    </Card>
+  </TooltipTrigger>
+
+  <TooltipContent className="bg-popover border border-border/30 p-3 w-72">
+    <div className="space-y-2">
+      <div className="text-xs font-semibold text-muted-foreground">
+        {periodTitle(timeframe)} • Expenses
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        {tfMeta.start} — {tfMeta.end}
+      </div>
+
+      <div className="text-sm font-semibold">
+        Amount: {formatCurrency(expCurr)}
+      </div>
+
+      <div className="pt-2 border-t border-border/30">
+        <div className="text-xs font-semibold text-muted-foreground">
+          Compared to
+        </div>
+
+        <div className="text-xs text-muted-foreground">
+          {tfCompare.start} — {tfCompare.end}
+        </div>
+
+        <div className="text-sm font-semibold">
+          Previous: {formatCurrency(expPrev)}
+        </div>
+      </div>
+    </div>
+  </TooltipContent>
+</Tooltip>
+       <Tooltip>
+  <TooltipTrigger asChild>
+    <Card
+      className="cursor-pointer bg-card border border-border/20 shadow-sm transition-all hover:bg-muted/30 hover:border-border/30"
+      onClick={() => handleCardClick('profit-loss')}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardDescription className="text-muted-foreground">NET PROFIT →</CardDescription>
+          <div className="text-green-600">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+        </div>
+
+        <CardTitle className="text-3xl font-bold text-foreground">
+          {formatCurrency(netCurr)}
+        </CardTitle>
+
+        <p className="text-sm text-muted-foreground">
+          Margin: {profitMargin.toFixed(1)}%
+        </p>
+
+        <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+          {netPct === null
+            ? `— vs ${timeframe === 'ytd'
+              ? 'last year'
+              : timeframe === 'custom'
+                ? 'selected range'
+                : 'last month'
+            }`
+            : `${netPct > 0 ? '+' : ''}${formatCurrency(Math.abs(netCurr - netPrev))} vs ${timeframe === 'ytd'
+              ? 'last year'
+              : timeframe === 'custom'
+                ? 'selected range'
+                : 'last month'
+            }`}
+        </p>
+      </CardHeader>
+    </Card>
+  </TooltipTrigger>
+
+  <TooltipContent className="bg-popover border border-border/30 p-3 w-72">
+    <div className="space-y-2">
+      <div className="text-xs font-semibold text-muted-foreground">
+        {periodTitle(timeframe)} • Net Profit
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        {tfMeta.start} — {tfMeta.end}
+      </div>
+
+      <div className="text-sm font-semibold">
+        Amount: {formatCurrency(netCurr)}
+      </div>
+
+      <div className="pt-2 border-t border-border/30">
+        <div className="text-xs font-semibold text-muted-foreground">
+          Compared to
+        </div>
+
+        <div className="text-xs text-muted-foreground">
+          {tfCompare.start} — {tfCompare.end}
+        </div>
+
+        <div className="text-sm font-semibold">
+          Previous: {formatCurrency(netPrev)}
+        </div>
+      </div>
+    </div>
+  </TooltipContent>
+</Tooltip>
       </div>
 
       {/* Current Position (Bank, Cash on Hand, Receivables)
