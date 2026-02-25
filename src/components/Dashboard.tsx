@@ -866,7 +866,7 @@ const loadYtd = async () => {
             </p>
           </CardHeader>
 
-          /* HOVER DETAILS OVERLAY  */
+         
           <div
             className="
               pointer-events-none
