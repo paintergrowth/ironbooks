@@ -66,7 +66,7 @@ const REPORT_LABELS: Record<string, string> = {
   AgedReceivables: 'Aged Receivables',
   AgedPayables: 'Aged Payables',
   CustomerSales: 'Customer Sales',
-  ItemSales: 'Item Sales',
+  ItemSales: 'Sales',
   InventoryValuationSummary: 'Inventory Valuation Summary',
   GeneralLedger: 'General Ledger',
 };
