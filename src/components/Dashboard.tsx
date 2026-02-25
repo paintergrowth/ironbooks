@@ -533,7 +533,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
     const run = async () => {
       const isCustom = timeframe === 'custom';
       const customValid = isCustom && !!fromDate && !!toDate && fromDate <= toDate;
-       const tfMeta = getRangeForTimeframe(timeframe, fromDate, toDate);
+       
 
       // If custom selected but dates incomplete/invalid → don't fetch yet
       if (isCustom && !customValid) return;
@@ -767,6 +767,9 @@ const loadYtd = async () => {
 
   const isCustom = timeframe === 'custom';
   const customValid = isCustom && !!fromDate && !!toDate && fromDate <= toDate;
+  const tfMeta = getRangeForTimeframe(timeframe, fromDate, toDate);
+
+  
 
   return (
     <div className="space-y-6 p-6">
