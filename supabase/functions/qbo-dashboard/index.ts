@@ -44,6 +44,19 @@ function startEndForPeriod(period: string) {
     return { start, end };
   }
 
+    if (period === "this_year") {
+    const start = `${y}-01-01`;
+    const end = `${y}-${pad(m + 1)}-${pad(today.getDate())}`;
+    return { start, end };
+  }
+
+  if (period === "last_year") {
+    const ly = y - 1;
+    const start = `${ly}-01-01`;
+    const end = `${ly}-12-31`;
+    return { start, end };
+  }
+
   const start = `${y}-01-01`;
   const end = `${y}-${pad(m + 1)}-${pad(today.getDate())}`;
   return { start, end };
@@ -149,7 +162,8 @@ serve(async (req) => {
       body = await req.json();
     } catch {}
 
-    const period = body?.period === "last_month" || body?.period === "ytd" ? body.period : "this_month";
+    const allowed = new Set(["this_month", "last_month", "ytd", "this_year", "last_year"]);
+    const period = allowed.has(body?.period) ? body.period : "this_month";
     console.log("qbo-dashboard: Using period:", period);
 
     // Get this user's realmId
@@ -338,36 +352,49 @@ serve(async (req) => {
     console.log("qbo-dashboard: Current period totals:", curr);
 
     // Previous comparator
-    let prev = { revenue: 0, expenses: 0, net: 0 };
+   let prev = { revenue: 0, expenses: 0, net: 0 };
 
-    if (period === "this_month" || period === "last_month") {
-      const last = startEndForPeriod("last_month");
-      try {
-        const prevPL = await fetchPL(last.start, last.end);
-        prev = pickReportTotals(prevPL);
-      } catch (e) {
-        console.warn("qbo-dashboard: Failed to fetch previous period:", e);
-      }
-    } else {
-      const now = new Date();
-      const lastYear = now.getFullYear() - 1;
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const pStart = `${lastYear}-01-01`;
-      const pEnd = `${lastYear}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+if (period === "this_month" || period === "last_month") {
+  const last = startEndForPeriod("last_month");
+  try {
+    const prevPL = await fetchPL(last.start, last.end);
+    prev = pickReportTotals(prevPL);
+  } catch (e) {
+    console.warn("qbo-dashboard: Failed to fetch previous period:", e);
+  }
 
-      try {
-        const prevPL = await fetchPL(pStart, pEnd);
-        prev = pickReportTotals(prevPL);
-      } catch (e) {
-        console.warn("qbo-dashboard: Failed to fetch previous year:", e);
-      }
-    }
-    
-    console.log("qbo-dashboard: Previous period totals:", prev);
+} else if (period === "this_year" || period === "ytd") {
+  const now = new Date();
+  const lastYear = now.getFullYear() - 1;
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  const pStart = `${lastYear}-01-01`;
+  const pEnd = `${lastYear}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+  try {
+    const prevPL = await fetchPL(pStart, pEnd);
+    prev = pickReportTotals(prevPL);
+  } catch (e) {
+    console.warn("qbo-dashboard: Failed to fetch previous year:", e);
+  }
+
+} else if (period === "last_year") {
+  const now = new Date();
+  const prevYear = now.getFullYear() - 2;
+
+  try {
+    const prevPL = await fetchPL(`${prevYear}-01-01`, `${prevYear}-12-31`);
+    prev = pickReportTotals(prevPL);
+  } catch (e) {
+    console.warn("qbo-dashboard: Failed to fetch year before last:", e);
+  }
+}
+
+console.log("qbo-dashboard: Previous period totals:", prev);
 
     // YTD monthly series
     let ytdSeries: any[] = [];
-    if (period === "ytd") {
+    if (period === "ytd" || period === "this_year") {
       const now = new Date();
       for (let m = 0; m <= now.getMonth(); m++) {
         const y = now.getFullYear();
