@@ -865,6 +865,30 @@ const loadYtd = async () => {
                 : `${revPct > 0 ? '+' : ''}${Math.abs(revPct).toFixed(1)}% ${changeLabel(timeframe)}`}
             </p>
           </CardHeader>
+
+          /* HOVER DETAILS OVERLAY  */
+          <div
+            className="
+              pointer-events-none
+              absolute inset-0
+              opacity-0 group-hover:opacity-100
+              transition-opacity
+              bg-background/85 backdrop-blur-sm
+              flex items-center
+              p-4
+            "
+          >
+            <div className="space-y-1">
+              <div className="text-sm font-semibold text-foreground">{range.label}</div>
+              <div className="text-xs text-muted-foreground">
+                {range.start} → {range.end}
+              </div>
+              <div className="pt-2 text-sm text-foreground">
+                <span className="font-medium">Amount: </span>
+                {formatCurrency(revCurr)}
+              </div>
+            </div>
+          </div>
         </Card>
 
         <Card
