@@ -220,6 +220,65 @@ const getRangeForTimeframe = (
   return { start: fmtDate(start), end: fmtDate(now) };
 };
 
+const getCompareRangeForTimeframe = (
+  tf: UiTimeframe,
+  fromDate: string | null,
+  toDate: string | null
+) => {
+  const now = new Date();
+
+  // Custom: previous window of same length immediately before fromDate
+  if (tf === 'custom' && fromDate && toDate) {
+    const start = new Date(fromDate);
+    const end = new Date(toDate);
+
+    // inclusive day span
+    const spanDays =
+      Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    const prevEnd = new Date(start);
+    prevEnd.setDate(prevEnd.getDate() - 1);
+
+    const prevStart = new Date(prevEnd);
+    prevStart.setDate(prevStart.getDate() - (spanDays - 1));
+
+    return { start: fmtDate(prevStart), end: fmtDate(prevEnd) };
+  }
+
+  // This Month compares to Last Month
+  if (tf === 'thisMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  // Last Month compares to Month Before Last
+  if (tf === 'lastMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  // This Year compares to Last Year
+  if (tf === 'thisYear') {
+    const start = new Date(now.getFullYear() - 1, 0, 1);
+    const end = new Date(now.getFullYear() - 1, 11, 31);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  // Last Year compares to Year Before Last
+  if (tf === 'lastYear') {
+    const start = new Date(now.getFullYear() - 2, 0, 1);
+    const end = new Date(now.getFullYear() - 2, 11, 31);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  // YTD compares to YTD last year
+  const start = new Date(now.getFullYear() - 1, 0, 1);
+  const end = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+  return { start: fmtDate(start), end: fmtDate(end) };
+};
+
 const chartConfig = {
   revenue: { label: 'Revenue', color: 'hsl(var(--chart-1))' },
   expenses: { label: 'Expenses', color: 'hsl(var(--chart-2))' },
@@ -768,6 +827,7 @@ const loadYtd = async () => {
   const isCustom = timeframe === 'custom';
   const customValid = isCustom && !!fromDate && !!toDate && fromDate <= toDate;
   const tfMeta = getRangeForTimeframe(timeframe, fromDate, toDate);
+  const tfCompare = getCompareRangeForTimeframe(timeframe, fromDate, toDate);
 
   
 
@@ -935,21 +995,35 @@ const loadYtd = async () => {
             </Card>
           </TooltipTrigger>
         
-          <TooltipContent className="bg-popover border border-border/30 p-3 w-64">
-            <div className="space-y-1">
-              <div className="text-xs font-semibold text-muted-foreground">
-                {periodTitle(timeframe)} • Revenue
-              </div>
-        
-              <div className="text-xs text-muted-foreground">
-                {tfMeta.start} — {tfMeta.end}
-              </div>
-        
-              <div className="text-sm font-semibold">
-                Amount: {formatCurrency(revCurr)}
-              </div>
+         <TooltipContent className="bg-popover border border-border/30 p-3 w-72">
+        <div className="space-y-2">
+          <div className="text-xs font-semibold text-muted-foreground">
+            {periodTitle(timeframe)} • Revenue
+          </div>
+      
+          <div className="text-xs text-muted-foreground">
+            {tfMeta.start} — {tfMeta.end}
+          </div>
+      
+          <div className="text-sm font-semibold">
+            Amount: {formatCurrency(revCurr)}
+          </div>
+      
+          <div className="pt-2 border-t border-border/30">
+            <div className="text-xs font-semibold text-muted-foreground">
+              Compared to
             </div>
-          </TooltipContent>
+      
+            <div className="text-xs text-muted-foreground">
+              {tfCompare.start} — {tfCompare.end}
+            </div>
+      
+            <div className="text-sm font-semibold">
+              Previous: {formatCurrency(revPrev)}
+            </div>
+          </div>
+        </div>
+      </TooltipContent>
         </Tooltip>
         </TooltipProvider>
 
