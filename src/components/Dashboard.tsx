@@ -943,36 +943,7 @@ const loadYtd = async () => {
         />
       )}
       */ }
-      {/* Business Health */}
-      <Card className="bg-card border border-border/20">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg font-bold text-foreground">Business Health</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-success/10 border border-success/30">
-            <div className="mt-0.5 text-green-600">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h4 className="font-medium text-sm text-foreground">Strong Profit Margins</h4>
-                <Badge variant="default" className="text-xs">
-                  {profitMargin.toFixed(1)}%
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Your {profitMargin.toFixed(1)}% net margin shows healthy operational efficiency
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    
 
       {/* Chart */}
       <Card className="bg-card border border-border/20 shadow-sm">
