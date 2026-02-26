@@ -95,7 +95,7 @@ const roundNumbersInText = (text: string) => {
     const numeric = Number(match.replace(/[$,]/g, ''));
     if (!Number.isFinite(numeric)) return match;
 
-    const rounded = Math.round(numeric);
+    const rounded = Math.trunc(numeric);
 
     if (match.includes('$')) {
       return new Intl.NumberFormat('en-US', {
