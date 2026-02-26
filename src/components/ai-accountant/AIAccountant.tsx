@@ -1,3 +1,4 @@
+
 // src/components/ai-accountant/AIAccountant.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -89,34 +90,14 @@ const parseFencedBlocks = (text: string) => {
   return blocks;
 };
 
-// ✅ UPDATED: better rounding + broader matching (supports $44,616.35 -> $44,616)
 const roundNumbersInText = (text: string) => {
-  // Match currency and plain numbers with optional commas/decimals, optionally negative.
-  // Examples matched:
-  // $44,616.35 | 44616.35 | -1,234.56 | $1234.00 | 12.9
-  const regex = /-?\$?\d[\d,]*(?:\.\d+)?/g;
-
-  return text.replace(regex, (match) => {
-    // Skip lone "-" or "$" etc (unlikely but safe)
-    const cleaned = match.replace(/[$,]/g, '');
-    if (!cleaned || cleaned === '-' || cleaned === '.') return match;
-
-    const numeric = Number(cleaned);
+  return text.replace(/(\$?\d{1,3}(?:,\d{3})*)(\.\d+)?/g, (match) => {
+    const numeric = Number(match.replace(/[$,]/g, ''));
     if (!Number.isFinite(numeric)) return match;
 
-    // Only change if there is a decimal part OR it's currency (we still normalize currency)
-    const isCurrency = match.includes('$');
-    const hasDecimal = /\.\d+/.test(match);
+    const rounded = Math.trunc(numeric);
 
-    if (!isCurrency && !hasDecimal) {
-      // Plain integer-like token, keep as-is to avoid unexpected formatting changes
-      return match;
-    }
-
-    // "Round off" → standard rounding to nearest integer
-    const rounded = Math.round(numeric);
-
-    if (isCurrency) {
+    if (match.includes('$')) {
       return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
@@ -151,25 +132,11 @@ const KPI: React.FC<{ config: KPIConfig }> = ({ config }) => {
   );
 };
 
-// ✅ UPDATED: round numbers inside table cells too
 const SmartTable: React.FC<{ config: TableConfig }> = ({ config }) => {
   const rows = config.rows || config.data || [];
   const cols = config.columns && config.columns.length
     ? config.columns
     : (rows[0] ? Object.keys(rows[0]).map(k => ({ key: k, label: k })) : []);
-
-  const renderCell = (value: any) => {
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      // If your table uses raw numeric values, round them to whole numbers
-      return Math.round(value).toLocaleString('en-US');
-    }
-    if (typeof value === 'string') {
-      return roundNumbersInText(value);
-    }
-    // Fallback
-    return String(value);
-  };
 
   return (
     <div className="w-full overflow-x-auto">
@@ -186,7 +153,7 @@ const SmartTable: React.FC<{ config: TableConfig }> = ({ config }) => {
             <tr key={i} className="border-b last:border-0 dark:border-slate-800">
               {cols.map(c => (
                 <td key={c.key} className="py-2 pr-4">
-                  {renderCell(r[c.key])}
+                  {String(r[c.key] ?? '')}
                 </td>
               ))}
             </tr>
