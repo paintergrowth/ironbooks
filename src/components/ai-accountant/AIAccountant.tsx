@@ -90,6 +90,26 @@ const parseFencedBlocks = (text: string) => {
   return blocks;
 };
 
+const roundNumbersInText = (text: string) => {
+  return text.replace(/(\$?\d{1,3}(?:,\d{3})*)(\.\d+)?/g, (match) => {
+    const numeric = Number(match.replace(/[$,]/g, ''));
+    if (!Number.isFinite(numeric)) return match;
+
+    const rounded = Math.round(numeric);
+
+    if (match.includes('$')) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 0,
+        minimumFractionDigits: 0,
+      }).format(rounded);
+    }
+
+    return rounded.toLocaleString('en-US');
+  });
+};
+
 const KPI: React.FC<{ config: KPIConfig }> = ({ config }) => {
   const colorMap: Record<string, string> = {
     green: 'text-green-700 bg-green-50 dark:text-green-200 dark:bg-green-900/20',
@@ -943,18 +963,29 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           accumulatedText += chunk;
           setStreamingMessages(prev => prev.map(msg =>
             msg.id === messageId
-              ? { ...msg, content: accumulatedText, isStreaming: true }
+              ? { ...msg, content: roundNumbersInText(accumulatedText), isStreaming: true }
               : msg
           ));
         },
+
         async () => {
-          await saveMessage('assistant', accumulatedText, 0, 0, 0, sessionId);
-          setStreamingMessages(prev => prev.map(msg =>
-            msg.id === messageId ? { ...msg, isStreaming: false } : msg
-          ));
-          setIsTyping(false);
-          resolve();
-        },
+            const finalText = roundNumbersInText(accumulatedText);
+          
+            // update UI to final rounded text + stop streaming
+            setStreamingMessages(prev => prev.map(msg =>
+              msg.id === messageId
+                ? { ...msg, content: finalText, isStreaming: false }
+                : msg
+            ));
+          
+            // save rounded text
+            await saveMessage('assistant', finalText, 0, 0, 0, sessionId);
+          
+            setIsTyping(false);
+            resolve();
+          },
+
+        
         (err) => { reject(err); }
       );
     });
