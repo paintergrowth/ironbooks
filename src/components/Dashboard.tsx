@@ -181,6 +181,13 @@ const periodTitle = (tf: UiTimeframe) =>
 const fmtDate = (d: Date) =>
   d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 
+const toISODate = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const getRangeForTimeframe = (
   tf: UiTimeframe,
   fromDate: string | null,
@@ -597,10 +604,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
       // If custom selected but dates incomplete/invalid → don't fetch yet
       if (isCustom && !customValid) return;
 
-      // Build body: either preset period or custom range
+            // Build body: either preset period or custom range
       let body: any;
+      let prevBody: any = null;
+
       if (isCustom) {
         body = { mode: 'custom', from_date: fromDate, to_date: toDate };
+      } else if (timeframe === 'ytd' && !isDemo) {
+        // YTD current: Jan 1 this year → today
+        // YTD previous: Jan 1 last year → same day last year
+        const now = new Date();
+
+        const curFrom = new Date(now.getFullYear(), 0, 1);
+        const curTo = now;
+
+        const prevFrom = new Date(now.getFullYear() - 1, 0, 1);
+        const prevTo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+
+        body = { mode: 'custom', from_date: toISODate(curFrom), to_date: toISODate(curTo) };
+        prevBody = { mode: 'custom', from_date: toISODate(prevFrom), to_date: toISODate(prevTo) };
       } else {
         body = { period: toApiPeriod(timeframe as Exclude<UiTimeframe, 'custom'>) };
       }
@@ -625,7 +647,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
 
       setLoading(true);
       try {
-        const { data, error } = await invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
+               const currentReq = invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
           body: {
             ...body,
             userId: effUserId,
@@ -634,15 +656,47 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToReports }) => {
           },
         });
 
-        if (error) console.error('qbo-dashboard error:', error);
-        const payload: QboDashboardPayload = (data as any) ?? {};
+        const prevReq = prevBody
+          ? invokeWithAuthSafe<QboDashboardPayload>('qbo-dashboard', {
+              body: {
+                ...prevBody,
+                userId: effUserId,
+                realmId: effRealmId,
+                nonce: Date.now() + 1,
+              },
+            })
+          : null;
 
-        const rc = toNumber(payload?.revenue?.current, revCurr);
-        const rp = toNumber(payload?.revenue?.previous, revPrev);
-        const ec = toNumber(payload?.expenses?.current, expCurr);
-        const ep = toNumber(payload?.expenses?.previous, expPrev);
-        const nc = toNumber(payload?.netProfit?.current, rc - ec);
-        const np = toNumber(payload?.netProfit?.previous, rp - ep);
+        const [{ data: curData, error: curErr }, prevRes] = await Promise.all([
+          currentReq,
+          prevReq ?? Promise.resolve({ data: null, error: null } as any),
+        ]);
+
+        if (curErr) console.error('qbo-dashboard error:', curErr);
+        if (prevRes?.error) console.error('qbo-dashboard (prev window) error:', prevRes.error);
+
+        const curPayload: QboDashboardPayload = (curData as any) ?? {};
+        const prevPayload: QboDashboardPayload = ((prevRes?.data as any) ?? {}) as QboDashboardPayload;
+
+        // Current window numbers
+        const rc = toNumber(curPayload?.revenue?.current, 0);
+        const ec = toNumber(curPayload?.expenses?.current, 0);
+        const nc = toNumber(curPayload?.netProfit?.current, rc - ec);
+
+        // Previous window numbers:
+        // If prevBody exists (YTD special), take "current" from the previous-window response
+        // Otherwise use the API's built-in "previous"
+        const rp = prevBody
+          ? toNumber(prevPayload?.revenue?.current, 0)
+          : toNumber(curPayload?.revenue?.previous, 0);
+
+        const ep = prevBody
+          ? toNumber(prevPayload?.expenses?.current, 0)
+          : toNumber(curPayload?.expenses?.previous, 0);
+
+        const np = prevBody
+          ? toNumber(prevPayload?.netProfit?.current, rp - ep)
+          : toNumber(curPayload?.netProfit?.previous, rp - ep);
 
         if (!isCancelled) {
           setRevCurr(rc);
