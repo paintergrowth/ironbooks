@@ -122,10 +122,10 @@ const KPI: React.FC<{ config: KPIConfig }> = ({ config }) => {
   return (
     <Card className="p-4 border-0 shadow-sm dark:bg-slate-900/60">
       <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{config.label}</div>
-      <div className="text-3xl font-semibold">{config.value}</div>
+      <div className="text-3xl font-semibold">{roundNumbersInText(config.value)}</div>
       {config.delta && (
         <div className={`inline-block mt-2 px-2 py-0.5 rounded-md text-xs ${badge}`}>
-          {config.delta}
+          {roundNumbersInText(config.delta)}
         </div>
       )}
     </Card>
@@ -245,7 +245,7 @@ const RichMessage: React.FC<{ content: string }> = ({ content }) => {
   if (!hasRich) {
     return (
       <div className="prose prose-sm max-w-none dark:prose-invert">
-        <Response>{content}</Response>
+        <Response>{roundNumbersInText(content)}</Response>
       </div>
     );
   }
@@ -256,7 +256,7 @@ const RichMessage: React.FC<{ content: string }> = ({ content }) => {
         if (b.kind === 'text') {
           return (
             <div key={idx} className="prose prose-sm max-w-none dark:prose-invert">
-              <Response>{b.payload as string}</Response>
+              <Response>{roundNumbersInText(b.payload as string)}</Response>
             </div>
           );
         }
