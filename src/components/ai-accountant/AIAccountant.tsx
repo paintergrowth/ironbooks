@@ -170,7 +170,7 @@ const SmartChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
     const { data, nameKey, valueKey } = config;
     return (
       <Card className={cardCls}>
-        <div className="w-full h-80">
+        <div className="w-full h-92">
           <ResponsiveContainer>
            <Pie
               data={data}
