@@ -170,12 +170,22 @@ const SmartChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
     const { data, nameKey, valueKey } = config;
     return (
       <Card className={cardCls}>
-        <div className="w-full h-72">
+        <div className="w-full h-80">
           <ResponsiveContainer>
-            <PieChart>
-              <Pie data={data} nameKey={nameKey} dataKey={valueKey} outerRadius={110} label />
-              <Tooltip />
-              <Legend />
+           <Pie
+              data={data}
+              nameKey={nameKey}
+              dataKey={valueKey}
+              outerRadius={110}
+              label={false}   // ✅ stop overlapping labels
+            />
+            <Tooltip />
+            <Legend
+              layout="horizontal"
+              verticalAlign="bottom"
+              align="center"
+              wrapperStyle={{ fontSize: 12 }}
+            />
             </PieChart>
           </ResponsiveContainer>
         </div>
