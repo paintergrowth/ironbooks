@@ -963,29 +963,18 @@ const AIAccountant: React.FC<AIAccountantProps> = ({ sidebarOpen, setSidebarOpen
           accumulatedText += chunk;
           setStreamingMessages(prev => prev.map(msg =>
             msg.id === messageId
-              ? { ...msg, content: roundNumbersInText(accumulatedText), isStreaming: true }
+              ? { ...msg, content: accumulatedText, isStreaming: true }
               : msg
           ));
         },
-
         async () => {
-            const finalText = roundNumbersInText(accumulatedText);
-          
-            // update UI to final rounded text + stop streaming
-            setStreamingMessages(prev => prev.map(msg =>
-              msg.id === messageId
-                ? { ...msg, content: finalText, isStreaming: false }
-                : msg
-            ));
-          
-            // save rounded text
-            await saveMessage('assistant', finalText, 0, 0, 0, sessionId);
-          
-            setIsTyping(false);
-            resolve();
-          },
-
-        
+          await saveMessage('assistant', accumulatedText, 0, 0, 0, sessionId);
+          setStreamingMessages(prev => prev.map(msg =>
+            msg.id === messageId ? { ...msg, isStreaming: false } : msg
+          ));
+          setIsTyping(false);
+          resolve();
+        },
         (err) => { reject(err); }
       );
     });
@@ -1739,3 +1728,5 @@ const callAgentOnceDemo = async (query: string, userId: string, realmId: string)
 };
 
 export default AIAccountant;
+
+
