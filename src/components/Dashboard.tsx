@@ -152,7 +152,14 @@ const toNumber = (v: unknown, def = 0): number => {
   return Number.isFinite(n) ? n : def;
 };
 const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  }).format(Math.round(n));
+
+
 const pctChange = (curr: number, prev: number): number | null => {
   if (!Number.isFinite(curr) || !Number.isFinite(prev)) return null;
   if (prev === 0) return null;
