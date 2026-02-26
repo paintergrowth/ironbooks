@@ -1106,6 +1106,11 @@ const loadYtd = async () => {
             ? `— ${changeLabel(timeframe)}`
             : `${expPct > 0 ? '+' : ''}${Math.abs(expPct).toFixed(1)}% ${changeLabel(timeframe)}`}
         </p>
+        <p className="text-sm font-medium text-muted-foreground">
+          {revCurr > 0
+            ? `${(100 - profitMargin).toFixed(1)}% of revenue`
+            : '— of revenue'}
+        </p>
       </CardHeader>
     </Card>
   </TooltipTrigger>
