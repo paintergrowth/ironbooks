@@ -992,24 +992,7 @@ const loadYtd = async () => {
         </div>
       </div>
 
-      {/* Key Insight */}
-      <Card className="bg-primary/5 border border-border/20 border-l border-l-primary/40">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 text-primary">
-              {revPct !== null && revPct > 0 ? (
-                <TrendingUpIcon className="w-5 h-5" />
-              ) : (
-                <TrendingDownIcon className="w-5 h-5" />
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-primary mb-1">Performance Trend</p>
-              <p className="text-foreground font-medium">{insightText}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      
 
       {/* 3 Main Metric Cards */}
       <div className="grid gap-6 md:grid-cols-3">
@@ -1168,7 +1151,7 @@ const loadYtd = async () => {
         </CardTitle>
 
         <p className="text-sm text-foreground">
-          Margin: {profitMargin.toFixed(1)}%
+          Profit Margin: {profitMargin.toFixed(1)}%
         </p>
 
         <p className={`text-sm font-medium ${netPct !== null && netPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
