@@ -3,7 +3,8 @@
 import {
   LogOut,
   Sun, 
-  Moon
+  Moon,
+  Calendar
 } from "lucide-react"
 import { useTheme } from '@/components/theme-provider'
 import { useAppContext } from '@/contexts/AppContext'
@@ -20,6 +21,29 @@ export function NavUser() {
 
   return (
     <SidebarMenu className="space-y-2">
+            {/* Book Consultation */}
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          className="w-full justify-start text-base h-10 
+                     bg-white dark:bg-gray-800 
+                     border-2 border-gray-300 dark:border-gray-600 
+                     hover:bg-gray-50 dark:hover:bg-gray-700 
+                     font-semibold group-data-[collapsible=icon]:justify-center"
+          tooltip="Book a Free Consultation"
+        >
+          <a
+            href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Calendar className="h-4 w-4" />
+            <span className="group-data-[collapsible=icon]:hidden">
+              👉 Book a Free Consultation
+            </span>
+          </a>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
       {/* Theme Toggle */}
       <SidebarMenuItem>
         <SidebarMenuButton 
