@@ -1,12 +1,10 @@
-import { BrowserRouter } from "react-router-dom";
 import { PageViewTracker } from "./components/PageViewTracker";
-import { useNavigate } from "react-router-dom";
 
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppProvider, useAppContext } from "@/contexts/AppContext";
 import { LoginNew } from "@/components/LoginNew";
@@ -32,7 +30,7 @@ const AppContent = () => {
   }
 
   return (
-    <BrowserRouter>
+    <>
         <PageViewTracker />
       <Routes>
         {!user ? (
@@ -57,7 +55,7 @@ const AppContent = () => {
       </Routes>
 
 
-      /* Floating CTA Button (only when not logged in) */
+{/* Floating CTA Button (only when not logged in) */}   
       {true && (
         <button
           onClick={() => window.location.href = "/demo-auth"}
@@ -66,7 +64,7 @@ const AppContent = () => {
           🚀 Start Free Demo
         </button>
       )}
-    </BrowserRouter>
+    </>
   );
 };
 
@@ -79,7 +77,9 @@ const App = () => (
         <Toaster />
         <Sonner />
         <AppProvider>
+          <BrowserRouter>
           <AppContent />
+          </BrowserRouter>
         </AppProvider>
       </TooltipProvider>
     </QueryClientProvider>
