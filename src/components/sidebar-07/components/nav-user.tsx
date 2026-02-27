@@ -61,7 +61,7 @@ export function NavUser() {
           ) : (
             <>
               <Moon className="h-4 w-4" />
-              <span className="group-data-[collapsible=icon]:hidden">ARK-MODE-TEST</span>
+              <span className="group-data-[collapsible=icon]:hidden">Dark Mode</span>
             </>
           )}
         </SidebarMenuButton>
