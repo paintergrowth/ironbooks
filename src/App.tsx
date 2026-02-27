@@ -1,5 +1,6 @@
 import { BrowserRouter } from "react-router-dom";
 import { PageViewTracker } from "./components/PageViewTracker";
+import { useNavigate } from "react-router-dom";
 
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -17,6 +18,7 @@ const queryClient = new QueryClient();
 
 const AppContent = () => {
   const { user, loading } = useAppContext();
+  const navigate = useNavigate();
 
   if (loading) {
     return (
