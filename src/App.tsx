@@ -30,7 +30,7 @@ const AppContent = () => {
   }
 
   return (
-    <>
+    <BrowserRouter>
         <PageViewTracker />
       <Routes>
         {!user ? (
@@ -55,16 +55,8 @@ const AppContent = () => {
       </Routes>
 
 
-{/* Floating CTA Button (only when not logged in) */}   
-      {true && (
-        <button
-          onClick={() => window.location.href = "/demo-auth"}
-          className="fixed bottom-6 right-6 z-[999999] bg-red-600 text-white px-8 py-4 rounded-full border-4 border-white">
-        
-          🚀 Start Free Demo
-        </button>
-      )}
-    </>
+
+    </BrowserRouter>
   );
 };
 
