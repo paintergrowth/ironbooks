@@ -23,26 +23,28 @@ export function NavUser() {
     <SidebarMenu className="space-y-2">
             {/* Book Consultation */}
       <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          className="w-full justify-start text-base h-10 
-                     bg-white dark:bg-gray-800 
-                     border-2 border-gray-300 dark:border-gray-600 
-                     hover:bg-gray-50 dark:hover:bg-gray-700 
-                     font-semibold group-data-[collapsible=icon]:justify-center"
-          tooltip="Book a Free Consultation"
-        >
-          <a
-            href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Calendar className="h-4 w-4" />
-            <span className="group-data-[collapsible=icon]:hidden">
-              👉 Book a Free Consultation
-            </span>
-          </a>
-        </SidebarMenuButton>
+        <SidebarMenuButton asChild tooltip="Book a Free Consultation">
+    <a
+      href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="
+        w-full flex items-center gap-2
+        text-base h-10 px-3 rounded-md
+        bg-white dark:bg-gray-800
+        border-2 border-gray-300 dark:border-gray-600
+        hover:bg-gray-50 dark:hover:bg-gray-700
+        hover:border-gray-400 dark:hover:border-gray-500
+        font-semibold
+        group-data-[collapsible=icon]:justify-center
+      "
+    >
+      <Calendar className="h-4 w-4 shrink-0" />
+      <span className="group-data-[collapsible=icon]:hidden">
+        👉 Book a Free Consultation
+      </span>
+    </a>
+  </SidebarMenuButton>
       </SidebarMenuItem>
       {/* Theme Toggle */}
       <SidebarMenuItem>
