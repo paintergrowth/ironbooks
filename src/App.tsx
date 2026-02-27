@@ -59,7 +59,7 @@ const AppContent = () => {
       {!user && (
         <button
           onClick={() => window.location.href = "/demo-auth"}
-          className="fixed bottom-6 right-6 z-50 
+          className="fixed bottom-6 right-6 z-9999 
                      bg-gradient-to-r from-primary to-indigo-600 
                      text-white px-6 py-3 rounded-full 
                      shadow-2xl font-semibold
