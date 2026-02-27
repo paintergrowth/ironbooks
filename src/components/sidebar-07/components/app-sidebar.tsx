@@ -94,6 +94,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
+
+         {/* Book Consultation CTA */}
+  <div className="px-4 mt-6">
+    <a
+      href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block"
+    >
+      <div className="w-full text-center bg-gradient-to-r from-primary to-indigo-600 
+                      text-white font-semibold py-3 rounded-lg 
+                      hover:scale-105 transition-all duration-200 shadow-lg">
+        👉 Book Free Consultation
+      </div>
+    </a>
+  </div>
         <div className="flex items-center px-4 py-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
           {/* Light mode logo when expanded */}
           <img
@@ -122,25 +138,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
 
       <SidebarFooter className="p-4">
-        {/* Consultation CTA */}
-  <a
-    href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
-    target="_blank"
-    rel="noopener noreferrer"
-  >
-    <Button
-      variant="outline"
-      size="lg"
-      className="w-full bg-white dark:bg-gray-800 
-                 border-2 border-gray-300 dark:border-gray-600 
-                 text-gray-900 dark:text-gray-100 
-                 hover:bg-gray-50 dark:hover:bg-gray-700 
-                 hover:border-gray-400 dark:hover:border-gray-500 
-                 font-semibold px-4 py-3 text-sm"
-    >
-      👉 Book Free Consultation
-    </Button>
-  </a>
+     
         <NavUser />
       </SidebarFooter>
       <SidebarRail />
