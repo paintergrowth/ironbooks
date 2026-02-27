@@ -1,4 +1,5 @@
 "use client"
+import { Button } from "@/components/ui/button"
 
 import * as React from "react"
 import {
@@ -121,6 +122,25 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
 
       <SidebarFooter className="p-4">
+        {/* Consultation CTA */}
+  <a
+    href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <Button
+      variant="outline"
+      size="lg"
+      className="w-full bg-white dark:bg-gray-800 
+                 border-2 border-gray-300 dark:border-gray-600 
+                 text-gray-900 dark:text-gray-100 
+                 hover:bg-gray-50 dark:hover:bg-gray-700 
+                 hover:border-gray-400 dark:hover:border-gray-500 
+                 font-semibold px-4 py-3 text-sm"
+    >
+      👉 Book Free Consultation
+    </Button>
+  </a>
         <NavUser />
       </SidebarFooter>
       <SidebarRail />
