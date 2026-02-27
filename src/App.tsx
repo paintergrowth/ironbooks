@@ -58,17 +58,11 @@ const AppContent = () => {
 
 
       /* Floating CTA Button (only when not logged in) */
-      {!user && (
+      {true && (
         <button
           onClick={() => window.location.href = "/demo-auth"}
-          className="fixed bottom-6 right-6 z-9999 
-                     bg-gradient-to-r from-primary to-indigo-600 
-                     text-white px-6 py-3 rounded-full 
-                     shadow-2xl font-semibold
-                     hover:scale-110 hover:shadow-xl
-                     transition-all duration-300
-                     animate-pulse"
-        >
+          className="fixed bottom-6 right-6 z-[999999] bg-red-600 text-white px-8 py-4 rounded-full border-4 border-white">
+        
           🚀 Start Free Demo
         </button>
       )}
