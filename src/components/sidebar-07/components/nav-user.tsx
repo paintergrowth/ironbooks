@@ -63,7 +63,7 @@ export function NavUser() {
           tooltip="Log out"
         >
           <LogOut className="h-4 w-4" />
-          <span className="group-data-[collapsible=icon]:hidden">Log out</span>
+          <span className="group-data-[collapsible=icon]:hidden">Log out Test</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>
