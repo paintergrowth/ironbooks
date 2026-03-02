@@ -95,21 +95,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
 
-         {/* Book Consultation CTA */}
-  <div className="px-4 mt-6">
-    <a
-      href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block"
-    >
-      <div className="w-full text-center bg-gradient-to-r from-primary to-indigo-600 
-                      text-white font-semibold py-3 rounded-lg 
-                      hover:scale-105 transition-all duration-200 shadow-lg">
-        👉 Book Free Consultation
-      </div>
-    </a>
-  </div>
+         
         <div className="flex items-center px-4 py-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
           {/* Light mode logo when expanded */}
           <img
