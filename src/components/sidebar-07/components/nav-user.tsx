@@ -4,7 +4,7 @@ import {
   LogOut,
   Sun, 
   Moon,
-  Calendar
+  HelpCircle
 } from "lucide-react"
 import { useTheme } from '@/components/theme-provider'
 import { useAppContext } from '@/contexts/AppContext'
@@ -21,31 +21,7 @@ export function NavUser() {
 
   return (
     <SidebarMenu className="space-y-2">
-            {/* Book Consultation */}
-      <SidebarMenuItem>
-        <SidebarMenuButton asChild tooltip="Book a Free Consultation">
-    <a
-      href="https://api.leadconnectorhq.com/widget/bookings/45mins-profit-xray-call"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="
-        w-full flex items-center gap-2
-        text-base h-10 px-3 rounded-md
-        bg-white dark:bg-gray-800
-        border-2 border-gray-300 dark:border-gray-600
-        hover:bg-gray-50 dark:hover:bg-gray-700
-        hover:border-gray-400 dark:hover:border-gray-500
-        font-semibold
-        group-data-[collapsible=icon]:justify-center
-      "
-    >
-      <Calendar className="h-4 w-4 shrink-0" />
-      <span className="group-data-[collapsible=icon]:hidden">
-        👉 Book a Free Consultation
-      </span>
-    </a>
-  </SidebarMenuButton>
-      </SidebarMenuItem>
+      
       {/* Theme Toggle */}
       <SidebarMenuItem>
         <SidebarMenuButton 
@@ -64,6 +40,18 @@ export function NavUser() {
               <span className="group-data-[collapsible=icon]:hidden">Dark Mode</span>
             </>
           )}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+
+     {/* Help Button */}
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          onClick={() => window.location.href = "mailto:admin@ironbooks.com"}
+          className="w-full justify-start text-base h-10 group-data-[collapsible=icon]:justify-center"
+          tooltip="Help"
+        >
+          <HelpCircle className="h-4 w-4" />
+          <span className="group-data-[collapsible=icon]:hidden">Help</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
       
